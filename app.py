@@ -249,6 +249,8 @@ def download_report_from_asteril(
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    if platform.system() == "Linux":
+        chrome_options.binary_location = "/usr/bin/chromium-browser"
 
     prefs = {
         "download.default_directory": os.path.abspath(download_dir),
