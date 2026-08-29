@@ -23,6 +23,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from webdriver_manager.chrome import ChromeDriverManager
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -242,12 +243,15 @@ def download_report_from_asteril(
     cookies_file = os.path.abspath("asteril_cookies.json")
 
     chrome_options = webdriver.ChromeOptions()
-    chrome_options.add_argument("--headless=new")  # Критично для Render (без GUI)
+    chrome_options.add_argument("--headless=new")  # Критично для Render
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+
+    if platform.system() == "Linux":
+        chrome_options.binary_location = "/usr/bin/chromium"
 
     prefs = {
         "download.default_directory": os.path.abspath(download_dir),
@@ -256,13 +260,10 @@ def download_report_from_asteril(
     }
     chrome_options.add_experimental_option("prefs", prefs)
 
-    # Адаптивне підключення для Linux (Render) або Windows (локально)
-    if platform.system() == "Linux":
-        chrome_options.binary_location = "/usr/bin/chromium"
-        service = Service("/usr/bin/chromedriver")
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-    else:
-        driver = webdriver.Chrome(options=chrome_options)
+    # Автоматичне підключення драйвера через webdriver-manager (працює всюди)
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()), options=chrome_options
+    )
 
     wait = WebDriverWait(driver, 60)
 
