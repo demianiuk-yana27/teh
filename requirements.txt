@@ -1,0 +1,8 @@
+flask
+pandas
+gspread
+google-auth
+selenium
+webdriver-manager
+openpyxl
+requests
