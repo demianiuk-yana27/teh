@@ -250,8 +250,6 @@ def download_report_from_asteril(
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     
-    # Шлях до Chromium для Render
-    chrome_options.binary_location = "/usr/bin/chromium"
 
     prefs = {
         "download.default_directory": os.path.abspath(download_dir),
