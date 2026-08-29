@@ -242,15 +242,13 @@ def download_report_from_asteril(
     cookies_file = os.path.abspath("asteril_cookies.json")
 
     chrome_options = webdriver.ChromeOptions()
-    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--headless=old")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1280,800")
+    chrome_options.add_argument("--window-size=1024,768")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     # Прапорці для зменшення споживання памʼяті (важливо на Render free-тарифі, 512MB RAM)
-    chrome_options.add_argument("--single-process")
-    chrome_options.add_argument("--no-zygote")
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-background-networking")
     chrome_options.add_argument("--disable-default-apps")
@@ -261,7 +259,13 @@ def download_report_from_asteril(
     chrome_options.add_argument("--disable-background-timer-throttling")
     chrome_options.add_argument("--disable-backgrounding-occluded-windows")
     chrome_options.add_argument("--disable-renderer-backgrounding")
-    chrome_options.add_argument("--js-flags=--max-old-space-size=256")
+    chrome_options.add_argument("--disable-software-rasterizer")
+    chrome_options.add_argument("--disable-features=VizDisplayCompositor,TranslateUI")
+    chrome_options.add_argument("--renderer-process-limit=1")
+    chrome_options.add_argument("--disk-cache-size=0")
+    chrome_options.add_argument("--no-first-run")
+    chrome_options.add_argument("--no-default-browser-check")
+    chrome_options.add_argument("--js-flags=--max-old-space-size=128")
 
     system_chrome_bin = "/usr/bin/chromium"
     system_chromedriver_bin = "/usr/bin/chromedriver"
@@ -273,6 +277,8 @@ def download_report_from_asteril(
         "download.default_directory": os.path.abspath(download_dir),
         "download.prompt_for_download": False,
         "download.directory_upgrade": True,
+        # Зображення не потрібні для вигрузки таблиць — економимо памʼять
+        "profile.managed_default_content_settings.images": 2,
     }
     chrome_options.add_experimental_option("prefs", prefs)
 
