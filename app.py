@@ -249,12 +249,11 @@ def download_report_from_asteril(
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
-    render_storage_dir = "/opt/render/project/.render"
-    render_chrome_bin = f"{render_storage_dir}/chrome/opt/google/chrome/google-chrome"
-    render_chromedriver_bin = f"{render_storage_dir}/chromedriver/chromedriver"
+    system_chrome_bin = "/usr/bin/chromium"
+    system_chromedriver_bin = "/usr/bin/chromedriver"
 
-    if os.path.exists(render_chrome_bin):
-        chrome_options.binary_location = render_chrome_bin
+    if os.path.exists(system_chrome_bin):
+        chrome_options.binary_location = system_chrome_bin
 
     prefs = {
         "download.default_directory": os.path.abspath(download_dir),
@@ -263,9 +262,9 @@ def download_report_from_asteril(
     }
     chrome_options.add_experimental_option("prefs", prefs)
 
-    if os.path.exists(render_chromedriver_bin):
+    if os.path.exists(system_chromedriver_bin):
         driver = webdriver.Chrome(
-            service=Service(render_chromedriver_bin),
+            service=Service(system_chromedriver_bin),
             options=chrome_options
         )
     else:
