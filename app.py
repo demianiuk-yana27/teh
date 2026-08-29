@@ -23,7 +23,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from webdriver_manager.chrome import ChromeDriverManager
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -249,7 +248,7 @@ def download_report_from_asteril(
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    
+    chrome_options.binary_location = "/usr/bin/chromium"
 
     prefs = {
         "download.default_directory": os.path.abspath(download_dir),
@@ -259,7 +258,7 @@ def download_report_from_asteril(
     chrome_options.add_experimental_option("prefs", prefs)
 
     driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()), 
+        service=Service("/usr/bin/chromedriver"),
         options=chrome_options
     )
 
