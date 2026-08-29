@@ -257,12 +257,12 @@ def download_report_from_asteril(
     }
     chrome_options.add_experimental_option("prefs", prefs)
 
-   from selenium.webdriver.chrome.service import Service
-   from webdriver_manager.chrome import ChromeDriverManager
+    from selenium.webdriver.chrome.service import Service
+    from webdriver_manager.chrome import ChromeDriverManager
 
-   driver_path = ChromeDriverManager().install()
+    driver_path = ChromeDriverManager().install()
 
-   driver = webdriver.Chrome(
+    driver = webdriver.Chrome(
     service=Service(driver_path),
     options=chrome_options
 )
