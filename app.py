@@ -272,6 +272,8 @@ def download_report_from_asteril(
         # Локальний запуск (не на Render) — Selenium сам знайде Chrome і драйвер
         driver = webdriver.Chrome(options=chrome_options)
 
+    wait = WebDriverWait(driver, 45)
+
     try:
         if not domain_url.startswith("http"):
             domain_url = "https://" + domain_url
