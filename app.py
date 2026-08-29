@@ -246,8 +246,22 @@ def download_report_from_asteril(
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--window-size=1280,800")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    # Прапорці для зменшення споживання памʼяті (важливо на Render free-тарифі, 512MB RAM)
+    chrome_options.add_argument("--single-process")
+    chrome_options.add_argument("--no-zygote")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-background-networking")
+    chrome_options.add_argument("--disable-default-apps")
+    chrome_options.add_argument("--disable-sync")
+    chrome_options.add_argument("--disable-translate")
+    chrome_options.add_argument("--mute-audio")
+    chrome_options.add_argument("--metrics-recording-only")
+    chrome_options.add_argument("--disable-background-timer-throttling")
+    chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+    chrome_options.add_argument("--disable-renderer-backgrounding")
+    chrome_options.add_argument("--js-flags=--max-old-space-size=256")
 
     system_chrome_bin = "/usr/bin/chromium"
     system_chromedriver_bin = "/usr/bin/chromedriver"
