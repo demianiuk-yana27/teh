@@ -242,7 +242,7 @@ def download_report_from_asteril(
 
     cookies_file = os.path.abspath("asteril_cookies.json")
 
-   chrome_options = webdriver.ChromeOptions()
+    chrome_options = webdriver.ChromeOptions()
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
