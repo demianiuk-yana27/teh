@@ -257,11 +257,18 @@ def download_report_from_asteril(
     }
     chrome_options.add_experimental_option("prefs", prefs)
 
-    # webdriver-manager сам завантажить і драйвер, і сумісний браузер для роботи в headless
+   # Використовуємо ChromeDriverManager з автоматичним завантаженням бінарника
+    from selenium.webdriver.chrome.service import Service
+    from webdriver_manager.chrome import ChromeDriverManager
+    from webdriver_manager.core.os_type import OS_TYPE
+
+    # Явно кажемо керувати драйвером під Linux-сервер Render
+    driver_path = ChromeDriverManager().install()
+    
     driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()), options=chrome_options
+        service=Service(driver_path), 
+        options=chrome_options
     )
-    wait = WebDriverWait(driver, 60)
 
     try:
         if not domain_url.startswith("http"):
