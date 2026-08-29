@@ -248,7 +248,13 @@ def download_report_from_asteril(
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.binary_location = "/usr/bin/chromium"
+
+    render_storage_dir = "/opt/render/project/.render"
+    render_chrome_bin = f"{render_storage_dir}/chrome/opt/google/chrome/google-chrome"
+    render_chromedriver_bin = f"{render_storage_dir}/chromedriver/chromedriver"
+
+    if os.path.exists(render_chrome_bin):
+        chrome_options.binary_location = render_chrome_bin
 
     prefs = {
         "download.default_directory": os.path.abspath(download_dir),
@@ -257,10 +263,14 @@ def download_report_from_asteril(
     }
     chrome_options.add_experimental_option("prefs", prefs)
 
-    driver = webdriver.Chrome(
-        service=Service("/usr/bin/chromedriver"),
-        options=chrome_options
-    )
+    if os.path.exists(render_chromedriver_bin):
+        driver = webdriver.Chrome(
+            service=Service(render_chromedriver_bin),
+            options=chrome_options
+        )
+    else:
+        # Локальний запуск (не на Render) — Selenium сам знайде Chrome і драйвер
+        driver = webdriver.Chrome(options=chrome_options)
 
     try:
         if not domain_url.startswith("http"):
