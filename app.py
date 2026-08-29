@@ -1,6 +1,7 @@
 import glob
 import json
 import os
+import platform
 import time
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, render_template_string
@@ -17,6 +18,7 @@ from selenium.common.exceptions import (
     StaleElementReferenceException,
     TimeoutException,
 )
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
@@ -254,7 +256,14 @@ def download_report_from_asteril(
     }
     chrome_options.add_experimental_option("prefs", prefs)
 
-    driver = webdriver.Chrome(options=chrome_options)
+    # Адаптивне підключення для Linux (Render) або Windows (локально)
+    if platform.system() == "Linux":
+        chrome_options.binary_location = "/usr/bin/chromium"
+        service = Service("/usr/bin/chromedriver")
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+    else:
+        driver = webdriver.Chrome(options=chrome_options)
+
     wait = WebDriverWait(driver, 60)
 
     try:
@@ -518,9 +527,7 @@ def process_one():
 
     first_free_row = len(sheet.col_values(4)) + 1
     ensure_capacity(sheet, first_free_row + len(raw_values))
-    remove_data_validation(
-        sheet, first_free_row, 1, first_free_row, 2
-    )
+    remove_data_validation(sheet, first_free_row, 1, first_free_row, 2)
 
     sheet.update(
         range_name=f"A{first_free_row}",
@@ -587,9 +594,7 @@ def process_two():
 
     first_free_row = len(sheet.col_values(4)) + 1
     ensure_capacity(sheet, first_free_row + len(raw_values))
-    remove_data_validation(
-        sheet, first_free_row, 1, first_free_row, 2
-    )
+    remove_data_validation(sheet, first_free_row, 1, first_free_row, 2)
 
     today = datetime.now()
     sheet.update(
