@@ -361,6 +361,20 @@ def download_report_from_asteril(
             print("=== ДІАГНОСТИКА: не дочекались кнопки фільтра ===")
             print(f"Поточний URL: {driver.current_url}")
             print(f"Заголовок сторінки: {driver.title}")
+            if "login" in driver.current_url:
+                print("=== ДІАГНОСТИКА: поля форми логіну ===")
+                for inp in driver.find_elements(By.TAG_NAME, "input"):
+                    print(
+                        f"  <input> name={inp.get_attribute('name')!r} "
+                        f"id={inp.get_attribute('id')!r} "
+                        f"type={inp.get_attribute('type')!r} "
+                        f"placeholder={inp.get_attribute('placeholder')!r}"
+                    )
+                for btn in driver.find_elements(By.TAG_NAME, "button"):
+                    print(
+                        f"  <button> text={btn.text!r} type={btn.get_attribute('type')!r} "
+                        f"id={btn.get_attribute('id')!r}"
+                    )
             print(f"Фрагмент HTML (перші 1500 символів):\n{driver.page_source[:1500]}")
             raise
         time.sleep(2)
