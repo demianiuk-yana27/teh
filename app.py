@@ -510,6 +510,14 @@ def download_report_from_asteril(
         time.sleep(4)
         wait_for_crm_loader(driver, timeout=60)
 
+        try:
+            row_count = len(
+                driver.find_elements(By.CSS_SELECTOR, "#ajax-table tbody tr")
+            )
+            print(f"=== ДІАГНОСТИКА: рядків у таблиці після фільтра: {row_count} ===")
+        except Exception as e:
+            print(f"=== ДІАГНОСТИКА: не вдалось порахувати рядки: {e} ===")
+
         excel_icon = wait.until(
             EC.presence_of_element_located(
                 (
@@ -523,6 +531,11 @@ def download_report_from_asteril(
             f"tag={excel_icon.tag_name!r} text={excel_icon.text!r} "
             f"outerHTML={excel_icon.get_attribute('outerHTML')[:300]!r} ==="
         )
+        try:
+            driver.get_log("browser")  # очищуємо буфер, щоб бачити лише нові записи
+        except Exception:
+            pass
+
         safe_click(driver, excel_icon)
         print("=== ДІАГНОСТИКА: клік по кнопці Excel виконано, чекаємо файл ===")
         time.sleep(3)
@@ -533,12 +546,12 @@ def download_report_from_asteril(
                 for entry in browser_logs:
                     print(f"  [{entry.get('level')}] {entry.get('message')}")
             else:
-                print("=== ДІАГНОСТИКА: консоль браузера порожня ===")
+                print("=== ДІАГНОСТИКА: консоль браузера порожня (нових записів немає) ===")
         except Exception as log_err:
             print(f"=== ДІАГНОСТИКА: не вдалось отримати логи консолі: {log_err} ===")
 
         downloaded_file = None
-        for i in range(90):
+        for i in range(240):
             time.sleep(1)
             files = (
                 glob.glob(os.path.join(download_dir, "*.xlsx"))
@@ -548,7 +561,7 @@ def download_report_from_asteril(
             temp_files = glob.glob(
                 os.path.join(download_dir, "*.crdownload")
             ) + glob.glob(os.path.join(download_dir, "*.tmp"))
-            if i in (4, 14, 29, 59) or (i % 15 == 0 and i > 0):
+            if i in (4, 14, 29, 59, 89, 119) or (i % 30 == 0 and i > 0):
                 print(
                     f"=== ДІАГНОСТИКА: [{i+1}с] вміст {download_dir}: "
                     f"{os.listdir(download_dir) if os.path.exists(download_dir) else 'папки немає'} ==="
@@ -560,7 +573,7 @@ def download_report_from_asteril(
         if not downloaded_file:
             print(f"=== ДІАГНОСТИКА: поточний URL перед помилкою: {driver.current_url} ===")
             raise TimeoutError(
-                "Файл не завантажився в папку temp_downloads за 90 секунд."
+                "Файл не завантажився в папку temp_downloads за 240 секунд."
             )
         return downloaded_file
 
