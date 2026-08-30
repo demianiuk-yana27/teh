@@ -315,18 +315,30 @@ def download_report_from_asteril(
         time.sleep(3)
 
         if os.path.exists(cookies_file):
+            print(f"=== ДІАГНОСТИКА: знайдено cookies_file: {cookies_file} ===")
             try:
                 with open(cookies_file, "r") as f:
-                    for cookie in json.load(f):
-                        cookie.pop("sameSite", None)
-                        try:
-                            driver.add_cookie(cookie)
-                        except Exception:
-                            pass
+                    raw_cookies = json.load(f)
+                print(f"Кукі у файлі: {len(raw_cookies)}")
+                added, failed = 0, 0
+                for cookie in raw_cookies:
+                    cookie.pop("sameSite", None)
+                    try:
+                        driver.add_cookie(cookie)
+                        added += 1
+                    except Exception as cookie_err:
+                        failed += 1
+                        print(
+                            f"  Не вдалось додати кукі '{cookie.get('name')}' "
+                            f"(domain={cookie.get('domain')}): {cookie_err}"
+                        )
+                print(f"Додано успішно: {added}, не вдалось: {failed}")
                 driver.refresh()
                 time.sleep(3)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"=== ДІАГНОСТИКА: помилка читання cookies_file: {e} ===")
+        else:
+            print(f"=== ДІАГНОСТИКА: файл cookies НЕ знайдено за шляхом: {cookies_file} ===")
 
         orders_url = (
             domain_url
