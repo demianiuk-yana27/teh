@@ -491,12 +491,13 @@ def download_report_from_asteril(
         except Exception as e:
             print(f"=== ДІАГНОСТИКА: не вдалось порахувати рядки: {e} ===")
 
-        # Оновлений пошук кнопки Excel згідно з останньою діагностикою
+        # Точний пошук САМЕ кнопки Excel (без широкого fallback, який раніше
+        # випадково знаходив кнопку CSV)
         excel_button = wait.until(
             EC.presence_of_element_located(
                 (
-                    By.CSS_SELECTOR,
-                    "button.dt-button.btn.btn-default.btn-icon span i.icon-file-excel, button.dt-button.btn.btn-default.btn-icon"
+                    By.XPATH,
+                    "//button[.//i[contains(@class, 'icon-file-excel')]]",
                 )
             )
         )
@@ -507,19 +508,19 @@ def download_report_from_asteril(
         except Exception:
             pass
 
-        # Клікаємо по іконці Excel (або кнопці)
-        try:
-            excel_icon = excel_button.find_element(By.TAG_NAME, "i")
-            driver.execute_script("arguments[0].click();", excel_icon)
-        except Exception:
-            driver.execute_script("arguments[0].click();", excel_button)
-
+        driver.execute_script("arguments[0].click();", excel_button)
         print("=== ДІАГНОСТИКА: клік по кнопці Excel виконано, чекаємо модальне вікно експорту ===")
 
-        # Обробка модального вікна та клік по "ЗВИЧАЙНИЙ"
+        # Після кліку зʼявляється модальне вікно "Експорт замовлень" з вибором
+        # ЗВИЧАЙНИЙ / У РОЗРІЗІ ТОВАРІВ — тиснемо "ЗВИЧАЙНИЙ"
         try:
-            regular_export_btn = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'ЗВИЧАЙНИЙ')] | //a[contains(text(), 'ЗВИЧАЙНИЙ')] | //div[contains(text(), 'ЗВИЧАЙНИЙ')]"))
+            regular_export_btn = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable(
+                    (
+                        By.XPATH,
+                        "//button[contains(translate(text(), 'звичайний', 'ЗВИЧАЙНИЙ'), 'ЗВИЧАЙНИЙ')]",
+                    )
+                )
             )
             driver.execute_script("arguments[0].click();", regular_export_btn)
             print("=== ДІАГНОСТИКА: кнопку 'ЗВИЧАЙНИЙ' натиснуто, чекаємо завантаження файлу ===")
@@ -540,7 +541,7 @@ def download_report_from_asteril(
             print(f"=== ДІАГНОСТИКА: не вдалось отримати логи консолі: {log_err} ===")
 
         downloaded_file = None
-        for i in range(45):
+        for i in range(120):
             time.sleep(1)
             files = (
                 glob.glob(os.path.join(download_dir, "*.xlsx"))
@@ -550,14 +551,21 @@ def download_report_from_asteril(
             temp_files = glob.glob(
                 os.path.join(download_dir, "*.crdownload")
             ) + glob.glob(os.path.join(download_dir, "*.tmp"))
-            
+
+            if i in (4, 14, 29, 59, 89) or (i % 30 == 0 and i > 0):
+                print(
+                    f"=== ДІАГНОСТИКА: [{i+1}с] вміст {download_dir}: "
+                    f"{os.listdir(download_dir) if os.path.exists(download_dir) else 'папки немає'} ==="
+                )
+
             if files and not temp_files:
                 downloaded_file = files[0]
                 break
 
         if not downloaded_file:
+            print(f"=== ДІАГНОСТИКА: поточний URL перед помилкою: {driver.current_url} ===")
             raise TimeoutError(
-                "Файл не завантажився за 45 секунд через обмеження пам'яті на безкоштовному тарифі."
+                "Файл не завантажився в папку temp_downloads за 120 секунд."
             )
         return downloaded_file
 
