@@ -541,12 +541,13 @@ def download_report_from_asteril(
         time.sleep(3)
         try:
             browser_logs = driver.get_log("browser")
-            if browser_logs:
-                print("=== ДІАГНОСТИКА: консоль браузера після кліку ===")
-                for entry in browser_logs:
-                    print(f"  [{entry.get('level')}] {entry.get('message')}")
-            else:
-                print("=== ДІАГНОСТИКА: консоль браузера порожня (нових записів немає) ===")
+            severe_logs = [e for e in browser_logs if e.get("level") == "SEVERE"]
+            print(
+                f"=== ДІАГНОСТИКА: консоль браузера — всього {len(browser_logs)} записів, "
+                f"SEVERE: {len(severe_logs)} ==="
+            )
+            for entry in severe_logs[:5]:
+                print(f"  [SEVERE] {entry.get('message')}")
         except Exception as log_err:
             print(f"=== ДІАГНОСТИКА: не вдалось отримати логи консолі: {log_err} ===")
 
