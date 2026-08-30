@@ -575,7 +575,6 @@ def download_report_from_asteril(
             raise TimeoutError(
                 "Файл не завантажився за 45 секунд через обмеження пам'яті на безкоштовному тарифі."
             )
-            )
         return downloaded_file
 
     finally:
