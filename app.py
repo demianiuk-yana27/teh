@@ -690,7 +690,7 @@ def process_one():
         values=[[datetime.now().strftime("%d.%m")]],
     )
     sheet.update(
-        range_name=f"D{first_free_row + 1}:F{first_free_row + len(raw_values) - 1}",
+        range_name=f"D{first_free_row + 1}:F{first_free_row + len(raw_values)}",
         values=raw_values,
     )
     return len(filtered_df)
@@ -763,7 +763,7 @@ def process_two():
         ],
     )
     sheet.update(
-        range_name=f"D{first_free_row + 1}:G{first_free_row + len(raw_values) - 1}",
+        range_name=f"D{first_free_row + 1}:G{first_free_row + len(raw_values)}",
         values=raw_values,
     )
     return len(filtered_df)
