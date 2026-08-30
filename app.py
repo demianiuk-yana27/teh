@@ -3,6 +3,7 @@ import json
 import os
 import platform
 import time
+import traceback
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, render_template_string
 import pandas as pd
@@ -878,6 +879,8 @@ def run_process_endpoint(process_num):
 
         return jsonify({"status": "success", "message": msg})
     except Exception as e:
+        print(f"=== ПОМИЛКА в процесі {process_num} ===")
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
