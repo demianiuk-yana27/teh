@@ -305,6 +305,16 @@ def download_report_from_asteril(
         # Локальний запуск (не на Render) — Selenium сам знайде Chrome і драйвер
         driver = webdriver.Chrome(options=chrome_options)
 
+    # У headless-режимі Chrome за замовчуванням блокує завантаження файлів —
+    # без цієї команди файл ніколи не потрапить у download_dir.
+    driver.execute_cdp_cmd(
+        "Page.setDownloadBehavior",
+        {
+            "behavior": "allow",
+            "downloadPath": os.path.abspath(download_dir),
+        },
+    )
+
     wait = WebDriverWait(driver, 45)
 
     try:
