@@ -256,6 +256,7 @@ def download_report_from_asteril(
         cookies_file = os.path.abspath(cookies_file)
 
     chrome_options = webdriver.ChromeOptions()
+    chrome_options.set_capability("goog:loggingPrefs", {"browser": "ALL", "performance": "ALL"})
     chrome_options.add_argument("--headless=old")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
@@ -524,7 +525,17 @@ def download_report_from_asteril(
         )
         safe_click(driver, excel_icon)
         print("=== ДІАГНОСТИКА: клік по кнопці Excel виконано, чекаємо файл ===")
-        time.sleep(1.5)
+        time.sleep(3)
+        try:
+            browser_logs = driver.get_log("browser")
+            if browser_logs:
+                print("=== ДІАГНОСТИКА: консоль браузера після кліку ===")
+                for entry in browser_logs:
+                    print(f"  [{entry.get('level')}] {entry.get('message')}")
+            else:
+                print("=== ДІАГНОСТИКА: консоль браузера порожня ===")
+        except Exception as log_err:
+            print(f"=== ДІАГНОСТИКА: не вдалось отримати логи консолі: {log_err} ===")
 
         downloaded_file = None
         for i in range(90):
