@@ -33,17 +33,28 @@ SCOPES = [
 app = Flask(__name__)
 
 
+def _resolve_secret_path(filename):
+    """Шукає секретний файл спершу в Render Secret Files (/etc/secrets/),
+    потім у робочій директорії застосунку (для локального запуску)."""
+    render_secret_path = f"/etc/secrets/{filename}"
+    if os.path.exists(render_secret_path):
+        return render_secret_path
+    return filename
+
+
 def get_gspread_client():
     creds = None
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    token_path = _resolve_secret_path("token.json")
+    if os.path.exists(token_path):
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
             raise FileNotFoundError(
-                "Файл 'token.json' не знайдено на сервері! Авторизуйтеся локально та завантажте token.json у репозиторій."
+                "Файл 'token.json' не знайдено на сервері! Додайте його як Secret File у Render "
+                "(Environment → Secret Files) з назвою 'token.json'."
             )
 
     return gspread.authorize(creds)
@@ -240,7 +251,9 @@ def download_report_from_asteril(
         except Exception:
             pass
 
-    cookies_file = os.path.abspath("asteril_cookies.json")
+    cookies_file = _resolve_secret_path("asteril_cookies.json")
+    if not os.path.isabs(cookies_file):
+        cookies_file = os.path.abspath(cookies_file)
 
     chrome_options = webdriver.ChromeOptions()
     chrome_options.add_argument("--headless=old")
