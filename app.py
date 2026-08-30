@@ -348,6 +348,39 @@ def download_report_from_asteril(
         if driver.current_url.rstrip("/") != orders_url.rstrip("/"):
             driver.get(orders_url)
 
+        # Якщо кукі не спрацювали (наприклад, CRM привʼязує сесію до IP) —
+        # логінимось напряму через форму логін/пароль.
+        if "login" in driver.current_url:
+            print("=== Кукі не авторизували сесію — виконуємо логін через форму ===")
+            asteril_login = os.environ.get("ASTERIL_LOGIN")
+            asteril_password = os.environ.get("ASTERIL_PASSWORD")
+            if not asteril_login or not asteril_password:
+                raise RuntimeError(
+                    "Не задано ASTERIL_LOGIN / ASTERIL_PASSWORD у змінних середовища сервера — "
+                    "автологін неможливий."
+                )
+
+            email_input = wait.until(
+                EC.presence_of_element_located((By.NAME, "email"))
+            )
+            password_input = driver.find_element(By.NAME, "password")
+
+            email_input.clear()
+            email_input.send_keys(asteril_login)
+            password_input.clear()
+            password_input.send_keys(asteril_password)
+
+            submit_btn = driver.find_element(
+                By.XPATH, "//button[@type='submit']"
+            )
+            submit_btn.click()
+
+            wait.until(lambda d: "login" not in d.current_url)
+            time.sleep(2)
+
+            if driver.current_url.rstrip("/") != orders_url.rstrip("/"):
+                driver.get(orders_url)
+
         try:
             wait.until(
                 EC.presence_of_element_located(
