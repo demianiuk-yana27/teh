@@ -263,7 +263,6 @@ def download_report_from_asteril(
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1024,768")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    # Прапорці для зменшення споживання памʼяті (важливо на Render free-тарифі, 512MB RAM)
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-background-networking")
     chrome_options.add_argument("--disable-default-apps")
@@ -280,9 +279,7 @@ def download_report_from_asteril(
     chrome_options.add_argument("--disk-cache-size=0")
     chrome_options.add_argument("--no-first-run")
     chrome_options.add_argument("--no-default-browser-check")
-    chrome_options.add_argument("--js-flags=--max-old-space-size=128")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--js-flags=--max-old-space-size=64") # Зменшуємо ліміт JS-пам'яті вдвічі
+    chrome_options.add_argument("--js-flags=--max-old-space-size=64")
     chrome_options.add_argument("--disable-accelerated-2d-canvas")
     chrome_options.add_argument("--no-zygote")
 
@@ -296,7 +293,6 @@ def download_report_from_asteril(
         "download.default_directory": os.path.abspath(download_dir),
         "download.prompt_for_download": False,
         "download.directory_upgrade": True,
-        # Зображення не потрібні для вигрузки таблиць — економимо памʼять
         "profile.managed_default_content_settings.images": 2,
     }
     chrome_options.add_experimental_option("prefs", prefs)
@@ -307,12 +303,8 @@ def download_report_from_asteril(
             options=chrome_options
         )
     else:
-        # Локальний запуск (не на Render) — Selenium сам знайде Chrome і драйвер
         driver = webdriver.Chrome(options=chrome_options)
 
-    # У headless-режимі Chrome за замовчуванням блокує завантаження файлів —
-    # без цієї команди файл ніколи не потрапить у download_dir.
-    # Page.setDownloadBehavior — для старіших версій; Browser.setDownloadBehavior — для новіших.
     abs_download_path = os.path.abspath(download_dir)
     try:
         driver.execute_cdp_cmd(
@@ -356,10 +348,6 @@ def download_report_from_asteril(
                         added += 1
                     except Exception as cookie_err:
                         failed += 1
-                        print(
-                            f"  Не вдалось додати кукі '{cookie.get('name')}' "
-                            f"(domain={cookie.get('domain')}): {cookie_err}"
-                        )
                 print(f"Додано успішно: {added}, не вдалось: {failed}")
                 driver.refresh()
                 time.sleep(3)
@@ -376,8 +364,6 @@ def download_report_from_asteril(
         if driver.current_url.rstrip("/") != orders_url.rstrip("/"):
             driver.get(orders_url)
 
-        # Якщо кукі не спрацювали (наприклад, CRM привʼязує сесію до IP) —
-        # логінимось напряму через форму логін/пароль.
         if "login" in driver.current_url:
             print("=== Кукі не авторизували сесію — виконуємо логін через форму ===")
             asteril_login = os.environ.get("ASTERIL_LOGIN")
@@ -420,23 +406,6 @@ def download_report_from_asteril(
             )
         except TimeoutException:
             print("=== ДІАГНОСТИКА: не дочекались кнопки фільтра ===")
-            print(f"Поточний URL: {driver.current_url}")
-            print(f"Заголовок сторінки: {driver.title}")
-            if "login" in driver.current_url:
-                print("=== ДІАГНОСТИКА: поля форми логіну ===")
-                for inp in driver.find_elements(By.TAG_NAME, "input"):
-                    print(
-                        f"  <input> name={inp.get_attribute('name')!r} "
-                        f"id={inp.get_attribute('id')!r} "
-                        f"type={inp.get_attribute('type')!r} "
-                        f"placeholder={inp.get_attribute('placeholder')!r}"
-                    )
-                for btn in driver.find_elements(By.TAG_NAME, "button"):
-                    print(
-                        f"  <button> text={btn.text!r} type={btn.get_attribute('type')!r} "
-                        f"id={btn.get_attribute('id')!r}"
-                    )
-            print(f"Фрагмент HTML (перші 1500 символів):\n{driver.page_source[:1500]}")
             raise
         time.sleep(2)
         clear_all_filters(driver, timeout=45)
@@ -522,26 +491,41 @@ def download_report_from_asteril(
         except Exception as e:
             print(f"=== ДІАГНОСТИКА: не вдалось порахувати рядки: {e} ===")
 
-        excel_icon = wait.until(
+        # Оновлений пошук кнопки Excel згідно з останньою діагностикою
+        excel_button = wait.until(
             EC.presence_of_element_located(
                 (
-                    By.XPATH,
-                    "//button[contains(@class, 'excel') or .//i[contains(@class,'excel')]] | //button[contains(text(), 'Excel')]",
+                    By.CSS_SELECTOR,
+                    "button.dt-button.btn.btn-default.btn-icon span i.icon-file-excel, button.dt-button.btn.btn-default.btn-icon"
                 )
             )
         )
-        print(
-            f"=== ДІАГНОСТИКА: знайдено кнопку Excel — "
-            f"tag={excel_icon.tag_name!r} text={excel_icon.text!r} "
-            f"outerHTML={excel_icon.get_attribute('outerHTML')[:300]!r} ==="
-        )
+        print(f"=== ДІАГНОСТИКА: знайдено кнопку Excel — outerHTML='{excel_button.get_attribute('outerHTML')}' ===")
+
         try:
-            driver.get_log("browser")  # очищуємо буфер, щоб бачити лише нові записи
+            driver.get_log("browser")
         except Exception:
             pass
 
-        safe_click(driver, excel_icon)
-        print("=== ДІАГНОСТИКА: клік по кнопці Excel виконано, чекаємо файл ===")
+        # Клікаємо по іконці Excel (або кнопці)
+        try:
+            excel_icon = excel_button.find_element(By.TAG_NAME, "i")
+            driver.execute_script("arguments[0].click();", excel_icon)
+        except Exception:
+            driver.execute_script("arguments[0].click();", excel_button)
+
+        print("=== ДІАГНОСТИКА: клік по кнопці Excel виконано, чекаємо модальне вікно експорту ===")
+
+        # Обробка модального вікна та клік по "ЗВИЧАЙНИЙ"
+        try:
+            regular_export_btn = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'ЗВИЧАЙНИЙ')] | //a[contains(text(), 'ЗВИЧАЙНИЙ')] | //div[contains(text(), 'ЗВИЧАЙНИЙ')]"))
+            )
+            driver.execute_script("arguments[0].click();", regular_export_btn)
+            print("=== ДІАГНОСТИКА: кнопку 'ЗВИЧАЙНИЙ' натиснуто, чекаємо завантаження файлу ===")
+        except Exception as e:
+            print(f"=== ДІАГНОСТИКА: модальне вікно не з'явилось або кнопка не знайдена: {e} ===")
+
         time.sleep(3)
         try:
             browser_logs = driver.get_log("browser")
@@ -582,8 +566,6 @@ def download_report_from_asteril(
             driver.quit()
         except Exception:
             pass
-
-
 # --- ЛОГІКА ОБРОБКИ ТА ЗАПИСУ ДЛЯ ПРОЦЕСІВ ---
 def process_one():
     input_file = download_report_from_asteril(
