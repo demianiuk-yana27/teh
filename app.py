@@ -336,14 +336,21 @@ def download_report_from_asteril(
         if driver.current_url.rstrip("/") != orders_url.rstrip("/"):
             driver.get(orders_url)
 
-        wait.until(
-            EC.presence_of_element_located(
-                (
-                    By.XPATH,
-                    "//button[contains(translate(text(), 'ФІЛЬТРУВАТИ', 'фільтрувати'), 'фільтр')] | //button[contains(@class, 'filter')]",
+        try:
+            wait.until(
+                EC.presence_of_element_located(
+                    (
+                        By.XPATH,
+                        "//button[contains(translate(text(), 'ФІЛЬТРУВАТИ', 'фільтрувати'), 'фільтр')] | //button[contains(@class, 'filter')]",
+                    )
                 )
             )
-        )
+        except TimeoutException:
+            print("=== ДІАГНОСТИКА: не дочекались кнопки фільтра ===")
+            print(f"Поточний URL: {driver.current_url}")
+            print(f"Заголовок сторінки: {driver.title}")
+            print(f"Фрагмент HTML (перші 1500 символів):\n{driver.page_source[:1500]}")
+            raise
         time.sleep(2)
         clear_all_filters(driver, timeout=45)
 
