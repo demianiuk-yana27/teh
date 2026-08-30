@@ -281,6 +281,10 @@ def download_report_from_asteril(
     chrome_options.add_argument("--no-first-run")
     chrome_options.add_argument("--no-default-browser-check")
     chrome_options.add_argument("--js-flags=--max-old-space-size=128")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--js-flags=--max-old-space-size=64") # Зменшуємо ліміт JS-пам'яті вдвічі
+    chrome_options.add_argument("--disable-accelerated-2d-canvas")
+    chrome_options.add_argument("--no-zygote")
 
     system_chrome_bin = "/usr/bin/chromium"
     system_chromedriver_bin = "/usr/bin/chromedriver"
@@ -552,7 +556,7 @@ def download_report_from_asteril(
             print(f"=== ДІАГНОСТИКА: не вдалось отримати логи консолі: {log_err} ===")
 
         downloaded_file = None
-        for i in range(240):
+        for i in range(45):
             time.sleep(1)
             files = (
                 glob.glob(os.path.join(download_dir, "*.xlsx"))
@@ -562,19 +566,15 @@ def download_report_from_asteril(
             temp_files = glob.glob(
                 os.path.join(download_dir, "*.crdownload")
             ) + glob.glob(os.path.join(download_dir, "*.tmp"))
-            if i in (4, 14, 29, 59, 89, 119) or (i % 30 == 0 and i > 0):
-                print(
-                    f"=== ДІАГНОСТИКА: [{i+1}с] вміст {download_dir}: "
-                    f"{os.listdir(download_dir) if os.path.exists(download_dir) else 'папки немає'} ==="
-                )
+            
             if files and not temp_files:
                 downloaded_file = files[0]
                 break
 
         if not downloaded_file:
-            print(f"=== ДІАГНОСТИКА: поточний URL перед помилкою: {driver.current_url} ===")
             raise TimeoutError(
-                "Файл не завантажився в папку temp_downloads за 240 секунд."
+                "Файл не завантажився за 45 секунд через обмеження пам'яті на безкоштовному тарифі."
+            )
             )
         return downloaded_file
 
