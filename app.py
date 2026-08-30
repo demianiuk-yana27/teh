@@ -307,13 +307,26 @@ def download_report_from_asteril(
 
     # У headless-режимі Chrome за замовчуванням блокує завантаження файлів —
     # без цієї команди файл ніколи не потрапить у download_dir.
-    driver.execute_cdp_cmd(
-        "Page.setDownloadBehavior",
-        {
-            "behavior": "allow",
-            "downloadPath": os.path.abspath(download_dir),
-        },
-    )
+    # Page.setDownloadBehavior — для старіших версій; Browser.setDownloadBehavior — для новіших.
+    abs_download_path = os.path.abspath(download_dir)
+    try:
+        driver.execute_cdp_cmd(
+            "Page.setDownloadBehavior",
+            {"behavior": "allow", "downloadPath": abs_download_path},
+        )
+    except Exception as e:
+        print(f"=== ДІАГНОСТИКА: Page.setDownloadBehavior не спрацював: {e} ===")
+    try:
+        driver.execute_cdp_cmd(
+            "Browser.setDownloadBehavior",
+            {
+                "behavior": "allow",
+                "downloadPath": abs_download_path,
+                "eventsEnabled": True,
+            },
+        )
+    except Exception as e:
+        print(f"=== ДІАГНОСТИКА: Browser.setDownloadBehavior не спрацював: {e} ===")
 
     wait = WebDriverWait(driver, 45)
 
@@ -504,11 +517,17 @@ def download_report_from_asteril(
                 )
             )
         )
+        print(
+            f"=== ДІАГНОСТИКА: знайдено кнопку Excel — "
+            f"tag={excel_icon.tag_name!r} text={excel_icon.text!r} "
+            f"outerHTML={excel_icon.get_attribute('outerHTML')[:300]!r} ==="
+        )
         safe_click(driver, excel_icon)
+        print("=== ДІАГНОСТИКА: клік по кнопці Excel виконано, чекаємо файл ===")
         time.sleep(1.5)
 
         downloaded_file = None
-        for _ in range(90):
+        for i in range(90):
             time.sleep(1)
             files = (
                 glob.glob(os.path.join(download_dir, "*.xlsx"))
@@ -518,11 +537,17 @@ def download_report_from_asteril(
             temp_files = glob.glob(
                 os.path.join(download_dir, "*.crdownload")
             ) + glob.glob(os.path.join(download_dir, "*.tmp"))
+            if i in (4, 14, 29, 59) or (i % 15 == 0 and i > 0):
+                print(
+                    f"=== ДІАГНОСТИКА: [{i+1}с] вміст {download_dir}: "
+                    f"{os.listdir(download_dir) if os.path.exists(download_dir) else 'папки немає'} ==="
+                )
             if files and not temp_files:
                 downloaded_file = files[0]
                 break
 
         if not downloaded_file:
+            print(f"=== ДІАГНОСТИКА: поточний URL перед помилкою: {driver.current_url} ===")
             raise TimeoutError(
                 "Файл не завантажився в папку temp_downloads за 90 секунд."
             )
