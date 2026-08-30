@@ -681,7 +681,10 @@ def process_one():
     if not raw_values:
         return 0
 
-    first_free_row = len(sheet.col_values(4)) + 1
+    # Рахуємо перший вільний рядок за стовпцями A і D одночасно — це захищає
+    # від випадкового перезапису рядка, який раніше отримав лише дату (A),
+    # але не отримав даних (D), через збій попереднього запуску.
+    first_free_row = max(len(sheet.col_values(1)), len(sheet.col_values(4))) + 1
     ensure_capacity(sheet, first_free_row + len(raw_values))
     remove_data_validation(sheet, first_free_row, 1, first_free_row, 2)
 
@@ -748,7 +751,10 @@ def process_two():
     if not raw_values:
         return 0
 
-    first_free_row = len(sheet.col_values(4)) + 1
+    # Рахуємо перший вільний рядок за стовпцями A і D одночасно — це захищає
+    # від випадкового перезапису рядка, який раніше отримав лише дату (A/B),
+    # але не отримав даних (D:G), через збій попереднього запуску.
+    first_free_row = max(len(sheet.col_values(1)), len(sheet.col_values(4))) + 1
     ensure_capacity(sheet, first_free_row + len(raw_values))
     remove_data_validation(sheet, first_free_row, 1, first_free_row, 2)
 
