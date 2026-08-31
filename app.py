@@ -748,7 +748,7 @@ def process_two():
         "Dobromarket",
         "Shop-Market-Top",
         "Trendly",
-        "HomeMix",
+        "HomeMix-дроп",
         "Інстаграм",
         "Marcat -дроп",
         "Заміна",
@@ -816,6 +816,7 @@ def process_three():
         "ФО 2026",
         "фо отримано (дроп)",
         "ФОотримано Укрпошта 2026",
+        "ФО опт",
     ]
     stores_to_remove = [
         "Дроп Котик trendland",
@@ -827,7 +828,7 @@ def process_three():
         "Dobromarket",
         "Shop-Market-Top",
         "Trendly",
-        "HomeMix",
+        "HomeMix-дроп",
         "Інстаграм",
         "Marcat -дроп",
         "Заміна",
