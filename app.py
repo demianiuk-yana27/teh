@@ -734,12 +734,35 @@ def process_two():
     ]
     responsible_to_remove = [name.strip() for name in responsible_to_remove]
 
+    stores_to_remove = [
+        "Дроп Котик trendland",
+        "Дроп Котик clickmart",
+        "Mona Liza",
+        "One Bird",
+        "Best-Buy",
+        "Home81",
+        "Dobromarket",
+        "Shop-Market-Top",
+        "Trendly",
+        "HomeMix",
+        "Інстаграм",
+        "Marcat -дроп",
+        "Заміна",
+        "Довідправка",
+        "Дропшипінг",
+        "Інстаграм ОМ",
+        "Експрес-шоп -дроп",
+        "Skandi",
+    ]
+    stores_to_remove = [name.strip() for name in stores_to_remove]
+
     df["Відповідальний"] = df["Відповідальний"].astype(str).str.strip()
     df["Магазин"] = df["Магазин"].astype(str).str.strip()
 
-    filtered_df = df[~df["Відповідальний"].isin(responsible_to_remove)].sort_values(
-        by="Магазин", ascending=True
-    )
+    filtered_df = df[
+        ~df["Відповідальний"].isin(responsible_to_remove)
+        & ~df["Магазин"].isin(stores_to_remove)
+    ].sort_values(by="Магазин", ascending=True)
 
     client = get_gspread_client()
     sheet = client.open_by_key(
