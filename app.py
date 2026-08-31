@@ -974,7 +974,7 @@ HTML_TEMPLATE = """
         
         <button class="btn btn-1" onclick="runProcess(1)">🗓️ Запустити Процес 1 (КТВ)</button><br>
         <button class="btn btn-2" onclick="runProcess(2)">🚚 Запустити Процес 2 (Приїхала)</button><br>
-        <button class="btn btn-3" onclick="runProcess(3)">📞 Запустити Процес 3 (Відгуки)</button>
+        <button class="btn btn-3" onclick="runProcess(3)">💭 Запустити Процес 3 (Відгуки)</button>
 
         <div id="result"></div>
     </div>
