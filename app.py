@@ -896,7 +896,6 @@ def process_three():
     ]
     drop_stores = [
         "Shopik",
-        "LOON",
         "Croko",
         "Vsemarket",
         "HataSpace",
