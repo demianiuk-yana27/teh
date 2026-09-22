@@ -663,7 +663,10 @@ def process_one():
         "Інстаграм ОМ",
         "Експрес-шоп -дроп",
         "Дроп Котик trendland",
+        "Дроп Котик foxxi",
+        "ClickMart Shop",
         "Дропшипінг",
+        "Klik Shop - дроп",
     ]
     allowed_utm = ["mobile_catalog_app", "portal", "bigl"]
 
@@ -740,7 +743,8 @@ def process_two():
 
     stores_to_remove = [
         "Дроп Котик trendland",
-        "Дроп Котик clickmart",
+        "ClickMart Shop",
+        "Дроп Котик foxxi",
         "Mona Liza",
         "One Bird",
         "Best-Buy",
@@ -757,6 +761,7 @@ def process_two():
         "Інстаграм ОМ",
         "Експрес-шоп -дроп",
         "Skandi",
+        "Klik Shop - дроп",
     ]
     stores_to_remove = [name.strip() for name in stores_to_remove]
 
@@ -820,7 +825,8 @@ def process_three():
     ]
     stores_to_remove = [
         "Дроп Котик trendland",
-        "Дроп Котик clickmart",
+        "ClickMart Shop",
+        "Дроп Котик foxxi",
         "Mona Liza",
         "One Bird",
         "Best-Buy",
@@ -837,6 +843,7 @@ def process_three():
         "Інстаграм ОМ",
         "Експрес-шоп -дроп",
         "Skandi",
+        "Klik Shop - дроп",
     ]
     allowed_utm = ["mobile_catalog_app", "portal"]
 
@@ -907,7 +914,6 @@ def process_three():
         "BoTreba дроп",
         "FENIX-UA - дроп",
         "Easyshop-дроп",
-        "Klik Shop - дроп",
         "BoTreba -дроп",
     ]
 
