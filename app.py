@@ -667,6 +667,7 @@ def process_one():
         "ClickMart Shop",
         "Дропшипінг",
         "Klik Shop - дроп",
+        "самовивіз",
     ]
     allowed_utm = ["mobile_catalog_app", "portal", "bigl"]
 
@@ -762,6 +763,7 @@ def process_two():
         "Експрес-шоп -дроп",
         "Skandi",
         "Klik Shop - дроп",
+        "самовивіз",
     ]
     stores_to_remove = [name.strip() for name in stores_to_remove]
 
@@ -844,6 +846,7 @@ def process_three():
         "Експрес-шоп -дроп",
         "Skandi",
         "Klik Shop - дроп",
+        "самовивіз",
     ]
     allowed_utm = ["mobile_catalog_app", "portal"]
 
