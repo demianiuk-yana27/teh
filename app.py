@@ -904,6 +904,12 @@ def process_three():
         "TrendVibe",
         "Yellow Monkey",
     ]
+    new_stores = [
+        "Moods",
+        "Praktix",
+        "MIXORA",
+        "ПІДЕ",
+    ]
     drop_stores = [
         "Shopik",
         "Croko",
@@ -921,16 +927,19 @@ def process_three():
     ]
 
     df_yellow = filtered_df[filtered_df["Магазин"].isin(yellow_stores)]
+    df_new = filtered_df[filtered_df["Магазин"].isin(new_stores)]
     df_drop = filtered_df[filtered_df["Магазин"].isin(drop_stores)]
     df_nashi = filtered_df[
         ~filtered_df["Магазин"].isin(yellow_stores)
         & ~filtered_df["Магазин"].isin(drop_stores)
+        & ~filtered_df["Магазин"].isin(new_stores)
     ]
 
     targets = [
         (df_yellow, "Yellow/Laggi/Born/Bybka/TrendVibe"),
         (df_drop, "Дроп"),
         (df_nashi, "Наші"),
+        (df_new, "Нові"),
     ]
     cols_order = [
         "Дата створення",
