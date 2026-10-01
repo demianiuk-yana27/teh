@@ -909,6 +909,7 @@ def process_three():
         "Praktix",
         "MIXORA",
         "ПІДЕ",
+        "Vdalo Shop",
     ]
     drop_stores = [
         "Shopik",
