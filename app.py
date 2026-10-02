@@ -447,7 +447,7 @@ def download_report_from_asteril(
             )
             if date_change_input:
                 set_custom_date_range(
-                    driver, date_change_input, date_5_days_ago, today_str
+                    driver, date_change_input, date_4_days_ago, today_str
                 )
 
         elif process_type == 3:
