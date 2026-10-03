@@ -798,7 +798,7 @@ def process_two():
         values=[
             [
                 today.strftime("%d.%m"),
-                (today - timedelta(days=5)).strftime("%d.%m"),
+                (today - timedelta(days=4)).strftime("%d.%m"),
             ]
         ],
     )
@@ -910,6 +910,7 @@ def process_three():
         "MIXORA",
         "ПІДЕ",
         "Vdalo Shop",
+        "Two birds",
     ]
     drop_stores = [
         "Shopik",
