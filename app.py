@@ -99,7 +99,7 @@ def safe_click(driver, element):
         driver.execute_script("arguments[0].click();", element)
 
 
-def wait_for_crm_loader(driver, timeout=60):
+def wait_for_crm_loader(driver, timeout=120):
     time.sleep(1.5)
     try:
         WebDriverWait(driver, timeout).until(
