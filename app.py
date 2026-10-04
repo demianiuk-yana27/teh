@@ -430,7 +430,7 @@ def download_report_from_asteril(
                 select_date_preset(driver, deadline_input, "Сьогодні")
 
         elif process_type == 2:
-            date_4_days_ago = (today - timedelta(days=4)).strftime("%d.%m.%Y")
+            date_3_days_ago = (today - timedelta(days=3)).strftime("%d.%m.%Y")
             today_str = today.strftime("%d.%m.%Y")
             try:
                 for btn in driver.find_elements(
@@ -447,7 +447,7 @@ def download_report_from_asteril(
             )
             if date_change_input:
                 set_custom_date_range(
-                    driver, date_change_input, date_4_days_ago, today_str
+                    driver, date_change_input, date_3_days_ago, today_str
                 )
 
         elif process_type == 3:
@@ -798,7 +798,7 @@ def process_two():
         values=[
             [
                 today.strftime("%d.%m"),
-                (today - timedelta(days=4)).strftime("%d.%m"),
+                (today - timedelta(days=3)).strftime("%d.%m"),
             ]
         ],
     )
