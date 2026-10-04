@@ -430,26 +430,26 @@ def download_report_from_asteril(
                 select_date_preset(driver, deadline_input, "Сьогодні")
 
         elif process_type == 2:
-            date_3_days_ago = (today - timedelta(days=3)).strftime("%d.%m.%Y")
-            today_str = today.strftime("%d.%m.%Y")
-            try:
-                for btn in driver.find_elements(
-                    By.XPATH, "//*[normalize-space(text())='Приїхала']"
-                ):
-                    if btn.is_displayed():
-                        safe_click(driver, btn)
-                        time.sleep(1.5)
-                        break
-            except Exception:
-                pass
-            date_change_input = find_date_input(
-                driver, ["дата зміни", "updated_at", "зміни"]
-            )
-            if date_change_input:
-                set_custom_date_range(
-                    driver, date_change_input, date_3_days_ago, today_str
-                )
+    date_3_days_ago = (today - timedelta(days=3)).strftime("%d.%m.%Y")
 
+    try:
+        for btn in driver.find_elements(
+            By.XPATH, "//*[normalize-space(text())='Приїхала']"
+        ):
+            if btn.is_displayed():
+                safe_click(driver, btn)
+                time.sleep(1.5)
+                break
+    except Exception:
+        pass
+
+    date_change_input = find_date_input(
+        driver, ["дата зміни", "updated_at", "зміни"]
+    )
+    if date_change_input:
+        set_custom_date_range(
+            driver, date_change_input, date_3_days_ago, date_3_days_ago
+        )
         elif process_type == 3:
             exact_7_days_ago = (today - timedelta(days=7)).strftime("%d.%m.%Y")
             try:
