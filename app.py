@@ -411,7 +411,7 @@ def download_report_from_asteril(
         clear_all_filters(driver, timeout=45)
 
         today = datetime.now()
-                if process_type == 1:
+        if process_type == 1:
             try:
                 for btn in driver.find_elements(
                     By.XPATH,
