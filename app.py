@@ -1002,72 +1002,159 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <title>Asteril CRM Automation</title>
+
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; margin-top: 60px; background: #f4f4f9; }
-        .container { background: white; padding: 40px; border-radius: 10px; display: inline-block; box-shadow: 0px 4px 10px rgba(0,0,0,0.1); }
-        .btn { padding: 14px 24px; font-size: 16px; margin: 10px; cursor: pointer; color: white; border: none; border-radius: 5px; width: 350px; font-weight: bold; }
-        .btn-1 { background-color: #1f538d; }
-        .btn-2 { background-color: #28a745; }
-        .btn-3 { background-color: #dc3545; }
-        .btn:hover { opacity: 0.9; }
-        #result { margin-top: 20px; font-weight: bold; white-space: pre-wrap; color: #333; }
-        .loading { color: #007bff; }
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 60px;
+            background: #f4f4f9;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            display: inline-block;
+            box-shadow: 0px 4px 10px rgba(0,0,0,0.1);
+        }
+
+        .btn {
+            padding: 14px 24px;
+            font-size: 16px;
+            margin: 10px;
+            cursor: pointer;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            width: 350px;
+            font-weight: bold;
+        }
+
+        .btn-1 {
+            background-color: #1f538d;
+        }
+
+        .btn-2 {
+            background-color: #28a745;
+        }
+
+        .btn-3 {
+            background-color: #dc3545;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        #result {
+            margin-top: 20px;
+            font-weight: bold;
+            white-space: pre-wrap;
+            color: #333;
+        }
+
+        .loading {
+            color: #007bff;
+        }
     </style>
 </head>
+
 <body>
+
     <div class="container">
+
         <h2>⚙️ Автоматизація вигрузок Asteril CRM</h2>
+
         <p>Оберіть процес для виконання на сервері:</p>
-        
-        <button class="btn btn-1" onclick="runProcess(1)">🗓️ Запустити Процес 1 (КТВ)</button><br>
-        <button class="btn btn-2" onclick="runProcess(2)">🚚 Запустити Процес 2 (Приїхала)</button><br>
-        <button class="btn btn-3" onclick="runProcess(3)">💭 Запустити Процес 3 (Відгуки)</button>
+
+        <button class="btn btn-1" onclick="runProcess(1)">
+            🗓️ Запустити Процес 1 (КТВ)
+        </button>
+        <br>
+
+        <button class="btn btn-2" onclick="runProcess(2)">
+            🚚 Запустити Процес 2 (Приїхала)
+        </button>
+        <br>
+
+        <button class="btn btn-3" onclick="runProcess(3)">
+            💭 Запустити Процес 3 (Відгуки)
+        </button>
 
         <div id="result"></div>
+
     </div>
 
-    <script>
-       let statusTimer = null;
+
+<script>
+
+let statusTimer = null;
+
 
 function runProcess(num) {
+
     let resDiv = document.getElementById("result");
 
     resDiv.className = "loading";
     resDiv.style.color = "#007bff";
+
     resDiv.innerText =
         "⏳ Запускаємо процес " + num + "...";
 
-    fetch('/run/' + num, { method: 'POST' })
-        .then(response => response.json())
-        .then(data => {
 
-            if (data.status === 'started') {
-                resDiv.innerText =
-                    "⏳ Процес " + num +
-                    " запущено. Можна не чекати на цій сторінці — процес працює на сервері.";
+    fetch('/run/' + num, {
+        method: 'POST'
+    })
 
-                startStatusCheck();
-            }
+    .then(response => response.json())
 
-            else if (data.status === 'busy') {
-                resDiv.className = "";
-                resDiv.style.color = "orange";
-                resDiv.innerText = "⚠️ " + data.message;
-            }
+    .then(data => {
 
-            else {
-                resDiv.className = "";
-                resDiv.style.color = "red";
-                resDiv.innerText = "❌ " + data.message;
-            }
-        })
-        .catch(error => {
+        if (data.status === 'started') {
+
+            resDiv.className = "loading";
+            resDiv.style.color = "#007bff";
+
+            resDiv.innerText =
+                "⏳ Процес " + num +
+                " запущено. Не натискайте кнопку повторно.";
+
+            startStatusCheck();
+        }
+
+
+        else if (data.status === 'busy') {
+
+            resDiv.className = "";
+            resDiv.style.color = "orange";
+
+            resDiv.innerText =
+                "⚠️ " + data.message;
+        }
+
+
+        else {
+
             resDiv.className = "";
             resDiv.style.color = "red";
+
             resDiv.innerText =
-                "❌ Не вдалося запустити процес: " + error;
-        });
+                "❌ " + data.message;
+        }
+
+    })
+
+    .catch(error => {
+
+        resDiv.className = "";
+        resDiv.style.color = "red";
+
+        resDiv.innerText =
+            "❌ Не вдалося запустити процес: " + error;
+    });
 }
+
 
 
 function startStatusCheck() {
@@ -1076,73 +1163,116 @@ function startStatusCheck() {
         clearInterval(statusTimer);
     }
 
+
     statusTimer = setInterval(() => {
 
         fetch('/status')
-            .then(response => response.json())
-            .then(data => {
 
-                let resDiv = document.getElementById("result");
+        .then(response => response.json())
 
-                if (data.status === 'running') {
+        .then(data => {
 
-                    resDiv.className = "loading";
-                    resDiv.style.color = "#007bff";
+            let resDiv = document.getElementById("result");
 
-                    resDiv.innerText =
-                        "⏳ Виконується процес " +
-                        data.process_num +
-                        "... Не натискайте кнопку повторно.";
 
-                }
+            if (data.status === 'running') {
 
-                else if (data.status === 'success') {
+                resDiv.className = "loading";
+                resDiv.style.color = "#007bff";
 
-                    clearInterval(statusTimer);
+                resDiv.innerText =
+                    "⏳ Виконується процес " +
+                    data.process_num +
+                    "... Не натискайте кнопку повторно.";
+            }
 
-                    resDiv.className = "";
-                    resDiv.style.color = "green";
 
-                    resDiv.innerText =
-                        "✅ " + data.message;
-                }
+            else if (data.status === 'success') {
 
-                else if (data.status === 'error') {
+                clearInterval(statusTimer);
 
-                    clearInterval(statusTimer);
+                resDiv.className = "";
+                resDiv.style.color = "green";
 
-                    resDiv.className = "";
-                    resDiv.style.color = "red";
+                resDiv.innerText =
+                    "✅ " + data.message;
+            }
 
-                    resDiv.innerText =
-                        "❌ Помилка: " + data.message;
-                }
 
-            })
-            .catch(error => {
-                console.log("Помилка перевірки статусу:", error);
-            });
+            else if (data.status === 'error') {
+
+                clearInterval(statusTimer);
+
+                resDiv.className = "";
+                resDiv.style.color = "red";
+
+                resDiv.innerText =
+                    "❌ Помилка: " + data.message;
+            }
+
+        })
+
+
+        .catch(error => {
+
+            console.log(
+                "Помилка перевірки статусу:",
+                error
+            );
+
+        });
 
     }, 2000);
 }
+
+</script>
+
+</body>
+</html>
+"""
+
+
+# --- ФОНОВИЙ ЗАПУСК ПРОЦЕСУ ---
 def run_process_background(process_num):
+
     global process_status
 
     try:
+
         if process_num == 1:
+
             count = process_one()
-            msg = f"Процес 1 (КТВ) успішно виконано! Оброблено рядків: {count}"
+
+            msg = (
+                f"Процес 1 (КТВ) успішно виконано! "
+                f"Оброблено рядків: {count}"
+            )
+
 
         elif process_num == 2:
+
             count = process_two()
-            msg = f"Процес 2 (Приїхала) успішно виконано! Оброблено рядків: {count}"
+
+            msg = (
+                f"Процес 2 (Приїхала) успішно виконано! "
+                f"Оброблено рядків: {count}"
+            )
+
 
         elif process_num == 3:
+
             count = process_three()
-            msg = f"Процес 3 (Відгуки) успішно виконано! Оброблено рядків: {count}"
+
+            msg = (
+                f"Процес 3 (Відгуки) успішно виконано! "
+                f"Оброблено рядків: {count}"
+            )
+
 
         else:
+
             raise ValueError("Невідомий процес")
+
 
         process_status = {
             "running": False,
@@ -1151,9 +1281,13 @@ def run_process_background(process_num):
             "message": msg
         }
 
+
     except Exception as e:
+
         print(f"=== ПОМИЛКА в процесі {process_num} ===")
+
         traceback.print_exc()
+
 
         process_status = {
             "running": False,
@@ -1162,58 +1296,105 @@ def run_process_background(process_num):
             "message": str(e)
         }
 
+
     finally:
+
         process_lock.release()
 
 
+
+# --- ГОЛОВНА СТОРІНКА ---
 @app.route("/")
 def index():
+
     return render_template_string(HTML_TEMPLATE)
 
 
+
+# --- ЗАПУСК ПРОЦЕСУ ---
 @app.route("/run/<int:process_num>", methods=["POST"])
 def run_process_endpoint(process_num):
+
     global process_status
 
+
     if process_num not in [1, 2, 3]:
+
         return jsonify({
             "status": "error",
             "message": "Невідомий процес"
         }), 400
 
-    # Не дозволяємо запустити другий процес,
-    # поки перший ще працює
+
+    # Якщо інший процес уже працює —
+    # новий запуск НЕ дозволяємо
     if not process_lock.acquire(blocking=False):
+
         return jsonify({
             "status": "busy",
-            "message": f"Зараз уже виконується процес {process_status['process_num']}. "
-                       f"Дочекайтеся його завершення."
+            "message": (
+                f"Зараз уже виконується процес "
+                f"{process_status['process_num']}. "
+                f"Дочекайтеся його завершення."
+            )
         }), 409
 
+
     process_status = {
+
         "running": True,
+
         "process_num": process_num,
+
         "status": "running",
-        "message": f"Виконується процес {process_num}..."
+
+        "message": (
+            f"Виконується процес {process_num}..."
+        )
     }
 
+
     thread = threading.Thread(
+
         target=run_process_background,
+
         args=(process_num,),
+
         daemon=True
     )
+
+
     thread.start()
 
+
+    # Відповідаємо браузеру ОДРАЗУ,
+    # не чекаючи завершення Selenium
     return jsonify({
+
         "status": "started",
-        "message": f"Процес {process_num} запущено."
+
+        "message": (
+            f"Процес {process_num} запущено."
+        )
     })
-    
-    @app.route("/status")
-    def get_status():
-        return jsonify(process_status)
+
+
+
+# --- ПЕРЕВІРКА СТАТУСУ ---
+@app.route("/status")
+def get_status():
+
+    return jsonify(process_status)
+
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+
+    port = int(
+        os.environ.get("PORT", 5000)
+    )
+
+    app.run(
+        host="0.0.0.0",
+        port=port
+    )
