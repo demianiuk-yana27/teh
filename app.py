@@ -4,6 +4,7 @@ import os
 import platform
 import time
 import traceback
+import threading
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, render_template_string
 import pandas as pd
@@ -31,6 +32,15 @@ SCOPES = [
 ]
 
 app = Flask(__name__)
+
+process_lock = threading.Lock()
+
+process_status = {
+    "running": False,
+    "process_num": None,
+    "status": "idle",
+    "message": ""
+}
 
 
 def _resolve_secret_path(filename):
@@ -1017,34 +1027,143 @@ HTML_TEMPLATE = """
     </div>
 
     <script>
-        function runProcess(num) {
-            let resDiv = document.getElementById("result");
-            resDiv.className = "loading";
-            resDiv.innerText = "⏳ Виконується процес " + num + ", будь ласка, зачекайте (це може зайняти до 1-2 хв)...";
-            
-            fetch('/run/' + num, { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if(data.status === 'success') {
-                        resDiv.className = "";
-                        resDiv.style.color = "green";
-                        resDiv.innerText = "✅ " + data.message;
-                    } else {
-                        resDiv.className = "";
-                        resDiv.style.color = "red";
-                        resDiv.innerText = "❌ Помилка: " + data.message;
-                    }
-                })
-                .catch(error => {
+       let statusTimer = null;
+
+function runProcess(num) {
+    let resDiv = document.getElementById("result");
+
+    resDiv.className = "loading";
+    resDiv.style.color = "#007bff";
+    resDiv.innerText =
+        "⏳ Запускаємо процес " + num + "...";
+
+    fetch('/run/' + num, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+
+            if (data.status === 'started') {
+                resDiv.innerText =
+                    "⏳ Процес " + num +
+                    " запущено. Можна не чекати на цій сторінці — процес працює на сервері.";
+
+                startStatusCheck();
+            }
+
+            else if (data.status === 'busy') {
+                resDiv.className = "";
+                resDiv.style.color = "orange";
+                resDiv.innerText = "⚠️ " + data.message;
+            }
+
+            else {
+                resDiv.className = "";
+                resDiv.style.color = "red";
+                resDiv.innerText = "❌ " + data.message;
+            }
+        })
+        .catch(error => {
+            resDiv.className = "";
+            resDiv.style.color = "red";
+            resDiv.innerText =
+                "❌ Не вдалося запустити процес: " + error;
+        });
+}
+
+
+function startStatusCheck() {
+
+    if (statusTimer) {
+        clearInterval(statusTimer);
+    }
+
+    statusTimer = setInterval(() => {
+
+        fetch('/status')
+            .then(response => response.json())
+            .then(data => {
+
+                let resDiv = document.getElementById("result");
+
+                if (data.status === 'running') {
+
+                    resDiv.className = "loading";
+                    resDiv.style.color = "#007bff";
+
+                    resDiv.innerText =
+                        "⏳ Виконується процес " +
+                        data.process_num +
+                        "... Не натискайте кнопку повторно.";
+
+                }
+
+                else if (data.status === 'success') {
+
+                    clearInterval(statusTimer);
+
+                    resDiv.className = "";
+                    resDiv.style.color = "green";
+
+                    resDiv.innerText =
+                        "✅ " + data.message;
+                }
+
+                else if (data.status === 'error') {
+
+                    clearInterval(statusTimer);
+
                     resDiv.className = "";
                     resDiv.style.color = "red";
-                    resDiv.innerText = "❌ Сталася системна помилка: " + error;
-                });
+
+                    resDiv.innerText =
+                        "❌ Помилка: " + data.message;
+                }
+
+            })
+            .catch(error => {
+                console.log("Помилка перевірки статусу:", error);
+            });
+
+    }, 2000);
+}
+def run_process_background(process_num):
+    global process_status
+
+    try:
+        if process_num == 1:
+            count = process_one()
+            msg = f"Процес 1 (КТВ) успішно виконано! Оброблено рядків: {count}"
+
+        elif process_num == 2:
+            count = process_two()
+            msg = f"Процес 2 (Приїхала) успішно виконано! Оброблено рядків: {count}"
+
+        elif process_num == 3:
+            count = process_three()
+            msg = f"Процес 3 (Відгуки) успішно виконано! Оброблено рядків: {count}"
+
+        else:
+            raise ValueError("Невідомий процес")
+
+        process_status = {
+            "running": False,
+            "process_num": process_num,
+            "status": "success",
+            "message": msg
         }
-    </script>
-</body>
-</html>
-"""
+
+    except Exception as e:
+        print(f"=== ПОМИЛКА в процесі {process_num} ===")
+        traceback.print_exc()
+
+        process_status = {
+            "running": False,
+            "process_num": process_num,
+            "status": "error",
+            "message": str(e)
+        }
+
+    finally:
+        process_lock.release()
 
 
 @app.route("/")
@@ -1054,28 +1173,45 @@ def index():
 
 @app.route("/run/<int:process_num>", methods=["POST"])
 def run_process_endpoint(process_num):
-    try:
-        if process_num == 1:
-            count = process_one()
-            msg = f"Процес 1 (КТВ) успішно виконано! Оброблено рядків: {count}"
-        elif process_num == 2:
-            count = process_two()
-            msg = (
-                f"Процес 2 (Приїхала) успішно виконано! Оброблено рядків: {count}"
-            )
-        elif process_num == 3:
-            count = process_three()
-            msg = (
-                f"Процес 3 (Відгуки) успішно виконано! Оброблено рядків: {count}"
-            )
-        else:
-            return jsonify({"status": "error", "message": "Невідомий процес"}), 400
+    global process_status
 
-        return jsonify({"status": "success", "message": msg})
-    except Exception as e:
-        print(f"=== ПОМИЛКА в процесі {process_num} ===")
-        traceback.print_exc()
-        return jsonify({"status": "error", "message": str(e)}), 500
+    if process_num not in [1, 2, 3]:
+        return jsonify({
+            "status": "error",
+            "message": "Невідомий процес"
+        }), 400
+
+    # Не дозволяємо запустити другий процес,
+    # поки перший ще працює
+    if not process_lock.acquire(blocking=False):
+        return jsonify({
+            "status": "busy",
+            "message": f"Зараз уже виконується процес {process_status['process_num']}. "
+                       f"Дочекайтеся його завершення."
+        }), 409
+
+    process_status = {
+        "running": True,
+        "process_num": process_num,
+        "status": "running",
+        "message": f"Виконується процес {process_num}..."
+    }
+
+    thread = threading.Thread(
+        target=run_process_background,
+        args=(process_num,),
+        daemon=True
+    )
+    thread.start()
+
+    return jsonify({
+        "status": "started",
+        "message": f"Процес {process_num} запущено."
+    })
+    
+    @app.route("/status")
+    def get_status():
+        return jsonify(process_status)
 
 
 if __name__ == "__main__":
