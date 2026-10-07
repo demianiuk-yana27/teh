@@ -934,6 +934,7 @@ def process_three():
         "ПІДЕ",
         "Vdalo Shop",
         "Two birds",
+        "Velora",
     ]
     drop_stores = [
         "Shopik",
