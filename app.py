@@ -704,10 +704,35 @@ def process_one():
     df["Магазин"] = df["Магазин"].astype(str).str.strip()
     df["utm_medium"] = df["utm_medium"].astype(str).str.strip()
 
+# Перевіряємо, чи в Upsale є будь-яке непорожнє значення
+    if "Upsale" in df.columns:
+        upsale_clean = (
+            df["Upsale"]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+        )
+
+        has_upsale = ~upsale_clean.isin([
+            "",
+            "nan",
+            "none",
+            "null",
+        ])
+    else:
+        has_upsale = pd.Series(False, index=df.index)
+
+# Замовлення проходить, якщо:
+# 1. utm_medium дозволений
+# АБО
+# 2. у Upsale є будь-яке значення
     filtered_df = df[
         df["Статус"].isin(allowed_statuses)
         & (~df["Магазин"].isin(stores_to_remove))
-        & (df["utm_medium"].isin(allowed_utm))
+        & (
+            df["utm_medium"].isin(allowed_utm)
+            | has_upsale
+        )
     ].sort_values(by="Статус", ascending=True)
 
     client = get_gspread_client()
