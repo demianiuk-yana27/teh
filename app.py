@@ -468,7 +468,7 @@ def download_report_from_asteril(
                 )
 
         elif process_type == 3:
-            exact_7_days_ago = (today - timedelta(days=8)).strftime("%d.%m.%Y")
+            exact_8_days_ago = (today - timedelta(days=8)).strftime("%d.%m.%Y")
 
             try:
                 for btn in driver.find_elements(
