@@ -470,10 +470,10 @@ def download_report_from_asteril(
         elif process_type == 3:
             # Якщо дату вибрали вручну — використовуємо її.
             # Якщо ні — за замовчуванням беремо 6 днів тому.
-            exact_6_days_ago = (
+            exact_7_days_ago = (
                 selected_date
                 if selected_date
-                else (today - timedelta(days=6)).strftime("%d.%m.%Y")
+                else (today - timedelta(days=7)).strftime("%d.%m.%Y")
             )
 
             try:
@@ -496,8 +496,8 @@ def download_report_from_asteril(
                 set_custom_date_range(
                     driver,
                     date_create_input,
-                    exact_6_days_ago,
-                    exact_6_days_ago,
+                    exact_7_days_ago,
+                    exact_7_days_ago,
                 )
 
         filter_btn = wait.until(
@@ -1347,7 +1347,7 @@ def run_process_background(process_num, reviews_date=None):
 def index():
 
     default_reviews_date = (
-        datetime.now() - timedelta(days=6)
+        datetime.now() - timedelta(days=7)
     ).strftime("%Y-%m-%d")
 
     return render_template_string(
