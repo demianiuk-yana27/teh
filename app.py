@@ -468,7 +468,7 @@ def download_report_from_asteril(
                 )
 
         elif process_type == 3:
-            exact_7_days_ago = (today - timedelta(days=6)).strftime("%d.%m.%Y")
+            exact_7_days_ago = (today - timedelta(days=8)).strftime("%d.%m.%Y")
 
             try:
                 for btn in driver.find_elements(
@@ -490,8 +490,8 @@ def download_report_from_asteril(
                 set_custom_date_range(
                     driver,
                     date_create_input,
-                    exact_6_days_ago,
-                    exact_6_days_ago,
+                    exact_8_days_ago,
+                    exact_8_days_ago,
                 )
 
         filter_btn = wait.until(
