@@ -6,7 +6,7 @@ import time
 import traceback
 import threading
 from datetime import datetime, timedelta
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, request
 import pandas as pd
 
 # --- МОДУЛІ ДЛЯ АВТОМАТИЗАЦІЇ GOOGLE SHEETS ---
@@ -251,7 +251,7 @@ def set_custom_date_range(driver, input_element, start_date_str, end_date_str=No
 
 
 def download_report_from_asteril(
-    domain_url, process_type, download_dir="temp_downloads"
+    domain_url, process_type, download_dir="temp_downloads", selected_date=None
 ):
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
@@ -468,7 +468,13 @@ def download_report_from_asteril(
                 )
 
         elif process_type == 3:
-            exact_8_days_ago = (today - timedelta(days=8)).strftime("%d.%m.%Y")
+            # Якщо дату вибрали вручну — використовуємо її.
+            # Якщо ні — за замовчуванням беремо 6 днів тому.
+            exact_6_days_ago = (
+                selected_date
+                if selected_date
+                else (today - timedelta(days=6)).strftime("%d.%m.%Y")
+            )
 
             try:
                 for btn in driver.find_elements(
@@ -490,8 +496,8 @@ def download_report_from_asteril(
                 set_custom_date_range(
                     driver,
                     date_create_input,
-                    exact_8_days_ago,
-                    exact_8_days_ago,
+                    exact_6_days_ago,
+                    exact_6_days_ago,
                 )
 
         filter_btn = wait.until(
@@ -832,9 +838,11 @@ def process_two():
     return len(filtered_df)
 
 
-def process_three():
+def process_three(selected_date=None):
     input_file = download_report_from_asteril(
-        "https://crm2006091.asteril.com/orders", process_type=3
+        "https://crm2006091.asteril.com/orders",
+        process_type=3,
+        selected_date=selected_date,
     )
     df = pd.read_excel(input_file)
 
@@ -1079,6 +1087,18 @@ HTML_TEMPLATE = """
         </button>
         <br>
 
+        <div style="margin: 10px 0 15px;">
+            <label for="reviewsDate" style="font-weight: bold;">
+                📅 Дата замовлень для відгуків:
+            </label>
+            <input
+                type="date"
+                id="reviewsDate"
+                value="{{ default_reviews_date }}"
+                style="padding: 10px; font-size: 16px; margin-left: 8px;"
+            >
+        </div>
+
         <button class="btn btn-3" onclick="runProcess(3)">
             💭 Запустити Процес 3 (Відгуки)
         </button>
@@ -1096,6 +1116,20 @@ let statusTimer = null;
 function runProcess(num) {
 
     let resDiv = document.getElementById("result");
+    let requestBody = {};
+
+    if (num === 3) {
+        const selectedDate = document.getElementById("reviewsDate").value;
+
+        if (!selectedDate) {
+            resDiv.className = "";
+            resDiv.style.color = "red";
+            resDiv.innerText = "❌ Виберіть дату для Процесу 3.";
+            return;
+        }
+
+        requestBody.reviews_date = selectedDate;
+    }
 
     resDiv.className = "loading";
     resDiv.style.color = "#007bff";
@@ -1105,7 +1139,11 @@ function runProcess(num) {
 
 
     fetch('/run/' + num, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
     })
 
     .then(response => response.json())
@@ -1234,7 +1272,7 @@ function startStatusCheck() {
 
 
 # --- ФОНОВИЙ ЗАПУСК ПРОЦЕСУ ---
-def run_process_background(process_num):
+def run_process_background(process_num, reviews_date=None):
 
     global process_status
 
@@ -1262,7 +1300,7 @@ def run_process_background(process_num):
 
         elif process_num == 3:
 
-            count = process_three()
+            count = process_three(reviews_date)
 
             msg = (
                 f"Процес 3 (Відгуки) успішно виконано! "
@@ -1308,7 +1346,14 @@ def run_process_background(process_num):
 @app.route("/")
 def index():
 
-    return render_template_string(HTML_TEMPLATE)
+    default_reviews_date = (
+        datetime.now() - timedelta(days=6)
+    ).strftime("%Y-%m-%d")
+
+    return render_template_string(
+        HTML_TEMPLATE,
+        default_reviews_date=default_reviews_date,
+    )
 
 
 
@@ -1317,6 +1362,28 @@ def index():
 def run_process_endpoint(process_num):
 
     global process_status
+
+    data = request.get_json(silent=True) or {}
+    reviews_date = None
+
+    if process_num == 3:
+        reviews_date_raw = data.get("reviews_date")
+
+        if not reviews_date_raw:
+            return jsonify({
+                "status": "error",
+                "message": "Не вибрана дата для Процесу 3."
+            }), 400
+
+        try:
+            reviews_date = datetime.strptime(
+                reviews_date_raw, "%Y-%m-%d"
+            ).strftime("%d.%m.%Y")
+        except ValueError:
+            return jsonify({
+                "status": "error",
+                "message": "Некоректний формат дати."
+            }), 400
 
 
     if process_num not in [1, 2, 3]:
@@ -1359,7 +1426,7 @@ def run_process_endpoint(process_num):
 
         target=run_process_background,
 
-        args=(process_num,),
+        args=(process_num, reviews_date),
 
         daemon=True
     )
