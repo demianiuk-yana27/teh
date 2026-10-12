@@ -966,7 +966,6 @@ def process_three(selected_date=None):
         "MIXORA",
         "ПІДЕ",
         "Vdalo Shop",
-        "Two birds",
         "Velora",
     ]
     drop_stores = [
@@ -983,6 +982,7 @@ def process_three(selected_date=None):
         "FENIX-UA - дроп",
         "Easyshop-дроп",
         "BoTreba -дроп",
+        "Two birds",
     ]
 
     df_yellow = filtered_df[filtered_df["Магазин"].isin(yellow_stores)]
