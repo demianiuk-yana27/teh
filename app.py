@@ -604,9 +604,10 @@ def download_report_from_asteril(
         except Exception:
             pass
 # --- ЛОГІКА ОБРОБКИ ТА ЗАПИСУ ДЛЯ ПРОЦЕСІВ ---
-def process_one():
+def process_one(export_mode="partial"):
     input_file = download_report_from_asteril(
-        "https://crm2006091.asteril.com/orders", process_type=1
+        "https://crm2006091.asteril.com/orders",
+        process_type=1
     )
     df = pd.read_excel(input_file)
 
@@ -678,6 +679,7 @@ def process_one():
         "Очікує 5 днів",
         "Очікує 6 днів +",
     ]
+
     stores_to_remove = [
         "Mona Liza",
         "One Bird",
@@ -698,13 +700,21 @@ def process_one():
         "Klik Shop - дроп",
         "самовивіз",
     ]
-    allowed_utm = ["mobile_catalog_app", "portal", "bigl"]
 
+    # Замовлення з цих utm_medium впливають на рейтинг Prom.
+    allowed_utm = [
+        "mobile_catalog_app",
+        "portal",
+        "bigl",
+    ]
+
+    # Нормалізуємо текстові значення для коректного порівняння.
     df["Статус"] = df["Статус"].astype(str).str.strip()
     df["Магазин"] = df["Магазин"].astype(str).str.strip()
     df["utm_medium"] = df["utm_medium"].astype(str).str.strip()
 
-# Перевіряємо, чи в Upsale є будь-яке непорожнє значення
+    # Перевіряємо наявність Upsale.
+    # Порожні значення, NaN, None, null не вважаються Upsale.
     if "Upsale" in df.columns:
         upsale_clean = (
             df["Upsale"]
@@ -722,144 +732,95 @@ def process_one():
     else:
         has_upsale = pd.Series(False, index=df.index)
 
-# Замовлення проходить, якщо:
-# 1. utm_medium дозволений
-# АБО
-# 2. у Upsale є будь-яке значення
-    filtered_df = df[
+    # Базові умови для обох режимів:
+    # статус дозволений, магазин не виключений.
+    base_mask = (
         df["Статус"].isin(allowed_statuses)
         & (~df["Магазин"].isin(stores_to_remove))
-        & (
+    )
+
+    # Неповна вигрузка:
+    # залишаємо замовлення, які впливають на рейтинг Prom
+    # АБО мають Upsale.
+    if export_mode == "partial":
+        base_mask = base_mask & (
             df["utm_medium"].isin(allowed_utm)
             | has_upsale
         )
-    ].sort_values(by="Статус", ascending=True)
 
+    # Повна вигрузка:
+    # додаткових обмежень за utm_medium та Upsale немає.
+    elif export_mode == "full":
+        pass
+
+    else:
+        raise ValueError(
+            f"Невідомий режим вигрузки: {export_mode}"
+        )
+
+    filtered_df = df[base_mask].sort_values(
+        by="Статус",
+        ascending=True
+    )
+
+    # Підключаємося до Google Sheets.
     client = get_gspread_client()
+
     sheet = client.open_by_key(
         "1sNWKNZhmE-DXancPOX5RtLhtbQ_-ThwhfqlwyVmSzSE"
     ).worksheet("КТВ")
-    raw_values = filtered_df[["Магазин", "№", "Статус"]].fillna("").values.tolist()
+
+    raw_values = (
+        filtered_df[["Магазин", "№", "Статус"]]
+        .fillna("")
+        .values
+        .tolist()
+    )
+
+    # Якщо замовлень немає, нічого не записуємо.
     if not raw_values:
         return 0
 
-    # Рахуємо перший вільний рядок за стовпцями A і D одночасно — це захищає
-    # від випадкового перезапису рядка, який раніше отримав лише дату (A),
-    # але не отримав даних (D), через збій попереднього запуску.
-    first_free_row = max(len(sheet.col_values(1)), len(sheet.col_values(4))) + 1
-    ensure_capacity(sheet, first_free_row + len(raw_values))
-    remove_data_validation(sheet, first_free_row, 1, first_free_row, 2)
+    # Визначаємо перший вільний рядок за стовпцями A та D.
+    first_free_row = max(
+        len(sheet.col_values(1)),
+        len(sheet.col_values(4))
+    ) + 1
 
+    ensure_capacity(
+        sheet,
+        first_free_row + len(raw_values)
+    )
+
+    remove_data_validation(
+        sheet,
+        first_free_row,
+        1,
+        first_free_row,
+        2
+    )
+
+    # Записуємо дату в колонку A.
     sheet.update(
         range_name=f"A{first_free_row}",
         values=[[datetime.now().strftime("%d.%m")]],
     )
+
+    # Записуємо замовлення в колонки D:F,
+    # починаючи з наступного рядка, як у попередній версії.
     sheet.update(
-        range_name=f"D{first_free_row + 1}:F{first_free_row + len(raw_values)}",
+        range_name=(
+            f"D{first_free_row + 1}:"
+            f"F{first_free_row + len(raw_values)}"
+        ),
         values=raw_values,
     )
-    return len(filtered_df)
 
-
-def process_two():
-    input_file = download_report_from_asteril(
-        "https://crm2006091.asteril.com/orders", process_type=2
+    print(
+        f"=== Процес 1: режим={export_mode}, "
+        f"відібрано замовлень={len(filtered_df)} ==="
     )
-    df = pd.read_excel(input_file)
 
-    responsible_to_remove = [
-        "Менеджер дроп Ілля Діана",
-        "Менеджер дроп Ілля 3 Наталя",
-        "Менеджер дроп Ілля 4 Дарія",
-        "Менеджер дроп Ілля 6 Микола",
-        "Менеджер дроп Ілля 10 Таня",
-        "Менеджер дроп Ілля Катя тех",
-        "Менеджер дроп Ілля СБ",
-        "Менеджер Дроп Ілля 12 Олена",
-        "Саржовський Ілля CBDO (31.01.23)",
-        "Андрій менеджер Богдан ДРОП",
-        "Дарина менеджер Богдан ДРОП",
-        "Тетяна менеджер Богдан ДРОП",
-        "Богдан Дроп Менеджер 1",
-        "Богдан Дроп Менеджер 2",
-        "Акаунт помічника Богдан ДРОП Вадим",
-        "Аліна менеджер Богдан ДРОП",
-        "Тех Лопатчук Ростислав дропшипінг(22.07.2025)1172",
-        "Тех- Плужник Анастасія дропшипінг (22.07.2023) 1021",
-        "ТехВідділ Скобельська Інна (25.11.2025) 1218",
-        "Тех Гаврилюк Ярослав прості посилки(16.09.2024) 1082",
-        "Тех М'якота Владислав прості посилки*(02.06.22) 100_283",
-        "Тех- Кріпак Дар'я негативні/відгуки(16.03.2023)_280",
-        "Тех-Чернявська Валерія негативні/відгуки (02.07.2025) 1224",
-        "Тех-Русак Тетяна негативні відгуки (27.11.2023) 907",
-        "Богдан ДРОП",
-    ]
-    responsible_to_remove = [name.strip() for name in responsible_to_remove]
-
-    stores_to_remove = [
-        "Дроп Котик trendland",
-        "ClickMart Shop",
-        "Дроп Котик foxxi",
-        "Mona Liza",
-        "One Bird",
-        "Best-Buy",
-        "Home81",
-        "Dobromarket",
-        "Shop-Market-Top",
-        "Trendly",
-        "HomeMix-дроп",
-        "Інстаграм",
-        "Marcat -дроп",
-        "Заміна",
-        "Довідправка",
-        "Дропшипінг",
-        "Інстаграм ОМ",
-        "Експрес-шоп -дроп",
-        "Skandi",
-        "Klik Shop - дроп",
-        "самовивіз",
-    ]
-    stores_to_remove = [name.strip() for name in stores_to_remove]
-
-    df["Відповідальний"] = df["Відповідальний"].astype(str).str.strip()
-    df["Магазин"] = df["Магазин"].astype(str).str.strip()
-
-    filtered_df = df[
-        ~df["Відповідальний"].isin(responsible_to_remove)
-        & ~df["Магазин"].isin(stores_to_remove)
-    ].sort_values(by="Магазин", ascending=True)
-
-    client = get_gspread_client()
-    sheet = client.open_by_key(
-        "1sNWKNZhmE-DXancPOX5RtLhtbQ_-ThwhfqlwyVmSzSE"
-    ).worksheet("Приїхала")
-    raw_values = (
-        filtered_df[["№", "Телефони", "Магазин", "Товари"]].fillna("").values.tolist()
-    )
-    if not raw_values:
-        return 0
-
-    # Рахуємо перший вільний рядок за стовпцями A і D одночасно — це захищає
-    # від випадкового перезапису рядка, який раніше отримав лише дату (A/B),
-    # але не отримав даних (D:G), через збій попереднього запуску.
-    first_free_row = max(len(sheet.col_values(1)), len(sheet.col_values(4))) + 1
-    ensure_capacity(sheet, first_free_row + len(raw_values))
-    remove_data_validation(sheet, first_free_row, 1, first_free_row, 2)
-
-    today = datetime.now()
-    sheet.update(
-        range_name=f"A{first_free_row}:B{first_free_row}",
-        values=[
-            [
-                today.strftime("%d.%m"),
-                (today - timedelta(days=3)).strftime("%d.%m"),
-            ]
-        ],
-    )
-    sheet.update(
-        range_name=f"D{first_free_row + 1}:G{first_free_row + len(raw_values)}",
-        values=raw_values,
-    )
     return len(filtered_df)
 
 
