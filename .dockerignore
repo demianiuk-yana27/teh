@@ -1,0 +1,16 @@
+# Never include local credentials in the container build context
+token.json
+asteril_cookies.json
+service_account.json
+*.pem
+*.key
+
+# Local/runtime artifacts
+temp_downloads/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+.git/
