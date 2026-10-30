@@ -43,9 +43,11 @@ process_status = {
 # ============================================================
 
 def _resolve_secret_path(filename):
-    render_secret_path = f"/etc/secrets/{filename}"
-    if os.path.exists(render_secret_path):
-        return render_secret_path
+    # Cloud Run Secret Manager volume mount; keep Render compatibility.
+    for secret_dir in ("/secrets", "/etc/secrets"):
+        secret_path = os.path.join(secret_dir, filename)
+        if os.path.exists(secret_path):
+            return secret_path
     return filename
 
 
@@ -61,8 +63,8 @@ def get_gspread_client():
             creds.refresh(Request())
         else:
             raise FileNotFoundError(
-                "Файл token.json не знайдено. Додайте його в Render "
-                "у розділі Environment → Secret Files."
+                "Файл token.json не знайдено. Додайте його як Secret File "
+                "у Render або змонтуйте Secret Manager у Cloud Run."
             )
 
     return gspread.authorize(creds)
@@ -490,7 +492,7 @@ def download_report_from_asteril(
             if not asteril_login or not asteril_password:
                 raise RuntimeError(
                     "Не задано ASTERIL_LOGIN / ASTERIL_PASSWORD "
-                    "у змінних середовища Render."
+                    "у змінних середовища сервісу."
                 )
 
             email_input = wait.until(
@@ -1364,14 +1366,10 @@ function runProcess(num) {
         return data;
     })
     .then(data => {
-        if (data.status === "started") {
-            resDiv.className = "loading";
-            resDiv.style.color = "#007bff";
-            resDiv.innerText =
-                "⏳ Процес " + num +
-                " запущено. Не натискайте кнопку повторно.";
-
-            startStatusCheck();
+        if (data.status === "success") {
+            resDiv.className = "";
+            resDiv.style.color = "green";
+            resDiv.innerText = "✅ " + data.message;
         } else if (data.status === "busy") {
             resDiv.className = "";
             resDiv.style.color = "orange";
@@ -1379,7 +1377,7 @@ function runProcess(num) {
         } else {
             resDiv.className = "";
             resDiv.style.color = "red";
-            resDiv.innerText = "❌ " + data.message;
+            resDiv.innerText = "❌ " + (data.message || "Не вдалося виконати процес.");
         }
     })
     .catch(error => {
@@ -1528,7 +1526,6 @@ def run_process_endpoint(process_num):
 
     if process_num == 1:
         export_mode = data.get("export_mode", "partial")
-
         if export_mode not in ["partial", "full"]:
             return jsonify({
                 "status": "error",
@@ -1537,19 +1534,15 @@ def run_process_endpoint(process_num):
 
     if process_num == 3:
         reviews_date_raw = data.get("reviews_date")
-
         if not reviews_date_raw:
             return jsonify({
                 "status": "error",
                 "message": "Не вибрана дата для Процесу 3.",
             }), 400
-
         try:
             reviews_date = datetime.strptime(
-                reviews_date_raw,
-                "%Y-%m-%d",
+                reviews_date_raw, "%Y-%m-%d"
             ).strftime("%d.%m.%Y")
-
         except ValueError:
             return jsonify({
                 "status": "error",
@@ -1573,29 +1566,45 @@ def run_process_endpoint(process_num):
         "message": f"Виконується процес {process_num}...",
     }
 
-    thread = threading.Thread(
-        target=run_process_background,
-        args=(process_num, reviews_date, export_mode),
-        daemon=True,
-    )
-
     try:
-        thread.start()
+        # Keep work inside the HTTP request: detached background threads
+        # are not reliable on Cloud Run because CPU/instances may stop
+        # after the request has returned.
+        if process_num == 1:
+            count = process_one(export_mode)
+            mode_text = "неповна" if export_mode == "partial" else "повна"
+            message = (
+                f"Процес 1 (КТВ, {mode_text} вигрузка) "
+                f"успішно виконано! Оброблено рядків: {count}"
+            )
+        else:
+            count = process_three(reviews_date)
+            message = (
+                f"Процес 3 (Відгуки) успішно виконано! "
+                f"Оброблено рядків: {count}"
+            )
 
-    except Exception:
+        process_status = {
+            "running": False,
+            "process_num": process_num,
+            "status": "success",
+            "message": message,
+        }
+        return jsonify(process_status)
+
+    except Exception as error:
+        print(f"=== ПОМИЛКА в процесі {process_num} ===")
+        traceback.print_exc()
         process_status = {
             "running": False,
             "process_num": process_num,
             "status": "error",
-            "message": "Не вдалося запустити процес.",
+            "message": str(error),
         }
-        process_lock.release()
-        raise
+        return jsonify(process_status), 500
 
-    return jsonify({
-        "status": "started",
-        "message": f"Процес {process_num} запущено.",
-    })
+    finally:
+        process_lock.release()
 
 
 # ============================================================
