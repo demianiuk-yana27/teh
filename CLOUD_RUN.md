@@ -33,7 +33,7 @@ gcloud config set project YOUR_PROJECT_ID
 gcloud run deploy asteril-automation \
   --source . \
   --region europe-central2 \
-  --allow-unauthenticated \
+  --no-allow-unauthenticated \
   --memory 2Gi \
   --cpu 2 \
   --timeout 3600 \
@@ -45,7 +45,7 @@ gcloud run deploy asteril-automation \
 
 Replace `YOUR_PROJECT_ID` with the Google Cloud project ID. The deploy identity must be allowed to deploy Cloud Run services and attach the selected runtime service account. Grant the **runtime service account** Secret Manager Secret Accessor on each secret.
 
-If the service should not be publicly accessible, remove `--allow-unauthenticated` and configure access for the intended users.
+The service is deployed as authenticated by default. Grant `roles/run.invoker` to each intended user (or to an appropriate Google Group). Do not make the service public unless you deliberately want anyone with the URL to trigger CRM exports.
 
 ## Important runtime behavior
 
