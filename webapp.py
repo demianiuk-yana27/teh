@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 from flask import jsonify, render_template_string, request
 
 import app as legacy
-from negative_reviews import run_analytics, run_order_review_check, run_review_export
+from negative_reviews import run_analytics, run_order_review_check
+from review_export import run_review_export
 
 app = legacy.app
 negative_lock = threading.Lock()
@@ -186,7 +187,12 @@ def _negative_worker(process_name, sheet_id, since, until):
     try:
         if process_name == "reviews":
             result = run_review_export(sheet_id, since, until)
-            message = f"Вигрузка відгуків завершена: {result}"
+            message = (
+                "Вигрузка відгуків завершена. "
+                f"Знайдено: компанія — {result['collected_company']}, товари — {result['collected_product']}; "
+                f"додано нових: {result['written']}. "
+                f"Пропущено магазинів: {result['skipped']}; неповних перевірок: {result['incomplete']}."
+            )
         elif process_name == "analytics":
             result = run_analytics(sheet_id)
             message = (
