@@ -5,6 +5,7 @@ import time
 import traceback
 import threading
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify, render_template_string, request
 import pandas as pd
@@ -304,7 +305,7 @@ def set_custom_date_range(
 
 # ============================================================
 # ЗАВАНТАЖЕННЯ ЗВІТУ З ASTERIL CRM
-# Процес 2 видалено. Залишено типи 1 та 3.
+# Процес 2 видалено. Залишено типи 1, 3 та 4.
 # ============================================================
 
 def download_report_from_asteril(
@@ -1265,7 +1266,7 @@ def process_dorobky(rework_slot):
     ensure_capacity(sheet, first_header_row + len(rows_to_add))
 
     export_header = (
-        f"Вивантаження від {datetime.now().strftime('%d.%m.%Y')} "
+        f"Вивантаження від {datetime.now(ZoneInfo('Europe/Kyiv')).strftime('%d.%m.%Y')} "
         f"— {rework_slot}"
     )
     values_to_write = [[export_header, "", "", ""]] + rows_to_add
