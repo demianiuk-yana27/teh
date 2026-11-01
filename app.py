@@ -601,44 +601,28 @@ def download_report_from_asteril(
                     "Для процесу «Доробки» потрібно передати коректний статус."
                 )
 
-            # Статуси вибираються безпосередньо в лівому меню CRM.
+            # Використовуємо перевірений спосіб із колишнього процесу 2
+            # «Приїхала»: точний пошук назви статусу та safe_click.
             status_elements = driver.find_elements(
                 By.XPATH,
-                f"//*[contains(normalize-space(.), '{selected_status}')]",
+                f"//*[normalize-space(text())='{selected_status}']",
             )
-            visible_status_elements = [
-                element for element in status_elements
-                if element.is_displayed()
-                and selected_status in (element.text or "").strip()
-            ]
 
-            if not visible_status_elements:
+            clicked = False
+            for status_element in status_elements:
+                if status_element.is_displayed():
+                    safe_click(driver, status_element)
+                    clicked = True
+                    break
+
+            if not clicked:
                 raise RuntimeError(
-                    f"У лівому меню CRM не знайдено статус «{selected_status}»."
+                    f"У лівому меню CRM не знайдено видимий статус "
+                    f"«{selected_status}»."
                 )
 
-            # Беремо найменший елемент із потрібним текстом, щоб не натиснути
-            # на весь контейнер бокового меню.
-            status_element = min(
-                visible_status_elements,
-                key=lambda element: len((element.text or "").strip()),
-            )
-            clickable_status = driver.execute_script(
-                """
-                const element = arguments[0];
-                return element.closest('a, button, [role="button"]')
-                    || element.parentElement
-                    || element;
-                """,
-                status_element,
-            )
-            driver.execute_script(
-                "arguments[0].click();",
-                clickable_status,
-            )
-            time.sleep(2)
+            time.sleep(1.5)
             wait_for_crm_loader(driver, timeout=60)
-            time.sleep(2)
 
         if process_type != 4:
             filter_btn = wait.until(
