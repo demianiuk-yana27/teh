@@ -313,6 +313,7 @@ def download_report_from_asteril(
     process_type,
     download_dir="temp_downloads",
     selected_date=None,
+    selected_status=None,
 ):
     if process_type not in (1, 3, 4):
         raise ValueError(
@@ -595,33 +596,64 @@ def download_report_from_asteril(
                 )
 
         elif process_type == 4:
-            # Вивантажуємо замовлення за всіма датами, а потрібні статуси
-            # та відповідальних відбираємо вже у сформованому Excel.
-            try:
-                for button in driver.find_elements(
-                    By.XPATH,
-                    "//a[contains(text(), 'Усе') or contains(text(), 'Все')]",
-                ):
-                    if button.is_displayed():
-                        safe_click(driver, button)
-                        time.sleep(1.5)
-                        break
-            except Exception:
-                pass
+            if selected_status not in ("Доробка ТТН", "Доробка склад"):
+                raise ValueError(
+                    "Для процесу «Доробки» потрібно передати коректний статус."
+                )
 
-        filter_btn = wait.until(
-            EC.element_to_be_clickable(
-                (
-                    By.XPATH,
-                    "//button[contains(translate(text(), "
-                    "'ФІЛЬТРУВАТИ', 'фільтрувати'), 'фільтр')]",
+            # Статуси вибираються безпосередньо в лівому меню CRM.
+            status_elements = driver.find_elements(
+                By.XPATH,
+                f"//*[contains(normalize-space(.), '{selected_status}')]",
+            )
+            visible_status_elements = [
+                element for element in status_elements
+                if element.is_displayed()
+                and selected_status in (element.text or "").strip()
+            ]
+
+            if not visible_status_elements:
+                raise RuntimeError(
+                    f"У лівому меню CRM не знайдено статус «{selected_status}»."
+                )
+
+            # Беремо найменший елемент із потрібним текстом, щоб не натиснути
+            # на весь контейнер бокового меню.
+            status_element = min(
+                visible_status_elements,
+                key=lambda element: len((element.text or "").strip()),
+            )
+            clickable_status = driver.execute_script(
+                """
+                const element = arguments[0];
+                return element.closest('a, button, [role="button"]')
+                    || element.parentElement
+                    || element;
+                """,
+                status_element,
+            )
+            driver.execute_script(
+                "arguments[0].click();",
+                clickable_status,
+            )
+            time.sleep(2)
+            wait_for_crm_loader(driver, timeout=60)
+            time.sleep(2)
+
+        if process_type != 4:
+            filter_btn = wait.until(
+                EC.element_to_be_clickable(
+                    (
+                        By.XPATH,
+                        "//button[contains(translate(text(), "
+                        "'ФІЛЬТРУВАТИ', 'фільтрувати'), 'фільтр')]",
+                    )
                 )
             )
-        )
 
-        safe_click(driver, filter_btn)
-        time.sleep(4)
-        wait_for_crm_loader(driver, timeout=60)
+            safe_click(driver, filter_btn)
+            time.sleep(4)
+            wait_for_crm_loader(driver, timeout=60)
 
         try:
             row_count = len(
@@ -1207,11 +1239,22 @@ def process_three(selected_date=None):
 # ============================================================
 
 def process_dorobky(rework_slot):
-    input_file = download_report_from_asteril(
+    # CRM формує окремий Excel для кожного статусу.
+    ttn_file = download_report_from_asteril(
         "https://crm2006091.asteril.com/orders",
         process_type=4,
+        selected_status="Доробка ТТН",
     )
-    df = pd.read_excel(input_file)
+    ttn_df = pd.read_excel(ttn_file)
+
+    warehouse_file = download_report_from_asteril(
+        "https://crm2006091.asteril.com/orders",
+        process_type=4,
+        selected_status="Доробка склад",
+    )
+    warehouse_df = pd.read_excel(warehouse_file)
+
+    df = pd.concat([ttn_df, warehouse_df], ignore_index=True)
     df.columns = df.columns.astype(str).str.strip()
 
     required_columns = ["№", "Статус", "Відповідальний"]
