@@ -313,7 +313,7 @@ def download_report_from_asteril(
     download_dir="temp_downloads",
     selected_date=None,
 ):
-    if process_type not in (1, 3):
+    if process_type not in (1, 3, 4):
         raise ValueError(
             f"Невідомий тип завантаження звіту: {process_type}"
         )
@@ -592,6 +592,21 @@ def download_report_from_asteril(
                     selected_date_str,
                     selected_date_str,
                 )
+
+        elif process_type == 4:
+            # Вивантажуємо замовлення за всіма датами, а потрібні статуси
+            # та відповідальних відбираємо вже у сформованому Excel.
+            try:
+                for button in driver.find_elements(
+                    By.XPATH,
+                    "//a[contains(text(), 'Усе') or contains(text(), 'Все')]",
+                ):
+                    if button.is_displayed():
+                        safe_click(driver, button)
+                        time.sleep(1.5)
+                        break
+            except Exception:
+                pass
 
         filter_btn = wait.until(
             EC.element_to_be_clickable(
@@ -1187,6 +1202,88 @@ def process_three(selected_date=None):
 
 
 # ============================================================
+# ПРОЦЕС 4 — ДОРОБКИ
+# ============================================================
+
+def process_dorobky(rework_slot):
+    input_file = download_report_from_asteril(
+        "https://crm2006091.asteril.com/orders",
+        process_type=4,
+    )
+    df = pd.read_excel(input_file)
+    df.columns = df.columns.astype(str).str.strip()
+
+    required_columns = ["№", "Статус", "Відповідальний"]
+    missing_columns = [c for c in required_columns if c not in df.columns]
+    if missing_columns:
+        raise ValueError(
+            "У звіті CRM не знайдено обов'язкові стовпці: "
+            + ", ".join(missing_columns)
+        )
+
+    # Другий однойменний стовпець у звіті читається pandas як «Доробка.1».
+    comment_column = "Доробка.1" if "Доробка.1" in df.columns else "Доробка"
+    status_values = df["Статус"].fillna("").astype(str).str.strip()
+    responsible_values = df["Відповідальний"].fillna("").astype(str).str.strip()
+    responsible_lower = responsible_values.str.casefold()
+
+    allowed_statuses = {"Доробка ТТН", "Доробка склад"}
+    manager_mask = (
+        responsible_lower.str.startswith("тех")
+        | responsible_lower.str.contains("стажер", regex=False)
+    )
+    filtered_df = df[
+        status_values.isin(allowed_statuses) & manager_mask
+    ].copy()
+
+    if comment_column not in filtered_df.columns:
+        filtered_df[comment_column] = ""
+
+    rows_to_add = (
+        filtered_df[["№", "Статус", "Відповідальний", comment_column]]
+        .fillna("")
+        .values
+        .tolist()
+    )
+
+    client = get_gspread_client()
+    sheet = client.open_by_key(
+        "1dY9HLJzDW9lX94TCiH5zpbhohLJaDmkh0tq-EYOXPg0"
+    ).worksheet("Листопад")
+
+    # Перевіряємо A:D, щоб не перезаписати дані через порожні рядки.
+    existing_values = sheet.get("A:D")
+    last_used_row = max(
+        (
+            row_index
+            for row_index, row in enumerate(existing_values, start=1)
+            if any(str(value).strip() for value in row)
+        ),
+        default=0,
+    )
+    first_header_row = last_used_row + 1
+    ensure_capacity(sheet, first_header_row + len(rows_to_add))
+
+    export_header = (
+        f"Вивантаження від {datetime.now().strftime('%d.%m.%Y')} "
+        f"— {rework_slot}"
+    )
+    values_to_write = [[export_header, "", "", ""]] + rows_to_add
+    last_write_row = first_header_row + len(values_to_write) - 1
+    sheet.update(
+        range_name=f"A{first_header_row}:D{last_write_row}",
+        values=values_to_write,
+        value_input_option="USER_ENTERED",
+    )
+
+    print(
+        f"=== Доробки: час={rework_slot}, "
+        f"відібрано замовлень={len(filtered_df)} ==="
+    )
+    return len(filtered_df)
+
+
+# ============================================================
 # ВЕБІНТЕРФЕЙС
 # ============================================================
 
@@ -1238,6 +1335,37 @@ HTML_TEMPLATE = """
             background-color: #dc3545;
         }
 
+        .tabs {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin: 22px 0;
+        }
+
+        .tab-btn {
+            padding: 11px 18px;
+            border: 1px solid #1f538d;
+            border-radius: 6px;
+            background: white;
+            color: #1f538d;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .tab-btn.active {
+            background: #1f538d;
+            color: white;
+        }
+
+        .tab-section {
+            padding-top: 8px;
+        }
+
+        .btn-4 {
+            background-color: #198754;
+        }
+
         .btn:hover {
             opacity: 0.9;
         }
@@ -1278,7 +1406,17 @@ HTML_TEMPLATE = """
     <div class="container">
         <h2>⚙️ Автоматизація вигрузок Asteril CRM</h2>
 
-        <p>Оберіть процес для виконання на сервері:</p>
+        <p>Оберіть потрібний розділ:</p>
+
+        <div class="tabs">
+            <button class="tab-btn active" id="dialTab"
+                    onclick="switchTab('dial')">Продзвін</button>
+            <button class="tab-btn" id="operationsTab"
+                    onclick="switchTab('operations')">Операційні менеджери</button>
+        </div>
+
+        <section class="tab-section" id="dialSection">
+        <h3>Продзвін</h3>
 
         <div class="setting">
             <label for="exportMode">📦 Тип вигрузки для КТВ:</label>
@@ -1312,12 +1450,37 @@ HTML_TEMPLATE = """
         <button class="btn btn-3" onclick="runProcess(3)">
             💭 Запустити Процес 3 (Відгуки)
         </button>
+        </section>
+
+        <section class="tab-section" id="operationsSection" style="display:none">
+            <h3>Операційні менеджери</h3>
+            <h4>Доробки</h4>
+            <div class="setting">
+                <label for="reworkSlot">🕒 Час вивантаження:</label>
+                <select id="reworkSlot">
+                    <option value="09:00">09:00</option>
+                    <option value="12:00">12:00</option>
+                    <option value="17:00">17:00</option>
+                </select>
+            </div>
+            <button class="btn btn-4" onclick="runProcess(4)">
+                📋 Запустити вивантаження «Доробки»
+            </button>
+        </section>
 
         <div id="result"></div>
     </div>
 
 <script>
 let statusTimer = null;
+
+function switchTab(tab) {
+    const dialActive = tab === "dial";
+    document.getElementById("dialSection").style.display = dialActive ? "block" : "none";
+    document.getElementById("operationsSection").style.display = dialActive ? "none" : "block";
+    document.getElementById("dialTab").classList.toggle("active", dialActive);
+    document.getElementById("operationsTab").classList.toggle("active", !dialActive);
+}
 
 function runProcess(num) {
     const resDiv = document.getElementById("result");
@@ -1341,6 +1504,10 @@ function runProcess(num) {
         }
 
         requestBody.reviews_date = selectedDate;
+    }
+
+    if (num === 4) {
+        requestBody.rework_slot = document.getElementById("reworkSlot").value;
     }
 
     resDiv.className = "loading";
@@ -1441,7 +1608,12 @@ function startStatusCheck() {
 # Процес 2 видалено.
 # ============================================================
 
-def run_process_background(process_num, reviews_date=None, export_mode="partial"):
+def run_process_background(
+    process_num,
+    reviews_date=None,
+    export_mode="partial",
+    rework_slot=None,
+):
     global process_status
 
     try:
@@ -1465,6 +1637,13 @@ def run_process_background(process_num, reviews_date=None, export_mode="partial"
             msg = (
                 f"Процес 3 (Відгуки) успішно виконано! "
                 f"Оброблено рядків: {count}"
+            )
+
+        elif process_num == 4:
+            count = process_dorobky(rework_slot)
+            msg = (
+                f"Доробки ({rework_slot}) успішно вивантажено! "
+                f"Додано замовлень: {count}"
             )
 
         else:
@@ -1519,11 +1698,12 @@ def run_process_endpoint(process_num):
     data = request.get_json(silent=True) or {}
     reviews_date = None
     export_mode = "partial"
+    rework_slot = None
 
-    if process_num not in [1, 3]:
+    if process_num not in [1, 3, 4]:
         return jsonify({
             "status": "error",
-            "message": "Невідомий процес. Доступні процеси: 1 і 3.",
+            "message": "Невідомий процес. Доступні процеси: 1, 3 і 4.",
         }), 400
 
     if process_num == 1:
@@ -1556,6 +1736,14 @@ def run_process_endpoint(process_num):
                 "message": "Некоректний формат дати.",
             }), 400
 
+    if process_num == 4:
+        rework_slot = data.get("rework_slot")
+        if rework_slot not in ["09:00", "12:00", "17:00"]:
+            return jsonify({
+                "status": "error",
+                "message": "Оберіть час вивантаження: 09:00, 12:00 або 17:00.",
+            }), 400
+
     if not process_lock.acquire(blocking=False):
         return jsonify({
             "status": "busy",
@@ -1575,7 +1763,7 @@ def run_process_endpoint(process_num):
 
     thread = threading.Thread(
         target=run_process_background,
-        args=(process_num, reviews_date, export_mode),
+        args=(process_num, reviews_date, export_mode, rework_slot),
         daemon=True,
     )
 
