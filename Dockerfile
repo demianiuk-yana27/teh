@@ -1,6 +1,5 @@
 FROM python:3.10-slim
 
-# apt-get тут працює без обмежень, бо білд образу виконується з правами root
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     chromium-driver \
@@ -16,4 +15,4 @@ COPY . .
 ENV MALLOC_ARENA_MAX=1
 ENV PYTHONUNBUFFERED=1
 
-CMD ["sh", "-c", "gunicorn webapp:app --bind 0.0.0.0:$PORT --timeout 600"]
+CMD ["sh", "-c", "gunicorn operations_web:app --bind 0.0.0.0:$PORT --timeout 600"]
