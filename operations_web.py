@@ -64,6 +64,13 @@ app.view_functions["index"] = index_with_operations
 
 @app.route("/operations/order-count-report", methods=["POST"])
 def order_count_report_endpoint():
+    legacy = base.legacy
+    if not legacy.process_lock.acquire(blocking=False):
+        return jsonify({
+            "status": "busy",
+            "message": "Зараз уже виконується інший процес Asteril. Дочекайтеся його завершення.",
+        }), 409
+
     try:
         result = run_order_count_report()
         return jsonify({
@@ -72,3 +79,5 @@ def order_count_report_endpoint():
         })
     except Exception as exc:
         return jsonify({"status": "error", "message": str(exc)}), 500
+    finally:
+        legacy.process_lock.release()
