@@ -41,7 +41,7 @@ def _template():
 
         .process-row { display:flex; justify-content:center; align-items:center; gap:24px; margin:18px 0; }
         .process-row > .btn { width:350px; margin:0; flex:0 0 350px; }
-        .process-control { width:260px; flex:0 0 260px; text-align:left; }
+        .process-control { width:260px; flex:0 0 260px; text-align:left; transform:translateY(-10px); }
         .process-control .setting { margin:0; }
         .process-control .setting label { display:block; margin:0 0 7px; font-size:14px; }
 
@@ -60,6 +60,7 @@ def _template():
             .container { padding:30px 20px; }
             .process-row { flex-direction:column; gap:10px; }
             .process-row > .btn, .process-control { width:100%; flex:auto; }
+            .process-control { transform:none; }
             .range-box { width:100%; }
         }
     </style>
