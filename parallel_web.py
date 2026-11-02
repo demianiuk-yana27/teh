@@ -8,6 +8,7 @@ import operations_web as ui
 
 app = ui.app
 base = ui.base
+legacy = base.legacy
 
 PROCESS_NAMES = {"reviews", "analytics", "order-check"}
 process_locks = {name: threading.Lock() for name in PROCESS_NAMES}
@@ -103,9 +104,54 @@ def get_negative_status_parallel():
     return jsonify(process_statuses[process_name])
 
 
+# Дозволяємо новий слот 13:00 для «Доробок», не змінюючи інші процеси.
+_original_run_process_endpoint = app.view_functions["run_process_endpoint"]
+
+
+def run_process_with_13(process_num):
+    if process_num != 4:
+        return _original_run_process_endpoint(process_num)
+
+    data = request.get_json(silent=True) or {}
+    rework_slot = str(data.get("rework_slot") or "").strip()
+    if rework_slot not in {"09:00", "13:00", "17:00"}:
+        return jsonify({
+            "status": "error",
+            "message": "Оберіть час вивантаження: 09:00, 13:00 або 17:00.",
+        }), 400
+
+    if not legacy.process_lock.acquire(blocking=False):
+        return jsonify({
+            "status": "busy",
+            "message": (
+                f"Зараз уже виконується процес {legacy.process_status['process_num']}. "
+                "Дочекайтеся його завершення."
+            ),
+        }), 409
+
+    legacy.process_status = {
+        "running": True,
+        "process_num": 4,
+        "status": "running",
+        "message": "Виконується процес 4...",
+    }
+    try:
+        threading.Thread(
+            target=legacy.run_process_background,
+            args=(4, None, "partial", rework_slot),
+            daemon=True,
+        ).start()
+    except Exception:
+        legacy.process_lock.release()
+        raise
+
+    return jsonify({"status": "started", "message": "Процес запущено."})
+
+
 # Замінюємо тільки обробники старих маршрутів, не створюючи дублікати URL.
 app.view_functions["run_negative"] = run_negative_parallel
 app.view_functions["get_negative_status"] = get_negative_status_parallel
+app.view_functions["run_process_endpoint"] = run_process_with_13
 
 
 PARALLEL_JS = r'''
