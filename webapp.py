@@ -30,35 +30,48 @@ def _negative_template():
                     onclick="switchTab('negative')">Негативні відгуки</button>''',
     )
 
+    # Перевірка на наявність відгуків належить до процесів продзвону.
+    order_check_section = '''
+
+        <h4 style="margin-top:28px">Перевірка на наявність відгуків</h4>
+        <div class="setting">
+            <label for="orderCheckSince">📅 Дата початку перевірки:</label>
+            <input type="date" id="orderCheckSince" value="{{ default_negative_since }}">
+        </div>
+        <div class="setting">
+            <label for="orderCheckUntil">📅 Дата завершення перевірки:</label>
+            <input type="date" id="orderCheckUntil" value="{{ default_negative_until }}">
+        </div>
+        <button class="btn" style="background:#b45309" onclick="runNegative('order-check')">
+            🔎 Перевірка на наявність відгуків
+        </button>
+'''
+    html = html.replace(
+        '''        <button class="btn btn-3" onclick="runProcess(3)">
+            💭 Запустити Процес 3 (Відгуки)
+        </button>
+        </section>''',
+        '''        <button class="btn btn-3" onclick="runProcess(3)">
+            💭 Запустити Процес 3 (Відгуки)
+        </button>''' + order_check_section + '''
+        </section>''',
+    )
+
     negative_section = '''
         <section class="tab-section" id="negativeSection" style="display:none">
             <h3>Негативні відгуки</h3>
 
             <div class="setting">
-                <label for="reviewsDate">📅 Дата вигрузки відгуків:</label>
-                <input type="date" id="reviewsDate" value="{{ default_reviews_date }}">
+                <label for="negativeReviewsDate">📅 Дата вигрузки відгуків:</label>
+                <input type="date" id="negativeReviewsDate" value="{{ default_reviews_date }}">
             </div>
 
             <button class="btn" style="background:#7c3aed" onclick="runNegative('reviews')">
                 ⭐ Вигрузка відгуків
             </button>
 
-            <div class="setting" style="margin-top:20px">
-                <label for="negativeSince">📅 Дата початку перевірки:</label>
-                <input type="date" id="negativeSince" value="{{ default_negative_since }}">
-            </div>
-
-            <div class="setting">
-                <label for="negativeUntil">📅 Дата завершення перевірки:</label>
-                <input type="date" id="negativeUntil" value="{{ default_negative_until }}">
-            </div>
-
             <button class="btn" style="background:#0f766e" onclick="runNegative('analytics')">
                 📊 Аналітика та показник роботи
-            </button>
-
-            <button class="btn" style="background:#b45309" onclick="runNegative('order-check')">
-                🔎 Перевірка на наявність відгуків
             </button>
 
             <div id="negativeResult" style="margin-top:18px;font-weight:bold;white-space:pre-wrap"></div>
@@ -90,12 +103,21 @@ def _negative_template():
 let negativeTimer = null;
 
 function runNegative(processName) {
-    const result = document.getElementById("negativeResult");
-    const reviewsDate = document.getElementById("reviewsDate").value;
-    const checkSince = document.getElementById("negativeSince").value;
-    const checkUntil = document.getElementById("negativeUntil").value;
-    const since = processName === "reviews" ? reviewsDate : checkSince;
-    const until = processName === "reviews" ? reviewsDate : checkUntil;
+    const negativeResult = document.getElementById("negativeResult");
+    const result = processName === "order-check"
+        ? document.getElementById("result")
+        : negativeResult;
+
+    let since = "";
+    let until = "";
+
+    if (processName === "reviews") {
+        since = document.getElementById("negativeReviewsDate").value;
+        until = since;
+    } else if (processName === "order-check") {
+        since = document.getElementById("orderCheckSince").value;
+        until = document.getElementById("orderCheckUntil").value;
+    }
 
     if ((processName === "reviews" || processName === "order-check") && !since) {
         result.style.color = "red";
@@ -122,7 +144,7 @@ function runNegative(processName) {
         if (data.status === "started") {
             result.style.color = "#007bff";
             result.innerText = "⏳ " + data.message;
-            startNegativeStatusCheck();
+            startNegativeStatusCheck(processName);
         } else {
             result.style.color = "orange";
             result.innerText = "⚠️ " + data.message;
@@ -134,13 +156,15 @@ function runNegative(processName) {
     });
 }
 
-function startNegativeStatusCheck() {
+function startNegativeStatusCheck(processName) {
     if (negativeTimer) clearInterval(negativeTimer);
     negativeTimer = setInterval(() => {
         fetch("/negative/status")
         .then(response => response.json())
         .then(data => {
-            const result = document.getElementById("negativeResult");
+            const result = processName === "order-check"
+                ? document.getElementById("result")
+                : document.getElementById("negativeResult");
             if (data.status === "running") {
                 result.style.color = "#007bff";
                 result.innerText = "⏳ " + data.message;
