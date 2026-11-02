@@ -33,7 +33,6 @@ def _template():
             padding: 56px 20px;
             box-sizing: border-box;
         }
-
         .container {
             display: block;
             width: 825px;
@@ -42,7 +41,6 @@ def _template():
             padding: 48px 50px;
             box-sizing: border-box;
         }
-
         .setting select,
         .setting input[type="date"] {
             width: 190px;
@@ -58,171 +56,95 @@ def _template():
             box-sizing: border-box;
             transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
         }
-
         .setting select { cursor: pointer; }
-
         .setting select:hover,
-        .setting input[type="date"]:hover {
-            border-color: #9fb4cc;
-            background: #fff;
-        }
-
+        .setting input[type="date"]:hover { border-color: #9fb4cc; background: #fff; }
         .setting select:focus,
         .setting input[type="date"]:focus {
             border-color: #1f5f9f;
             background: #fff;
             box-shadow: 0 0 0 3px rgba(31, 95, 159, .12);
         }
-
-        /* На великих екранах: кнопка процесу ліворуч, його параметр праворуч. */
-        @media (min-width: 701px) {
-            #dialSection,
-            #operationsSection,
-            #negativeSection {
-                text-align: center;
-            }
-
-            #dialSection .setting,
-            #operationsSection .setting,
-            #negativeSection .setting {
-                margin: 0;
-            }
-
-            #dialSection .setting label,
-            #operationsSection .setting label,
-            #negativeSection .setting label {
-                margin-bottom: 7px;
-                font-size: 14px;
-            }
-
-            /* Продзвін: параметр КТВ стає праворуч від кнопки КТВ. */
-            #dialSection > .setting:nth-of-type(1) {
-                display: inline-flex;
-                width: 260px;
-                min-height: 76px;
-                margin-left: 18px;
-                vertical-align: middle;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-            }
-
-            #dialSection > .btn-1 {
-                display: inline-block;
-                width: 350px;
-                margin: 10px 0;
-                vertical-align: middle;
-            }
-
-            /* Переносимо перший параметр візуально після кнопки за допомогою flex-like order. */
-            #dialSection {
-                font-size: 0;
-            }
-            #dialSection > * { font-size: 16px; }
-            #dialSection > h3 { display: block; }
-            #dialSection > .setting:nth-of-type(1) { position: relative; }
-            #dialSection > .btn-1 { position: relative; }
-
-            /* Дата відгуків + кнопка відгуків в один рядок. */
-            #dialSection > .setting:nth-of-type(2),
-            #dialSection > .btn-3 {
-                display: inline-flex;
-                vertical-align: middle;
-            }
-            #dialSection > .setting:nth-of-type(2) {
-                width: 260px;
-                min-height: 76px;
-                margin-left: 18px;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-            }
-            #dialSection > .btn-3 {
-                width: 350px;
-                height: 54px;
-                align-items: center;
-                justify-content: center;
-            }
-
-            /* Операційні: час поруч із кнопкою Доробок. */
-            #operationsSection > .setting,
-            #operationsSection > .btn-4 {
-                display: inline-flex;
-                vertical-align: middle;
-            }
-            #operationsSection > .setting {
-                width: 260px;
-                min-height: 76px;
-                margin-left: 18px;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-            }
-            #operationsSection > .btn-4 {
-                width: 350px;
-                height: 54px;
-                align-items: center;
-                justify-content: center;
-            }
-
-            /* Негативні: дата поруч із кнопкою вигрузки. */
-            #negativeSection > .setting,
-            #negativeSection > button:first-of-type {
-                display: inline-flex;
-                vertical-align: middle;
-            }
-            #negativeSection > .setting {
-                width: 260px;
-                min-height: 76px;
-                margin-left: 18px;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-            }
-            #negativeSection > button:first-of-type {
-                width: 350px;
-                height: 54px;
-                align-items: center;
-                justify-content: center;
-            }
+        .process-pair {
+            display: grid;
+            grid-template-columns: 350px 220px;
+            justify-content: center;
+            align-items: center;
+            column-gap: 24px;
+            margin: 14px 0 20px;
         }
+        .process-pair > .btn,
+        .process-pair > button {
+            width: 350px !important;
+            margin: 0 !important;
+        }
+        .process-pair > .setting {
+            width: 220px !important;
+            margin: 0 !important;
+            text-align: left;
+        }
+        .process-pair > .setting label {
+            display: block;
+            margin: 0 0 7px;
+            font-size: 14px;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        .process-pair > .setting select,
+        .process-pair > .setting input[type="date"] { width: 190px; }
 
         @media (max-width: 700px) {
             body { padding: 20px 12px; }
             .container { padding: 30px 20px; }
+            .process-pair {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+            .process-pair > .btn,
+            .process-pair > button { width: 100% !important; }
+            .process-pair > .setting { width: 100% !important; text-align: center; }
+            .process-pair > .setting label { white-space: normal; }
         }
     </style>
 '''
     html = html.replace('</head>', design_css + '\n</head>')
 
-    # CSS grid дає правильний порядок: кнопка процесу зліва, її параметр справа,
-    # не змінюючи HTML та JS старих процесів.
     layout_js = '''
 <script>
 window.addEventListener("DOMContentLoaded", function () {
-    if (window.innerWidth <= 700) return;
+    function directChildren(section, selector) {
+        return Array.from(section.children).filter(el => el.matches(selector));
+    }
 
-    function pair(sectionId, buttonSelector, settingSelector) {
-        const section = document.getElementById(sectionId);
-        if (!section) return;
-        const button = section.querySelector(buttonSelector);
-        const setting = section.querySelector(settingSelector);
-        if (!button || !setting) return;
+    function makePair(button, setting) {
+        if (!button || !setting || button.closest(".process-pair") || setting.closest(".process-pair")) return;
         const row = document.createElement("div");
-        row.style.display = "flex";
-        row.style.justifyContent = "center";
-        row.style.alignItems = "center";
-        row.style.gap = "18px";
-        row.style.margin = "12px 0 18px";
+        row.className = "process-pair";
         button.parentNode.insertBefore(row, button);
         row.appendChild(button);
         row.appendChild(setting);
     }
 
-    pair("dialSection", ".btn-1", ".setting:nth-of-type(1)");
-    pair("dialSection", ".btn-3", ".setting:nth-of-type(1)");
-    pair("operationsSection", ".btn-4", ".setting:nth-of-type(1)");
-    pair("negativeSection", "button", ".setting:nth-of-type(1)");
+    const dial = document.getElementById("dialSection");
+    if (dial) {
+        const settings = directChildren(dial, ".setting");
+        makePair(dial.querySelector(":scope > .btn-1"), settings[0]);
+        makePair(dial.querySelector(":scope > .btn-3"), settings[1]);
+    }
+
+    const operations = document.getElementById("operationsSection");
+    if (operations) {
+        const settings = directChildren(operations, ".setting");
+        makePair(operations.querySelector(":scope > .btn-4"), settings[0]);
+    }
+
+    const negative = document.getElementById("negativeSection");
+    if (negative) {
+        const settings = directChildren(negative, ".setting");
+        const buttons = directChildren(negative, "button");
+        makePair(buttons[0], settings[0]);
+    }
 });
 </script>
 '''
