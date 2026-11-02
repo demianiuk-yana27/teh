@@ -1,48 +1,34 @@
 <!doctype html>
 <html lang="uk">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Asteril — автоматизації</title>
-  <style>
-    :root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#f4f7fb}
-    *{box-sizing:border-box}body{margin:0}.app{max-width:980px;margin:0 auto;padding:48px 20px}.card{background:#fff;border:1px solid #e5eaf1;border-radius:18px;padding:28px;box-shadow:0 10px 30px rgba(25,42,70,.06)}
-    h1{margin:0 0 8px;font-size:30px}p{color:#667085}.tabs{display:flex;gap:10px;flex-wrap:wrap;margin:26px 0}.tab{border:1px solid #dbe3ee;background:#fff;padding:11px 16px;border-radius:10px;font-weight:700;cursor:pointer}.tab.active{background:#173f70;color:#fff;border-color:#173f70}.panel{display:none}.panel.active{display:block}.process{padding:16px 0;border-top:1px solid #edf0f5}.process:first-child{border-top:0}.badge{display:inline-block;padding:4px 9px;border-radius:999px;background:#eef4ff;color:#315b91;font-size:12px;font-weight:700}.note{margin-top:24px;padding:14px 16px;border-radius:10px;background:#fff8e8;color:#755317;font-size:14px}
-  </style>
-</head>
-<body>
-  <main class="app">
-    <section class="card">
-      <h1>Asteril</h1>
-      <p>Нова оболонка сайту для Netlify. Автоматизації поки виконуються на існуючому Python/Selenium backend.</p>
-      <div class="tabs">
-        <button class="tab active" data-tab="dial">Продзвін</button>
-        <button class="tab" data-tab="operations">Операційні менеджери</button>
-        <button class="tab" data-tab="negative">Негативні відгуки</button>
-      </div>
-      <section id="dial" class="panel active">
-        <div class="process"><strong>КТВ</strong><br><span class="badge">існуючий процес</span></div>
-        <div class="process"><strong>Відгуки</strong><br><span class="badge">існуючий процес</span></div>
-        <div class="process"><strong>Перевірка на наявність відгуків</strong></div>
-      </section>
-      <section id="operations" class="panel">
-        <div class="process"><strong>Доробки</strong><br><span class="badge">операційний процес</span></div>
-        <div class="process"><strong>Звіт по кількості замовлень</strong></div>
-      </section>
-      <section id="negative" class="panel">
-        <div class="process"><strong>Вигрузка відгуків</strong></div>
-        <div class="process"><strong>Аналітика та показник роботи</strong></div>
-      </section>
-      <div class="note">Це перший безпечний етап міграції: UI відокремлено від важких Selenium-процесів. Наступний крок — підключити кнопки через /api до поточного backend.</div>
-    </section>
-  </main>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Asteril Automation</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#142746;background:#f4f7fc;--navy:#102746;--blue:#1769f6;--line:#dce6f3;--muted:#7184a2}*{box-sizing:border-box}body{margin:0}.top{height:92px;background:linear-gradient(110deg,#102746,#122c4f);color:#fff;display:flex;align-items:center;padding:0 30px;gap:18px}.logo{width:54px;height:54px;border-radius:15px;background:#2f76f6;display:grid;place-items:center;font-size:28px;box-shadow:0 8px 20px #071a3440}.brand h1{font-size:24px;margin:0}.brand p{margin:4px 0 0;color:#b9c8dc}.search{margin-left:auto;width:360px;border:1px solid #536985;background:#ffffff12;border-radius:12px;padding:13px 16px;color:#dbe6f5}.layout{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 92px)}aside{background:#fff;border-right:1px solid var(--line);padding:28px 20px}.home,.navitem,.sub{display:flex;align-items:center;gap:12px;border-radius:10px;padding:11px 13px;cursor:pointer}.home{background:#edf3fc;font-weight:800;margin-bottom:20px}.group-title{font-weight:800;margin:14px 10px 7px;display:flex;justify-content:space-between}.navitem{font-weight:700}.navitem.active,.sub.active{background:#e6efff;color:#075de7}.sub{margin-left:17px;padding:9px 13px;font-size:14px}.divider{height:1px;background:var(--line);margin:18px 10px}.section-label{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:#8193ad;font-weight:800;margin:0 10px 12px}main{padding:34px 36px 60px;overflow:hidden}.pagehead{display:flex;align-items:center;gap:16px;margin-bottom:28px}.pageicon{width:58px;height:58px;border-radius:16px;background:#dfebff;color:#0d63e9;display:grid;place-items:center;font-size:27px}.pagehead h2{font-size:31px;margin:0 0 4px}.pagehead p{margin:0;color:var(--muted);font-size:16px}.primary{margin-left:auto;background:var(--blue);color:#fff;border:0;border-radius:11px;padding:13px 18px;font-weight:800;font-size:14px}.chips{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px}.chip{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 16px;font-weight:650;color:#304b70}.chip.active{background:var(--blue);color:#fff;border-color:var(--blue)}.workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:18px}.folders,.content{background:#fff;border:1px solid var(--line);border-radius:17px;box-shadow:0 8px 24px #17385e0a}.folders{padding:18px}.folders h3{margin:4px 4px 14px}.folder{padding:11px 12px;border-radius:9px;margin:3px 0;display:flex;justify-content:space-between}.folder.active{background:#e8f0ff;color:#075de7;font-weight:750}.content{overflow:hidden}.contenthead{padding:20px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:13px}.contenthead h3{font-size:23px;margin:0 0 3px}.contenthead p{margin:0;color:var(--muted)}.cards{padding:18px}.script{border:1px solid #d6e2f1;border-radius:14px;margin-bottom:16px;overflow:hidden}.script-title{background:#f1f6fe;padding:13px 16px;font-weight:800;font-size:17px;display:flex;align-items:center;gap:10px}.num{background:#dceaff;color:#0861df;border-radius:9px;padding:6px 8px}.copy{margin-left:auto;border:1px solid #c8dbf7;background:#f7fbff;color:#1260d6;border-radius:9px;padding:7px 11px}.script-body{padding:14px 18px;font-size:16px;line-height:1.7}.placeholder{display:none;background:#fff;border:1px solid var(--line);border-radius:17px;padding:30px}.placeholder h3{font-size:24px;margin-top:0}@media(max-width:900px){.search{display:none}.layout{grid-template-columns:1fr}aside{display:none}main{padding:24px 16px}.workspace{grid-template-columns:1fr}.folders{display:none}.top{height:76px}.brand h1{font-size:19px}.brand p{font-size:13px}.pagehead h2{font-size:25px}}
+</style>
+</head><body>
+<header class="top"><div class="logo">⚡</div><div class="brand"><h1>Asteril Automation</h1><p>Автоматизації та робочі процеси</p></div><div class="search">⌕ &nbsp; Пошук по базі...</div></header>
+<div class="layout"><aside>
+<div class="home" data-view="home">⌂ &nbsp; Головна</div>
+<div class="group-title">🗄️ База даних <span>⌃</span></div>
+<div class="sub active" data-view="scripts">💬 Скрипти</div><div class="sub" data-view="templates">▤ Шаблони відповідей</div><div class="sub" data-view="qa">❔ Питання-відповідь</div><div class="sub" data-view="training">📖 Навчальні матеріали</div><div class="sub" data-view="instructions">▱ Інструкції</div>
+<div class="divider"></div><div class="section-label">Відділи</div>
+<div class="navitem">📞 Продзвін</div><div class="sub" data-view="ktv">• КТВ</div><div class="sub" data-view="reviews">• Відгуки</div>
+<div class="navitem">👥 Операційні менеджери</div><div class="sub" data-view="dorobky">• Доробки</div>
+<div class="navitem" data-view="negative">⭐ Негативні відгуки</div>
+</aside><main>
+<section id="scriptsView">
+<div class="pagehead"><div class="pageicon">🗄️</div><div><h2>База знань: Скрипти</h2><p>Готові скрипти для спілкування з клієнтами, продажів та підтримки.</p></div><button class="primary">＋ Додати скрипт</button></div>
+<div class="chips"><div class="chip active">Усі скрипти &nbsp; 5</div><div class="chip">Привітання &nbsp; 1</div><div class="chip">Наявність і відправка &nbsp; 1</div><div class="chip">Подовжена гарантія &nbsp; 1</div><div class="chip">Звірка доставки та оплати &nbsp; 1</div></div>
+<div class="workspace"><div class="folders"><h3>Розділи</h3><div class="folder active"><span>▱ Скрипт загальний</span><span>5</span></div><div class="folder"><span>▱ Пропозиція апс для жінок</span><span>2</span></div><div class="folder"><span>▱ Пропозиція апс для чоловіків</span><span>2</span></div><div class="folder"><span>▱ Супутні товари</span><span>3</span></div><div class="folder"><span>▱ Додаткові апси</span><span>2</span></div><div class="folder"><span>▱ Опрацювання відмов</span><span>4</span></div></div>
+<div class="content"><div class="contenthead"><div class="pageicon" style="width:48px;height:48px">▤</div><div><h3>Скрипт загальний</h3><p>Основні скрипти розмови: від привітання до завершення замовлення.</p></div></div><div class="cards">
+<div class="script"><div class="script-title"><span class="num">01</span>Привітання<button class="copy" onclick="copyText(this)">▣ Скопіювати</button></div><div class="script-body">[Ім’я клієнта], добрий день!<br>Це інтернет-магазин [назва], мене звати [ім’я].<br>Ви робили у нас замовлення на [товар]?</div></div>
+<div class="script"><div class="script-title"><span class="num">02</span>Наявність і відправка<button class="copy" onclick="copyText(this)">▣ Скопіювати</button></div><div class="script-body">Товар маємо в наявності.<br>Відправка буде протягом [кількість] робочих днів.<br>Крайній термін відправки — [дата].</div></div>
+</div></div></div></section>
+<section id="placeholder" class="placeholder"><h3 id="placeholderTitle"></h3><p>Розділ уже додано до структури. Наповнення та робочі інструменти підключимо наступними кроками.</p></section>
+</main></div>
 <script>
-  const tabs=[...document.querySelectorAll('.tab')];
-  const panels=[...document.querySelectorAll('.panel')];
-  tabs.forEach(btn=>btn.addEventListener('click',()=>{
-    tabs.forEach(x=>x.classList.remove('active'));panels.forEach(x=>x.classList.remove('active'));
-    btn.classList.add('active');document.getElementById(btn.dataset.tab).classList.add('active');
-  }));
-</script>
-</body>
-</html>
+const labels={home:'Головна',templates:'Шаблони відповідей',qa:'Питання-відповідь',training:'Навчальні матеріали',instructions:'Інструкції',ktv:'Продзвін — КТВ',reviews:'Продзвін — Відгуки',dorobky:'Операційні менеджери — Доробки',negative:'Негативні відгуки'};
+document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>{document.querySelectorAll('[data-view]').forEach(x=>x.classList.remove('active'));el.classList.add('active');const v=el.dataset.view;if(v==='scripts'){scriptsView.style.display='block';placeholder.style.display='none'}else{scriptsView.style.display='none';placeholder.style.display='block';placeholderTitle.textContent=labels[v]||v}}));
+function copyText(btn){navigator.clipboard?.writeText(btn.closest('.script').querySelector('.script-body').innerText);const old=btn.innerText;btn.innerText='✓ Скопійовано';setTimeout(()=>btn.innerText=old,1200)}
+</script></body></html>
