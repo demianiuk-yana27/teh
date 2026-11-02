@@ -59,9 +59,7 @@ def _template():
             transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
         }
 
-        .setting select {
-            cursor: pointer;
-        }
+        .setting select { cursor: pointer; }
 
         .setting select:hover,
         .setting input[type="date"]:hover {
@@ -76,6 +74,119 @@ def _template():
             box-shadow: 0 0 0 3px rgba(31, 95, 159, .12);
         }
 
+        /* На великих екранах: кнопка процесу ліворуч, його параметр праворуч. */
+        @media (min-width: 701px) {
+            #dialSection,
+            #operationsSection,
+            #negativeSection {
+                text-align: center;
+            }
+
+            #dialSection .setting,
+            #operationsSection .setting,
+            #negativeSection .setting {
+                margin: 0;
+            }
+
+            #dialSection .setting label,
+            #operationsSection .setting label,
+            #negativeSection .setting label {
+                margin-bottom: 7px;
+                font-size: 14px;
+            }
+
+            /* Продзвін: параметр КТВ стає праворуч від кнопки КТВ. */
+            #dialSection > .setting:nth-of-type(1) {
+                display: inline-flex;
+                width: 260px;
+                min-height: 76px;
+                margin-left: 18px;
+                vertical-align: middle;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            }
+
+            #dialSection > .btn-1 {
+                display: inline-block;
+                width: 350px;
+                margin: 10px 0;
+                vertical-align: middle;
+            }
+
+            /* Переносимо перший параметр візуально після кнопки за допомогою flex-like order. */
+            #dialSection {
+                font-size: 0;
+            }
+            #dialSection > * { font-size: 16px; }
+            #dialSection > h3 { display: block; }
+            #dialSection > .setting:nth-of-type(1) { position: relative; }
+            #dialSection > .btn-1 { position: relative; }
+
+            /* Дата відгуків + кнопка відгуків в один рядок. */
+            #dialSection > .setting:nth-of-type(2),
+            #dialSection > .btn-3 {
+                display: inline-flex;
+                vertical-align: middle;
+            }
+            #dialSection > .setting:nth-of-type(2) {
+                width: 260px;
+                min-height: 76px;
+                margin-left: 18px;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            }
+            #dialSection > .btn-3 {
+                width: 350px;
+                height: 54px;
+                align-items: center;
+                justify-content: center;
+            }
+
+            /* Операційні: час поруч із кнопкою Доробок. */
+            #operationsSection > .setting,
+            #operationsSection > .btn-4 {
+                display: inline-flex;
+                vertical-align: middle;
+            }
+            #operationsSection > .setting {
+                width: 260px;
+                min-height: 76px;
+                margin-left: 18px;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            }
+            #operationsSection > .btn-4 {
+                width: 350px;
+                height: 54px;
+                align-items: center;
+                justify-content: center;
+            }
+
+            /* Негативні: дата поруч із кнопкою вигрузки. */
+            #negativeSection > .setting,
+            #negativeSection > button:first-of-type {
+                display: inline-flex;
+                vertical-align: middle;
+            }
+            #negativeSection > .setting {
+                width: 260px;
+                min-height: 76px;
+                margin-left: 18px;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            }
+            #negativeSection > button:first-of-type {
+                width: 350px;
+                height: 54px;
+                align-items: center;
+                justify-content: center;
+            }
+        }
+
         @media (max-width: 700px) {
             body { padding: 20px 12px; }
             .container { padding: 30px 20px; }
@@ -83,6 +194,39 @@ def _template():
     </style>
 '''
     html = html.replace('</head>', design_css + '\n</head>')
+
+    # CSS grid дає правильний порядок: кнопка процесу зліва, її параметр справа,
+    # не змінюючи HTML та JS старих процесів.
+    layout_js = '''
+<script>
+window.addEventListener("DOMContentLoaded", function () {
+    if (window.innerWidth <= 700) return;
+
+    function pair(sectionId, buttonSelector, settingSelector) {
+        const section = document.getElementById(sectionId);
+        if (!section) return;
+        const button = section.querySelector(buttonSelector);
+        const setting = section.querySelector(settingSelector);
+        if (!button || !setting) return;
+        const row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.justifyContent = "center";
+        row.style.alignItems = "center";
+        row.style.gap = "18px";
+        row.style.margin = "12px 0 18px";
+        button.parentNode.insertBefore(row, button);
+        row.appendChild(button);
+        row.appendChild(setting);
+    }
+
+    pair("dialSection", ".btn-1", ".setting:nth-of-type(1)");
+    pair("dialSection", ".btn-3", ".setting:nth-of-type(1)");
+    pair("operationsSection", ".btn-4", ".setting:nth-of-type(1)");
+    pair("negativeSection", "button", ".setting:nth-of-type(1)");
+});
+</script>
+'''
+    html = html.replace('</body>', layout_js + '\n</body>')
 
     js = '''
 function runOrderCountReport() {
