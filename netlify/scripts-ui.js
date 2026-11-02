@@ -1,24 +1,26 @@
 (function(){
   let activeCategory=0;
   const e=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  function renderCategory(i){
-    const data=window.SCRIPT_DATA||[]; const c=data[i]; if(!c)return; activeCategory=i;
-    document.querySelectorAll('#scriptFolders .script-folder').forEach((x,n)=>x.classList.toggle('selected',n===i));
-    const title=document.getElementById('scriptCategoryTitle'), meta=document.getElementById('scriptCategoryMeta'), cards=document.getElementById('scriptCards');
-    if(title) title.textContent=c.category;
-    if(meta) meta.textContent=c.items.length+' готових відповідей';
-    if(cards) cards.innerHTML=c.items.map((x,n)=>`<article class="script-card"><div class="script-card-head"><span class="script-num">${String(n+1).padStart(2,'0')}</span><strong>${e(x.title)}</strong><button class="copy script-copy" data-cat="${i}" data-item="${n}">▣ Скопіювати</button></div><div class="script-text">${e(x.text).replace(/\n/g,'<br>')}</div></article>`).join('');
-  }
-  function init(){
-    const data=window.SCRIPT_DATA||[], folders=document.getElementById('scriptFolders'), count=document.getElementById('scriptTotal');
-    if(!folders)return;
-    if(count) count.textContent=data.reduce((n,c)=>n+c.items.length,0);
-    folders.innerHTML=data.map((c,i)=>`<button class="script-folder ${i===0?'selected':''}" data-index="${i}"><span>▱ ${e(c.category.replace(/^\d+\.\s*/,''))}</span><b>${c.items.length}</b></button>`).join('');
-    folders.addEventListener('click',ev=>{const b=ev.target.closest('.script-folder');if(b)renderCategory(Number(b.dataset.index));});
-    document.getElementById('scriptCards')?.addEventListener('click',ev=>{const b=ev.target.closest('.script-copy');if(!b)return;const x=data[Number(b.dataset.cat)]?.items[Number(b.dataset.item)];if(!x)return;navigator.clipboard.writeText(x.text);const old=b.textContent;b.textContent='✓ Скопійовано';setTimeout(()=>b.textContent=old,1200);});
-    const search=document.getElementById('scriptSearch');
-    search?.addEventListener('input',()=>{const q=search.value.toLowerCase().trim();if(!q)return renderCategory(activeCategory);const found=[];data.forEach((c,ci)=>c.items.forEach((x,ii)=>{if((x.title+' '+x.text).toLowerCase().includes(q))found.push({...x,ci,ii,category:c.category})}));document.getElementById('scriptCategoryTitle').textContent='Результати пошуку';document.getElementById('scriptCategoryMeta').textContent=found.length+' знайдено';document.getElementById('scriptCards').innerHTML=found.map((x,n)=>`<article class="script-card"><div class="script-card-head"><span class="script-num">${String(n+1).padStart(2,'0')}</span><strong>${e(x.title)}</strong><button class="copy script-copy" data-cat="${x.ci}" data-item="${x.ii}">▣ Скопіювати</button></div><div class="script-category-label">${e(x.category)}</div><div class="script-text">${e(x.text).replace(/\n/g,'<br>')}</div></article>`).join('')||'<div class="empty">Нічого не знайдено.</div>';});
-    renderCategory(0);
-  }
+  const stop=new Set('і й та а але або що як це ця цей ці у в на до з із зі за для про по від при не є я ви ми він вона вони воно мені мене вам вас мій моя моє ваш ваша ваше будь будьласка будь-ласка добрий доброго день вечір ранок привіт скажіть підкажіть будь ласка'.split(' '));
+  const groups=[
+    ['відправ','відправк','відвантаж','виїх','поїх','достав','посилк','ттн'],
+    ['довг','затрим','чека','досі','коли','термін','строк'],
+    ['поверн','обмін','назад','відмов','скасув','скас'],
+    ['оплат','оплата','квитанц','рахунок','iban','карт'],
+    ['брак','бракован','поламан','несправ','дефект','пошкод'],
+    ['нема','немає','відсут','закінчив'],
+    ['колір','кольор'],['модел','товар'],['дешев','дорог','ціна','вартіст'],
+    ['короб','пакув'],['виробник','країн'],['якіс','якість'],['дубл','дублікат'],
+    ['дитин','дитина'],['грош','кошти','повернення коштів'],['опт','оптов'],['дроп','дропшип'],['відгук','оцінк']
+  ];
+  function norm(s){return String(s||'').toLowerCase().replace(/[’'`]/g,'').replace(/ґ/g,'г').replace(/[^a-zа-яіїє0-9%]+/giu,' ').replace(/\s+/g,' ').trim()}
+  function stem(w){return w.replace(/(ями|ами|ові|еві|ого|ому|ими|ій|ий|а|я|и|і|у|ю|е|є|о|ь)$/u,'')}
+  function tokens(s){return norm(s).split(' ').filter(w=>w.length>2&&!stop.has(w)).map(stem)}
+  function expand(ts){const out=new Set(ts);for(const t of ts)for(const g of groups)if(g.some(x=>t.startsWith(stem(x))||stem(x).startsWith(t)))g.forEach(x=>out.add(stem(x)));return [...out]}
+  function scoreItem(x,c,q){const raw=norm(q), qt=tokens(q), ex=expand(qt), title=norm(x.title), text=norm(x.text), cat=norm(c.category), all=title+' '+text+' '+cat, at=tokens(all);let score=0,hits=0;if(raw&&title.includes(raw))score+=90;if(raw&&all.includes(raw))score+=55;for(const t of ex){if(t.length<3)continue;let hit=false;if(tokens(title).some(a=>a.startsWith(t)||t.startsWith(a))){score+=18;hit=true}else if(at.some(a=>a.startsWith(t)||t.startsWith(a))){score+=7;hit=true}if(hit&&qt.includes(t))hits++}score+=hits*6;if(qt.length&&hits===qt.length)score+=25;return score}
+  function card(x,n,ci,ii,extra=''){return `<article class="script-card"><div class="script-card-head"><span class="script-num">${String(n+1).padStart(2,'0')}</span><strong>${e(x.title)}</strong><button class="copy script-copy" data-cat="${ci}" data-item="${ii}">▣ Скопіювати</button></div>${extra}<div class="script-text">${e(x.text).replace(/\n/g,'<br>')}</div></article>`}
+  function renderCategory(i){const data=window.SCRIPT_DATA||[],c=data[i];if(!c)return;activeCategory=i;document.querySelectorAll('#scriptFolders .script-folder').forEach((x,n)=>x.classList.toggle('selected',n===i));const title=document.getElementById('scriptCategoryTitle'),meta=document.getElementById('scriptCategoryMeta'),cards=document.getElementById('scriptCards');if(title)title.textContent=c.category;if(meta)meta.textContent=c.items.length+' готових відповідей';if(cards)cards.innerHTML=c.items.map((x,n)=>card(x,n,i,n)).join('')}
+  function smartSearch(q){const data=window.SCRIPT_DATA||[],title=document.getElementById('scriptCategoryTitle'),meta=document.getElementById('scriptCategoryMeta'),cards=document.getElementById('scriptCards');q=q.trim();if(!q)return renderCategory(activeCategory);let found=[];data.forEach((c,ci)=>c.items.forEach((x,ii)=>{const score=scoreItem(x,c,q);if(score>6)found.push({...x,ci,ii,category:c.category,score})}));found.sort((a,b)=>b.score-a.score);const max=found[0]?.score||1;found=found.slice(0,12).map(x=>({...x,pct:Math.max(35,Math.min(99,Math.round(45+54*x.score/max)))}));if(title)title.textContent='Розумний пошук';if(meta)meta.textContent=found.length?`Знайдено ${found.length} найбільш релевантних скриптів`:'Нічого не знайдено';if(cards)cards.innerHTML=found.map((x,n)=>card(x,n,x.ci,x.ii,`<div class="script-category-label">${n===0?'⭐ Найкраще підходить · ':''}${e(x.category)} · ${x.pct}% відповідності</div>`)).join('')||'<div class="empty">Нічого не знайдено. Спробуйте описати ситуацію іншими словами.</div>'}
+  function init(){const data=window.SCRIPT_DATA||[],folders=document.getElementById('scriptFolders'),count=document.getElementById('scriptTotal');if(!folders)return;if(count)count.textContent=data.reduce((n,c)=>n+c.items.length,0);folders.innerHTML=data.map((c,i)=>`<button class="script-folder ${i===0?'selected':''}" data-index="${i}"><span>▱ ${e(c.category.replace(/^\d+\.\s*/,''))}</span><b>${c.items.length}</b></button>`).join('');folders.addEventListener('click',ev=>{const b=ev.target.closest('.script-folder');if(b){const s=document.getElementById('scriptSearch');if(s)s.value='';renderCategory(Number(b.dataset.index))}});document.getElementById('scriptCards')?.addEventListener('click',ev=>{const b=ev.target.closest('.script-copy');if(!b)return;const x=data[Number(b.dataset.cat)]?.items[Number(b.dataset.item)];if(!x)return;navigator.clipboard.writeText(x.text);const old=b.textContent;b.textContent='✓ Скопійовано';setTimeout(()=>b.textContent=old,1200)});const search=document.getElementById('scriptSearch');if(search){search.placeholder='Введіть ключові слова або вставте повідомлення клієнта…';let timer;search.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>smartSearch(search.value),120)})}renderCategory(0)}
   document.addEventListener('DOMContentLoaded',init);
 })();
