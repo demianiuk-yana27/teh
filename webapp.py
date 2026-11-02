@@ -35,18 +35,23 @@ def _negative_template():
             <h3>Негативні відгуки</h3>
 
             <div class="setting">
-                <label for="negativeSince">📅 Дата початку:</label>
-                <input type="date" id="negativeSince" value="{{ default_negative_since }}">
-            </div>
-
-            <div class="setting">
-                <label for="negativeUntil">📅 Дата завершення:</label>
-                <input type="date" id="negativeUntil" value="{{ default_negative_until }}">
+                <label for="reviewsDate">📅 Дата вигрузки відгуків:</label>
+                <input type="date" id="reviewsDate" value="{{ default_reviews_date }}">
             </div>
 
             <button class="btn" style="background:#7c3aed" onclick="runNegative('reviews')">
                 ⭐ Вигрузка відгуків
             </button>
+
+            <div class="setting" style="margin-top:20px">
+                <label for="negativeSince">📅 Дата початку перевірки:</label>
+                <input type="date" id="negativeSince" value="{{ default_negative_since }}">
+            </div>
+
+            <div class="setting">
+                <label for="negativeUntil">📅 Дата завершення перевірки:</label>
+                <input type="date" id="negativeUntil" value="{{ default_negative_until }}">
+            </div>
 
             <button class="btn" style="background:#0f766e" onclick="runNegative('analytics')">
                 📊 Аналітика та показник роботи
@@ -86,12 +91,15 @@ let negativeTimer = null;
 
 function runNegative(processName) {
     const result = document.getElementById("negativeResult");
-    const since = document.getElementById("negativeSince").value;
-    const until = document.getElementById("negativeUntil").value;
+    const reviewsDate = document.getElementById("reviewsDate").value;
+    const checkSince = document.getElementById("negativeSince").value;
+    const checkUntil = document.getElementById("negativeUntil").value;
+    const since = processName === "reviews" ? reviewsDate : checkSince;
+    const until = processName === "reviews" ? reviewsDate : checkUntil;
 
     if ((processName === "reviews" || processName === "order-check") && !since) {
         result.style.color = "red";
-        result.innerText = "❌ Виберіть дату початку.";
+        result.innerText = processName === "reviews" ? "❌ Виберіть дату вигрузки." : "❌ Виберіть дату початку.";
         return;
     }
 
@@ -157,7 +165,7 @@ function startNegativeStatusCheck() {
 
 
 def index_with_negative_reviews():
-    default_reviews_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    default_reviews_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     default_negative_until = datetime.now().strftime("%Y-%m-%d")
     default_negative_since = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
     return render_template_string(
@@ -235,7 +243,9 @@ def run_negative(process_name):
     since = str(data.get("since") or "").strip()
     until = str(data.get("until") or "").strip()
     if process_name in {"reviews", "order-check"} and not since:
-        return jsonify({"status": "error", "message": "Виберіть дату початку."}), 400
+        return jsonify({"status": "error", "message": "Виберіть дату."}), 400
+    if process_name == "reviews":
+        until = since
     if since and until and since > until:
         return jsonify({"status": "error", "message": "Дата початку не може бути пізнішою за дату завершення."}), 400
     if not negative_lock.acquire(blocking=False):
