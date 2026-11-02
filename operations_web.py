@@ -25,6 +25,65 @@ def _template():
             </button>\n''' + block + '''
         </section>''',
     )
+
+    design_css = '''
+    <style>
+        body {
+            margin: 0;
+            padding: 56px 20px;
+            box-sizing: border-box;
+        }
+
+        .container {
+            display: block;
+            width: 825px;
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 48px 50px;
+            box-sizing: border-box;
+        }
+
+        .setting select,
+        .setting input[type="date"] {
+            width: 190px;
+            height: 46px;
+            padding: 0 14px;
+            border: 1px solid #d7dee8;
+            border-radius: 8px;
+            background: #f8fafc;
+            color: #1f2937;
+            font: inherit;
+            font-size: 16px;
+            outline: none;
+            box-sizing: border-box;
+            transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
+        }
+
+        .setting select {
+            cursor: pointer;
+        }
+
+        .setting select:hover,
+        .setting input[type="date"]:hover {
+            border-color: #9fb4cc;
+            background: #fff;
+        }
+
+        .setting select:focus,
+        .setting input[type="date"]:focus {
+            border-color: #1f5f9f;
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(31, 95, 159, .12);
+        }
+
+        @media (max-width: 700px) {
+            body { padding: 20px 12px; }
+            .container { padding: 30px 20px; }
+        }
+    </style>
+'''
+    html = html.replace('</head>', design_css + '\n</head>')
+
     js = '''
 function runOrderCountReport() {
     const result = document.getElementById("result");
