@@ -15,4 +15,4 @@ COPY . .
 ENV MALLOC_ARENA_MAX=1
 ENV PYTHONUNBUFFERED=1
 
-CMD ["sh", "-c", "gunicorn parallel_web:app --bind 0.0.0.0:$PORT --timeout 600"]
+CMD ["sh", "-c", "gunicorn dorobky_entry:app --bind 0.0.0.0:$PORT --timeout 600"]
