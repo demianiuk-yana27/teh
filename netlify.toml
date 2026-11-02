@@ -1,0 +1,11 @@
+[build]
+  publish = "netlify"
+
+# The existing Flask/Selenium service remains the automation backend.
+# Set BACKEND_URL in Netlify before enabling the API proxy.
+
+[[redirects]]
+  from = "/api/*"
+  to = ":BACKEND_URL/:splat"
+  status = 200
+  force = true
