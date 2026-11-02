@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Asteril — автоматизації</title>
+  <style>
+    :root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#f4f7fb}
+    *{box-sizing:border-box}body{margin:0}.app{max-width:980px;margin:0 auto;padding:48px 20px}.card{background:#fff;border:1px solid #e5eaf1;border-radius:18px;padding:28px;box-shadow:0 10px 30px rgba(25,42,70,.06)}
+    h1{margin:0 0 8px;font-size:30px}p{color:#667085}.tabs{display:flex;gap:10px;flex-wrap:wrap;margin:26px 0}.tab{border:1px solid #dbe3ee;background:#fff;padding:11px 16px;border-radius:10px;font-weight:700;cursor:pointer}.tab.active{background:#173f70;color:#fff;border-color:#173f70}.panel{display:none}.panel.active{display:block}.process{padding:16px 0;border-top:1px solid #edf0f5}.process:first-child{border-top:0}.badge{display:inline-block;padding:4px 9px;border-radius:999px;background:#eef4ff;color:#315b91;font-size:12px;font-weight:700}.note{margin-top:24px;padding:14px 16px;border-radius:10px;background:#fff8e8;color:#755317;font-size:14px}
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="card">
+      <h1>Asteril</h1>
+      <p>Нова оболонка сайту для Netlify. Автоматизації поки виконуються на існуючому Python/Selenium backend.</p>
+      <div class="tabs">
+        <button class="tab active" data-tab="dial">Продзвін</button>
+        <button class="tab" data-tab="operations">Операційні менеджери</button>
+        <button class="tab" data-tab="negative">Негативні відгуки</button>
+      </div>
+      <section id="dial" class="panel active">
+        <div class="process"><strong>КТВ</strong><br><span class="badge">існуючий процес</span></div>
+        <div class="process"><strong>Відгуки</strong><br><span class="badge">існуючий процес</span></div>
+        <div class="process"><strong>Перевірка на наявність відгуків</strong></div>
+      </section>
+      <section id="operations" class="panel">
+        <div class="process"><strong>Доробки</strong><br><span class="badge">операційний процес</span></div>
+        <div class="process"><strong>Звіт по кількості замовлень</strong></div>
+      </section>
+      <section id="negative" class="panel">
+        <div class="process"><strong>Вигрузка відгуків</strong></div>
+        <div class="process"><strong>Аналітика та показник роботи</strong></div>
+      </section>
+      <div class="note">Це перший безпечний етап міграції: UI відокремлено від важких Selenium-процесів. Наступний крок — підключити кнопки через /api до поточного backend.</div>
+    </section>
+  </main>
+<script>
+  const tabs=[...document.querySelectorAll('.tab')];
+  const panels=[...document.querySelectorAll('.panel')];
+  tabs.forEach(btn=>btn.addEventListener('click',()=>{
+    tabs.forEach(x=>x.classList.remove('active'));panels.forEach(x=>x.classList.remove('active'));
+    btn.classList.add('active');document.getElementById(btn.dataset.tab).classList.add('active');
+  }));
+</script>
+</body>
+</html>
