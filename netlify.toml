@@ -1,4 +1,5 @@
 [build]
+  command = "python build_netlify.py"
   publish = "netlify"
 
 # Netlify serves the new UI and proxies automation calls to the existing
