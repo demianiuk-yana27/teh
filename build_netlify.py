@@ -1,8 +1,8 @@
 from pathlib import Path
 
-# Content is now committed directly to netlify/index.html and the data files.
-# Keep the Netlify build step as a lightweight validation only, so repeated
-# deploys never try to rewrite already-generated markup.
+# The frontend is committed directly to netlify/index.html.
+# This build step only validates the current page structure and must not
+# rewrite generated markup.
 p = Path('netlify/index.html')
 if not p.exists():
     raise SystemExit('netlify/index.html is missing')
@@ -10,10 +10,13 @@ if not p.exists():
 s = p.read_text(encoding='utf-8')
 required = [
     'id="scripts"',
+    'id="techfaq"',
     'id="ktv"',
     'id="reviews"',
     'id="dorobky"',
-    'id="negative"',
+    'id="ordercount"',
+    'id="negative-reviews"',
+    'id="negative-analytics"',
 ]
 missing = [marker for marker in required if marker not in s]
 if missing:
