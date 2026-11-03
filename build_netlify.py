@@ -10,6 +10,10 @@ missing = [marker for marker in required if marker not in s]
 if missing:
     raise SystemExit('Missing required sections: ' + ', '.join(missing))
 
+# Site branding.
+s = s.replace('<title>Asteril Automation</title>', '<title>Технічний відділ</title>', 1)
+s = s.replace('<h1>Asteril Automation</h1>', '<h1>Технічний відділ</h1>', 1)
+
 # Database navigation: correspondence scripts, call scripts and refusal handling.
 s = s.replace('data-view="scripts">💬 Скрипти</div>', 'data-view="scripts">💬 Скрипти для переписок</div><div class="sub" data-view="call-scripts">☎️ Скрипти для дзвінка</div><div class="sub" data-view="refusal-work">🚫 Робота з відмовою</div>', 1)
 # Training materials subsections.
