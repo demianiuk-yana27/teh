@@ -1,0 +1,1 @@
+(()=>{const CAT='data:image/jpeg;base64,PLACEHOLDER';})();
