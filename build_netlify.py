@@ -19,14 +19,14 @@ s = s.replace('data-view="training">📖 Навчальні матеріали</
 start = s.index('<section class="view" id="scripts">')
 end = s.index('</section>', start) + len('</section>')
 scripts_section = '''<section class="view" id="scripts">
-<div class="pagehead"><div class="pageicon">💬</div><div><h2>Скрипти для переписок</h2><p>Усі скрипти з робочої таблиці «Влад».</p></div></div>
+<div class="pagehead"><div class="pageicon">💬</div><div><h2>Скрипти для переписок</h2><p>Готові шаблони для спілкування з клієнтом у переписці.</p></div></div>
 <div class="script-search-wrap"><input id="scriptSearch" class="faq-search" placeholder="Пошук по назві або тексту скрипта..."><span class="script-total">Усього: <b id="scriptTotal">0</b></span></div>
 <div class="scripts-layout"><aside class="scripts-folders"><h3>Розділи</h3><div id="scriptFolders"></div></aside><div class="scripts-content"><div class="scripts-content-head"><h3 id="scriptCategoryTitle">Скрипти</h3><p id="scriptCategoryMeta"></p></div><div id="scriptCards"></div></div></div>
 </section>'''
 s = s[:start] + scripts_section + s[end:]
 
 call_section = '''<section class="view" id="call-scripts">
-<div class="pagehead"><div class="pageicon">☎️</div><div><h2>Скрипти для дзвінка</h2><p>Скрипт дзвінка з робочої таблиці, вкладка «Скрипт».</p></div></div>
+<div class="pagehead"><div class="pageicon">☎️</div><div><h2>Скрипти для дзвінка</h2><p>Структура розмови з клієнтом під час телефонного дзвінка.</p></div></div>
 <div class="script-search-wrap"><input id="callScriptSearch" class="faq-search" placeholder="Пошук по скрипту, товару, артикулу або фразі..."><span class="script-total">Знайдено блоків: <b id="callScriptTotal">0</b></span></div>
 <div id="callScriptList"></div>
 </section>'''
