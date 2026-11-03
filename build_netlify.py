@@ -14,7 +14,10 @@ if missing:
 s = s.replace('<title>Asteril Automation</title>', '<title>Технічний відділ</title>', 1)
 s = s.replace('<h1>Asteril Automation</h1>', '<h1>Технічний відділ</h1>', 1)
 
-# Shared manager task board navigation.\ns = s.replace('<div class="section-label">Відділи</div>', '<div class="section-label">Відділи</div><div class="navitem" data-view="task-board">📋 Дошка задач</div>', 1)\n\n# Database navigation: correspondence scripts, call scripts and refusal handling.
+# Shared manager task board navigation.
+s = s.replace('<div class="section-label">Відділи</div>', '<div class="section-label">Відділи</div><div class="navitem" data-view="task-board">📋 Дошка задач</div>', 1)
+
+# Database navigation: correspondence scripts, call scripts and refusal handling.
 s = s.replace('data-view="scripts">💬 Скрипти</div>', 'data-view="scripts">💬 Скрипти для переписок</div><div class="sub" data-view="call-scripts">☎️ Скрипти для дзвінка</div><div class="sub" data-view="refusal-work">🚫 Робота з відмовою</div>', 1)
 # Training materials subsections.
 s = s.replace('data-view="training">📖 Навчальні матеріали</div>', 'data-view="training">📖 Навчальні матеріали</div><div class="sub training-child" data-view="boxes">↳ 📦 Коробки</div><div class="sub training-child" data-view="order-rules">↳ 🔄 Скасування та об’єднання замовлень</div>', 1)
@@ -46,7 +49,13 @@ order_rules_section = '''<section class="view" id="order-rules">
 <div class="pagehead"><div class="pageicon">🔄</div><div><h2>Скасування та об’єднання замовлень</h2><p>Правила роботи з кількома невідправленими замовленнями одного клієнта.</p></div></div>
 <div id="orderRulesApp"></div>
 </section>'''
-task_board_section = '''<section class="view" id="task-board">\n<div class="pagehead"><div class="pageicon">📋</div><div><h2>Дошка задач</h2><p>Спільні задачі менеджерів, дедлайни та архів виконаного.</p></div></div>\n<div id="taskBoardApp"></div>\n</section>'''\ns = s.replace('</main>', task_board_section + '</main>', 1)\n\ninsert_at = s.index('</section>', s.index('<section class="view" id="scripts">')) + len('</section>')
+task_board_section = '''<section class="view" id="task-board">
+<div class="pagehead"><div class="pageicon">📋</div><div><h2>Дошка задач</h2><p>Спільні задачі менеджерів, дедлайни та архів виконаного.</p></div></div>
+<div id="taskBoardApp"></div>
+</section>'''
+s = s.replace('</main>', task_board_section + '</main>', 1)
+
+insert_at = s.index('</section>', s.index('<section class="view" id="scripts">')) + len('</section>')
 s = s[:insert_at] + call_section + refusal_section + boxes_section + order_rules_section + s[insert_at:]
 
 css = '''<style>
