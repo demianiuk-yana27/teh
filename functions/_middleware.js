@@ -62,6 +62,7 @@ export async function onRequest(context) {
     return Response.json({status:'forbidden', message:'Ця дія доступна лише для ролі «Крутий бос».'}, {status:403});
   }
 
+  context.data.role = role;
   const response = await next();
   const headers = new Headers(response.headers);
   if (role) headers.set('X-Asteril-Role', role);
