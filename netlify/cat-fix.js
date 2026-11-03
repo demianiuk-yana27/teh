@@ -1,1 +1,0 @@
-(()=>{function fix(){document.querySelectorAll('img').forEach(img=>{if(img.alt==='Кіт-поліцейський'){img.style.height='255px';img.style.width='259px';img.style.objectFit='cover';img.style.objectPosition='top center';img.style.display='block';img.style.margin='0 auto';}})}new MutationObserver(fix).observe(document.documentElement,{childList:true,subtree:true});fix();})();
