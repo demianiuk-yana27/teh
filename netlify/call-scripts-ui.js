@@ -3,12 +3,15 @@ function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&l
 const sectionRe=/(?:01|02|03|04)\s*[•]/;
 const productRe=/^(?:📦|🛠|👔|💇|🔦)\s/;
 const metaRe=/^(?:ТОВАР|ПРОПОЗИЦІЯ|КОЛИ ПОЦІКАВИЛИСЬ АБО ЗАПИТАЛИ ЦІНУ)$/i;
-const simpleHeadRe=/^(?:Привітання|📦 Наявність і відправка|🛡️ Подовжена гарантія|🚚 Звірка доставки та оплати|↳ |Товари для жінок|Товари для чоловіків|🧭 ПІДКАЗКИ МЕНЕДЖЕРУ|🔀 ОБЕРІТЬ ОДИН ВАРІАНТ|🧾 |❌ |✅ |⚠️ |🔁 |💬 |🎁 )/;
+const hiddenHeadRe=/^🧭 ПІДКАЗКИ МЕНЕДЖЕРУ/i;
+const choiceRe=/^🔀 ОБЕРІТЬ ОДИН ВАРІАНТ/i;
+const simpleHeadRe=/^(?:Привітання|📦 Наявність і відправка|🛡️ Подовжена гарантія|🚚 Звірка доставки та оплати|↳ |Товари для жінок|Товари для чоловіків|🧾 |❌ |✅ |⚠️ |🔁 |💬 |🎁 )/;
 function t(s){return String(s||'').trim()}
 function isSection(s){return sectionRe.test(s||'')}
-function isSimpleHead(s){s=t(s);return !!s&&(simpleHeadRe.test(s)||(/^[А-ЯІЇЄҐ0-9][А-ЯІЇЄҐ0-9\s—–:|•()«»'’.,-]{4,}$/.test(s)&&s.length<120&&!metaRe.test(s)&&!productRe.test(s)))}
+function isSimpleHead(s){s=t(s);return !!s&&(simpleHeadRe.test(s)||(/^[А-ЯІЇЄҐ0-9][А-ЯІЇЄҐ0-9\s—–:|•()«»'’.,-]{4,}$/.test(s)&&s.length<120&&!metaRe.test(s)&&!productRe.test(s)&&!hiddenHeadRe.test(s)&&!choiceRe.test(s)))}
 function isProduct(s){return productRe.test(t(s))}
 function isProductDetail(s){s=t(s);return /^(?:🎯 ПРОПОЗИЦІЯ|💰 ЗІ ЗНИЖКОЮ|⭐ ОСОБИСТА РЕКОМЕНДАЦІЯ)/.test(s)||/^(?:додаємо|добавляємо)/i.test(s)}
+function choiceTitle(s){s=t(s).replace(/^🔀 ОБЕРІТЬ ОДИН ВАРІАНТ\s*/i,'').replace(/\s*⬇\s*АБО\s*⬇\s*/gi,' / ').trim();return s}
 function makeGroup(out,section,title,type='normal'){const g={title:t(title),left:[],right:[],rows:[],type};out.push({type:'group',section,group:g});return g}
 function buildGroups(rows){
  const out=[];let section=null;let group=null;let productGroup=null;
@@ -16,6 +19,11 @@ function buildGroups(rows){
   const r=rows[i],l=t(r.left),rr=t(r.right);
   if(isSection(l)&&!rr){section=l;group=null;productGroup=null;out.push({type:'section',title:l});continue}
   if(metaRe.test(l)&&(!rr||metaRe.test(rr)))continue;
+  if(hiddenHeadRe.test(l)&&!rr){group=null;productGroup=null;continue}
+  if(choiceRe.test(l)||choiceRe.test(rr)){
+   const lt=choiceTitle(l),rt=choiceTitle(rr),title=lt&&rt?`${lt} / ${rt}`:(lt||rt);
+   productGroup=makeGroup(out,section,title,'product');group=productGroup;group.rows.push(r.row);continue;
+  }
   if((isProduct(l)||isProduct(rr))){
    const title=rr&&l?`${l} / ${rr}`:(l||rr);productGroup=makeGroup(out,section,title,'product');group=productGroup;group.rows.push(r.row);continue;
   }
