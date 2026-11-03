@@ -1,7 +1,7 @@
 const json=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 const allowed=['manager','boss'];
-export async function onRequest({request,env}) {
-  const role=request.headers.get('X-Asteril-Role');
+export async function onRequest({request,env,data}) {
+  const role=data.role;
   if(!allowed.includes(role))return json({error:'Потрібен вхід.'},401);
   if(!env.TASKS_DB)return json({error:'База задач ще не підключена. Потрібна Cloudflare D1 binding TASKS_DB.'},503);
   const db=env.TASKS_DB;
