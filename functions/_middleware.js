@@ -55,7 +55,7 @@ export async function onRequest(context) {
   const role = await roleFromRequest(request, env);
   if (path === '/auth/me') return Response.json(role ? {authenticated:true, role} : {authenticated:false}, {status: role ? 200 : 401});
 
-  const publicAsset = path === '/login.html' || /\.(?:js|css|png|jpg|jpeg|gif|svg|ico|webp|json)$/i.test(path);
+  const publicAsset = path === '/login.html' || path === '/privacy.html' || /\.(?:js|css|png|jpg|jpeg|gif|svg|ico|webp|json)$/i.test(path);
   if (!role && !publicAsset) return Response.redirect(new URL('/login.html', url), 302);
 
   if (path.startsWith('/api/') && request.method !== 'GET' && request.method !== 'HEAD' && role !== 'boss') {
