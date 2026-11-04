@@ -46,10 +46,12 @@ home_dashboard = """<section class="view" id="home">
 <button class="home-shortcut" data-target-view="dorobky"><span class="home-shortcut-icon">🛠️</span><strong>Доробки</strong><small>Операційне вивантаження</small></button>
 <button class="home-shortcut" data-target-view="ordercount"><span class="home-shortcut-icon">📊</span><strong>Звіт за замовленнями</strong><small>Кількість замовлень</small></button>
 </div></div>
-<div class="home-quick-group"><div class="home-group-heading"><h3>📋 Робочі інструменти</h3><p>Задачі та контроль якості</p></div><div class="home-quick-grid">
+<div class="home-quick-group"><div class="home-group-heading"><h3>⭐ Негативні відгуки</h3><p>Вивантаження та аналітика</p></div><div class="home-quick-grid">
+<button class="home-shortcut" data-target-view="negative-reviews"><span class="home-shortcut-icon">⭐</span><strong>Вивантаження негативних відгуків</strong><small>Відгуки для опрацювання</small></button>
+<button class="home-shortcut" data-target-view="negative-analytics"><span class="home-shortcut-icon">📈</span><strong>Аналітика негативних відгуків</strong><small>Показники роботи з відгуками</small></button>
+</div></div>
+<div class="home-quick-group"><div class="home-group-heading"><h3>📋 Робочі інструменти</h3><p>Планування та контроль задач</p></div><div class="home-quick-grid">
 <button class="home-shortcut" data-target-view="task-board"><span class="home-shortcut-icon">📋</span><strong>Дошка задач</strong><small>Задачі, терміни та прогрес</small></button>
-<button class="home-shortcut" data-target-view="negative-reviews"><span class="home-shortcut-icon">⭐</span><strong>Негативні відгуки</strong><small>Вивантаження для опрацювання</small></button>
-<button class="home-shortcut" data-target-view="negative-analytics"><span class="home-shortcut-icon">📈</span><strong>Аналітика відгуків</strong><small>Показники роботи</small></button>
 </div></div>
 </section>"""
 s = s.replace('<section class="view active" id="home"><div class="empty"><h2>Головна</h2><p>Оберіть потрібний розділ у меню.</p></div></section>', home_dashboard.replace('class="view" id="home"', 'class="view active" id="home"'), 1)
