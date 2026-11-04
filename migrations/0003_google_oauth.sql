@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS google_oauth_tokens (id INTEGER PRIMARY KEY CHECK (id = 1), encrypted_refresh_token TEXT NOT NULL, updated_at TEXT NOT NULL);
