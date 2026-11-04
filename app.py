@@ -1103,6 +1103,11 @@ def process_three(selected_date=None):
         "Vdalo Shop",
         "Velora",
         "сирник",
+        "ОгоШоп",
+        "Хапай",
+        "Требасик",
+        "Вибирайко",
+        "Покупайко",
     ]
 
     drop_stores = [
