@@ -4,7 +4,8 @@
     "/api/*",
     "/auth/*",
     "/",
-    "/tasks/*"
+    "/tasks/*",
+    "/materials/*"
   ],
   "exclude": []
 }
