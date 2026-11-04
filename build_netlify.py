@@ -76,7 +76,12 @@ css += '''<style>
 </style>'''
 s = s.replace('</head>', css + '</head>', 1)
 
-loaders = '<script src="scripts-data-1.js"></script><script src="scripts-data-2.js"></script><script src="scripts-data-3.js"></script><script src="scripts-ui.js"></script><script src="call-scripts-data.js"></script><script src="call-scripts-ui.js"></script><script src="refusal-data.js"></script><script src="refusal-ui.js"></script><script src="boxes-ui.js"></script><script src="order-rules-ui.js"></script><script src="access-control.js?v=20261103-full-cat"></script><script src="task-board.js?v=3"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script><script src="call-training-guide.js?v=1"></script><script src="call-training-ui.js?v=1"></script><script src="training-materials.js?v=5"></script>'
+css += '''<style>
+.ct-import{background:#eef5ff;border:1px solid #cbdffc;border-radius:14px;padding:18px 20px;margin-bottom:20px}.ct-import strong{color:#174a8c}.ct-import p{color:#57708f;line-height:1.55;margin:8px 0}.ct-import input{display:block;max-width:100%;margin-top:12px}.ct-shot{margin:3px 0 14px 53px;background:#fff;border:1px solid #dbe7f5;border-radius:14px;padding:13px;max-width:850px}.ct-shot img{display:block;width:100%;height:auto;max-height:580px;object-fit:contain;border-radius:9px}.ct-shot figcaption{font-size:13px;color:#647c9c;margin-top:9px;text-align:center}@media(max-width:750px){.ct-shot{margin-left:0}}
+</style>'''
+s = s.replace('</head>', css + '</head>', 1)
+
+loaders = '<script src="scripts-data-1.js"></script><script src="scripts-data-2.js"></script><script src="scripts-data-3.js"></script><script src="scripts-ui.js"></script><script src="call-scripts-data.js"></script><script src="call-scripts-ui.js"></script><script src="refusal-data.js"></script><script src="refusal-ui.js"></script><script src="boxes-ui.js"></script><script src="order-rules-ui.js"></script><script src="access-control.js?v=20261103-full-cat"></script><script src="task-board.js?v=3"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script><script src="call-training-guide.js?v=1"></script><script src="call-training-ui.js?v=2"></script><script src="training-materials.js?v=6"></script>'
 pos = s.rfind('<script>')
 if pos < 0:
     raise SystemExit('Main frontend script not found')
