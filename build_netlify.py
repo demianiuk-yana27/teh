@@ -17,6 +17,43 @@ s = s.replace('<h1>Asteril Automation</h1>', '<h1>Технічний відді�
 # Shared manager task board navigation.
 s = s.replace('<div class="section-label">Відділи</div>', '<div class="section-label">Відділи</div><div class="navitem" data-view="task-board">📋 Дошка задач</div>', 1)
 
+# Retire the unused standalone response templates page and menu entry.
+s = s.replace('<div class="sub" data-view="templates">▤ Шаблони відповідей</div>', '', 1)
+s = s.replace('<section class="view" id="templates"><div class="empty"><h2>Шаблони відповідей</h2></div></section>', '', 1)
+
+# Home dashboard: direct shortcuts to the existing sections (no duplicate workflows).
+home_dashboard = """<section class="view" id="home">
+<div class="pagehead"><div class="pageicon">🏠</div><div><h2>Головна</h2><p>Усі потрібні інструменти та інструкції — в одному місці.</p></div></div>
+<div class="home-welcome"><div class="home-welcome-icon">✨</div><div><h3>З чого почнемо?</h3><p>Оберіть потрібний напрямок — і одразу переходьте до роботи.</p></div></div>
+<div class="home-quick-group"><div class="home-group-heading"><h3>📚 База знань</h3><p>Підказки та готові інструкції</p></div><div class="home-quick-grid">
+<button class="home-shortcut" data-target-view="scripts"><span class="home-shortcut-icon">💬</span><strong>Скрипти для переписок</strong><small>Відповіді та формулювання для клієнтів</small></button>
+<button class="home-shortcut" data-target-view="call-scripts"><span class="home-shortcut-icon">☎️</span><strong>Скрипти для дзвінка</strong><small>Готові сценарії розмов</small></button>
+<button class="home-shortcut" data-target-view="refusal-work"><span class="home-shortcut-icon">🚫</span><strong>Робота з відмовою</strong><small>Аргументи та заперечення</small></button>
+<button class="home-shortcut" data-target-view="techfaq"><span class="home-shortcut-icon">❔</span><strong>Питання про техвідділ</strong><small>Поширені питання та відповіді</small></button>
+</div></div>
+<div class="home-quick-group"><div class="home-group-heading"><h3>🎓 Навчання</h3><p>Матеріали для роботи та стажування</p></div><div class="home-quick-grid">
+<button class="home-shortcut" data-target-view="training"><span class="home-shortcut-icon">📖</span><strong>Навчальні матеріали</strong><small>Інструкції, фото та відео</small></button>
+<button class="home-shortcut" data-target-view="boxes"><span class="home-shortcut-icon">📦</span><strong>Коробки</strong><small>Підбір коробок і пакування</small></button>
+<button class="home-shortcut" data-target-view="order-rules"><span class="home-shortcut-icon">🔄</span><strong>Скасування й об’єднання</strong><small>Правила роботи із замовленнями</small></button>
+<button class="home-shortcut" data-target-view="call-training"><span class="home-shortcut-icon">📞</span><strong>Стажування на продзвін</strong><small>Відгуки, КТВ, Бурундуки + Розетка</small></button>
+<button class="home-shortcut" data-target-view="instructions"><span class="home-shortcut-icon">🗂️</span><strong>Інструкції</strong><small>Додаткові робочі матеріали</small></button>
+</div></div>
+<div class="home-quick-group"><div class="home-group-heading"><h3>📞 Продзвін</h3><p>Робочі процеси для команди</p></div><div class="home-quick-grid">
+<button class="home-shortcut" data-target-view="ktv"><span class="home-shortcut-icon">📦</span><strong>КТВ</strong><small>Підготовка вивантаження</small></button>
+<button class="home-shortcut" data-target-view="reviews"><span class="home-shortcut-icon">⭐</span><strong>Відгуки</strong><small>Робота з відгуками покупців</small></button>
+</div></div>
+<div class="home-quick-group"><div class="home-group-heading"><h3>👥 Операційні менеджери</h3><p>Щоденні задачі та звітність</p></div><div class="home-quick-grid">
+<button class="home-shortcut" data-target-view="dorobky"><span class="home-shortcut-icon">🛠️</span><strong>Доробки</strong><small>Операційне вивантаження</small></button>
+<button class="home-shortcut" data-target-view="ordercount"><span class="home-shortcut-icon">📊</span><strong>Звіт за замовленнями</strong><small>Кількість замовлень</small></button>
+</div></div>
+<div class="home-quick-group"><div class="home-group-heading"><h3>📋 Робочі інструменти</h3><p>Задачі та контроль якості</p></div><div class="home-quick-grid">
+<button class="home-shortcut" data-target-view="task-board"><span class="home-shortcut-icon">📋</span><strong>Дошка задач</strong><small>Задачі, терміни та прогрес</small></button>
+<button class="home-shortcut" data-target-view="negative-reviews"><span class="home-shortcut-icon">⭐</span><strong>Негативні відгуки</strong><small>Вивантаження для опрацювання</small></button>
+<button class="home-shortcut" data-target-view="negative-analytics"><span class="home-shortcut-icon">📈</span><strong>Аналітика відгуків</strong><small>Показники роботи</small></button>
+</div></div>
+</section>"""
+s = s.replace('<section class="view" id="home"><div class="empty"><h2>Головна</h2><p>Оберіть потрібний розділ у меню.</p></div></section>', home_dashboard, 1)
+
 # Database navigation: correspondence scripts, call scripts and refusal handling.
 s = s.replace('data-view="scripts">💬 Скрипти</div>', 'data-view="scripts">💬 Скрипти для переписок</div><div class="sub" data-view="call-scripts">☎️ Скрипти для дзвінка</div><div class="sub" data-view="refusal-work">🚫 Робота з відмовою</div>', 1)
 # Training materials subsections.
@@ -64,6 +101,23 @@ s = s.replace('<div class="empty"><h2>Навчальні матеріали</h2>
 
 insert_at = s.index('</section>', s.index('<section class="view" id="scripts">')) + len('</section>')
 s = s[:insert_at] + call_section + refusal_section + boxes_section + order_rules_section + s[insert_at:]
+
+home_css = """<style>
+#home{max-width:1220px}.home-welcome{display:flex;align-items:center;gap:18px;background:linear-gradient(115deg,#e8f1ff,#f8fbff);border:1px solid #d5e4fa;border-radius:18px;padding:24px 28px;margin-bottom:28px}.home-welcome-icon{display:grid;place-items:center;flex:0 0 56px;height:56px;border-radius:15px;background:#fff;font-size:28px}.home-welcome h3{margin:0 0 6px;font-size:22px;color:#173253}.home-welcome p{margin:0;color:#637b9c;line-height:1.5}.home-quick-group{margin:0 0 29px}.home-group-heading{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 14px}.home-group-heading h3{margin:0;font-size:20px;color:#193456}.home-group-heading p{margin:0;color:#7185a0;font-size:13px}.home-quick-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.home-shortcut{display:flex;flex-direction:column;align-items:flex-start;gap:9px;text-align:left;min-height:150px;padding:20px;border:1px solid #dce6f3;background:#fff;border-radius:16px;cursor:pointer;color:#1b3454;font:inherit;box-shadow:0 6px 20px #17385e09;transition:border-color .15s,transform .15s,box-shadow .15s}.home-shortcut:hover,.home-shortcut:focus-visible{border-color:#1769f6;transform:translateY(-2px);box-shadow:0 10px 24px #1769f61a;outline:none}.home-shortcut-icon{display:grid;place-items:center;background:#eef4ff;border-radius:12px;width:43px;height:43px;font-size:23px}.home-shortcut strong{font-size:16px}.home-shortcut small{color:#637b9c;font-size:13px;line-height:1.5}@media(max-width:1050px){.home-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.home-quick-grid{grid-template-columns:1fr}.home-welcome{padding:18px}.home-group-heading{display:block}.home-group-heading p{margin-top:5px}}
+</style>"""
+s = s.replace('</head>', home_css + '</head>', 1)
+home_navigation = """<script>
+document.addEventListener('click',function(event){
+ const shortcut=event.target.closest('[data-target-view]');
+ if(!shortcut)return;
+ const target=shortcut.dataset.targetView;
+ const sidebar=document.querySelector('aside [data-view="'+target+'"]');
+ if(!sidebar||!document.getElementById(target))return;
+ sidebar.click();
+ window.scrollTo({top:0,behavior:'smooth'});
+});
+</script>"""
+s = s.replace('</body>', home_navigation + '</body>', 1)
 
 css = '''<style>
 #trainingMaterialsApp{max-width:1080px}.tm-head,.tm-actions,.tm-add{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px}.tm-head{justify-content:space-between}.tm-head p{color:#607896}.tm-actions button,.tm-head button,.tm-card button,.tm-add button,.tm-blockbar button{border:1px solid #cad9ec;background:#edf3fc;color:#24466e;border-radius:9px;padding:9px 12px;cursor:pointer;font-weight:700}.tm-actions .tm-primary,.tm-head .tm-primary{background:#1769f6;color:white;border-color:#1769f6}.tm-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}.tm-card,.tm-article,.tm-form{background:#fff;border:1px solid #dce6f3;border-radius:16px;padding:22px;box-shadow:0 8px 24px #17385e0a}.tm-card h3{margin:8px 0}.tm-card p,.tm-summary{color:#607896;line-height:1.6}.tm-status{font-size:12px;color:#59708d}.tm-article{max-width:860px;line-height:1.7}.tm-article h2{font-size:28px}.tm-article figure{margin:24px 0}.tm-article img,.tm-article video{display:block;max-width:100%;max-height:680px;border-radius:12px}.tm-article figcaption{color:#7184a2;font-size:13px;margin-top:7px}.tm-prose{white-space:normal;overflow-wrap:anywhere}.tm-video{position:relative;padding-bottom:56.25%;height:0}.tm-video iframe{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:12px}.tm-draft{color:#9a6418}.tm-form label,.tm-block label{display:block;font-weight:700;margin:12px 0}.tm-form input:not([type=file]),.tm-form textarea{display:block;width:100%;font:inherit;border:1px solid #cbd9eb;border-radius:10px;padding:11px;margin-top:6px}.tm-block{border:1px solid #dce6f3;border-radius:13px;padding:16px;margin:12px 0;background:#f8fbff}.tm-blockbar{display:flex;align-items:center;justify-content:space-between;gap:8px}.tm-blockbar button{padding:5px 10px;margin-left:4px}.tm-add{margin:16px 0}.tm-add span{width:100%;font-weight:700}.tm-upload{padding:10px 0}.tm-upload small{display:block;color:#607896;margin-top:5px}.tm-notice:not(:empty){background:#eaf2ff;color:#1b528e;border-radius:10px;padding:12px;margin-bottom:15px}.tm-error{color:#b9323b}
