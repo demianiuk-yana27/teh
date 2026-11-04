@@ -36,7 +36,7 @@ home_dashboard = """<section class="view" id="home">
 <button class="home-shortcut" data-target-view="boxes"><span class="home-shortcut-icon">📦</span><strong>Коробки</strong><small>Підбір коробок і пакування</small></button>
 <button class="home-shortcut" data-target-view="order-rules"><span class="home-shortcut-icon">🔄</span><strong>Скасування й об’єднання</strong><small>Правила роботи із замовленнями</small></button>
 <button class="home-shortcut" data-target-view="call-training"><span class="home-shortcut-icon">📞</span><strong>Стажування на продзвін</strong><small>Відгуки, КТВ, Бурундуки + Розетка</small></button>
-<button class="home-shortcut" data-target-view="instructions"><span class="home-shortcut-icon">🗂️</span><strong>Інструкції</strong><small>Додаткові робочі матеріали</small></button>
+
 </div></div>
 <div class="home-quick-group"><div class="home-group-heading"><h3>📞 Продзвін</h3><p>Робочі процеси для команди</p></div><div class="home-quick-grid">
 <button class="home-shortcut" data-target-view="ktv"><span class="home-shortcut-icon">📦</span><strong>КТВ</strong><small>Підготовка вивантаження</small></button>
