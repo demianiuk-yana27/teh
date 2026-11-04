@@ -1,3 +1,4 @@
+import {accessToken,configured} from './oauth-helper.js';
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
 const BOOKS={requests:'1gojVDMKs3-6NuC6vdVDHy3P_OnY_G89NXIn_FAEFV3I',ttn:'1GUOFW957ijYV9KOhC61xTS22aL5vhWj6JUI7gQi__-o'};
 const SHEETS=['2 Відділ','Тех','Опт/дроп'];
@@ -25,7 +26,7 @@ async function google(token,book,range,method='GET',values){
 export async function onRequest({request,env,data}){
  if(!['boss','manager'].includes(data.role))return json({error:'Потрібен вхід на сайт.'},401);
  if(request.method!=='POST')return json({error:'Метод не підтримується'},405);
- if(!env.GOOGLE_SERVICE_ACCOUNT_JSON)return json({error:'Google Sheets ще не підключено. Потрібно додати секрет GOOGLE_SERVICE_ACCOUNT_JSON та надати сервісному акаунту доступ до таблиць.'},503);
+ if(!configured(env))return json({error:'Google OAuth ще не налаштовано в Cloudflare.'},503);
  const b=await request.json().catch(()=>null);if(!b||typeof b!=='object')return json({error:'Некоректні дані'},400);
  const mode=b.mode,tab=b.tab;
  if(mode!=='requests'&&mode!=='ttn')return json({error:'Невірний режим'},400);
@@ -39,7 +40,7 @@ export async function onRequest({request,env,data}){
  const today=new Date().toLocaleDateString('en-CA',{timeZone:'Europe/Kyiv'});
  const rowValues=mode==='ttn'?[today,...values]:values;
  try{
-  const token=await googleToken(env);
+  const token=await accessToken(env);
   // append is atomic on the Sheets API side; no race between managers finding the next row.
   const range="'"+sheet.replace(/'/g,"''")+"'!"+first+'2:'+last;
   const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(book)+'/values/'+encodeURIComponent(range)+':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
