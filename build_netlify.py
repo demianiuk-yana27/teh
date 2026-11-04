@@ -52,7 +52,7 @@ home_dashboard = """<section class="view" id="home">
 <button class="home-shortcut" data-target-view="negative-analytics"><span class="home-shortcut-icon">📈</span><strong>Аналітика відгуків</strong><small>Показники роботи</small></button>
 </div></div>
 </section>"""
-s = s.replace('<section class="view" id="home"><div class="empty"><h2>Головна</h2><p>Оберіть потрібний розділ у меню.</p></div></section>', home_dashboard, 1)
+s = s.replace('<section class="view active" id="home"><div class="empty"><h2>Головна</h2><p>Оберіть потрібний розділ у меню.</p></div></section>', home_dashboard.replace('class="view" id="home"', 'class="view active" id="home"'), 1)
 
 # Database navigation: correspondence scripts, call scripts and refusal handling.
 s = s.replace('data-view="scripts">💬 Скрипти</div>', 'data-view="scripts">💬 Скрипти для переписок</div><div class="sub" data-view="call-scripts">☎️ Скрипти для дзвінка</div><div class="sub" data-view="refusal-work">🚫 Робота з відмовою</div>', 1)
