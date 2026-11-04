@@ -5,7 +5,8 @@
     "/auth/*",
     "/",
     "/tasks/*",
-    "/materials/*"
+    "/materials/*",
+    "/quick-requests/*"
   ],
   "exclude": []
 }
