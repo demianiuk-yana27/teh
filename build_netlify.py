@@ -20,7 +20,7 @@ s = s.replace('<div class="section-label">Відділи</div>', '<div class="se
 # Database navigation: correspondence scripts, call scripts and refusal handling.
 s = s.replace('data-view="scripts">💬 Скрипти</div>', 'data-view="scripts">💬 Скрипти для переписок</div><div class="sub" data-view="call-scripts">☎️ Скрипти для дзвінка</div><div class="sub" data-view="refusal-work">🚫 Робота з відмовою</div>', 1)
 # Training materials subsections.
-s = s.replace('data-view="training">📖 Навчальні матеріали</div>', 'data-view="training">📖 Навчальні матеріали</div><div class="sub training-child" data-view="boxes">↳ 📦 Коробки</div><div class="sub training-child" data-view="order-rules">↳ 🔄 Скасування та об’єднання замовлень</div>', 1)
+s = s.replace('data-view="training">📖 Навчальні матеріали</div>', 'data-view="training">📖 Навчальні матеріали</div><div class="sub training-child" data-view="boxes">↳ 📦 Коробки</div><div class="sub training-child" data-view="order-rules">↳ 🔄 Скасування та об’єднання замовлень</div><div class="sub training-child" data-view="call-training">↳ 📞 Стажування на продзвін</div>', 1)
 
 # Restore the rich correspondence Scripts view deterministically.
 start = s.index('<section class="view" id="scripts">')
@@ -49,11 +49,15 @@ order_rules_section = '''<section class="view" id="order-rules">
 <div class="pagehead"><div class="pageicon">🔄</div><div><h2>Скасування та об’єднання замовлень</h2><p>Правила роботи з кількома невідправленими замовленнями одного клієнта.</p></div></div>
 <div id="orderRulesApp"></div>
 </section>'''
+call_training_section = '''<section class="view" id="call-training">
+<div class="pagehead"><div class="pageicon">📞</div><div><h2>Стажування на продзвін</h2><p>Покрокова програма для нових менеджерів: Відгуки, КТВ, Бурундуки + Розетка.</p></div></div>
+<div id="callTrainingApp"></div>
+</section>'''
 task_board_section = '''<section class="view" id="task-board">
 <div class="pagehead"><div class="pageicon">📋</div><div><h2>Дошка задач</h2><p>Спільні задачі менеджерів, дедлайни та архів виконаного.</p></div></div>
 <div id="taskBoardApp"></div>
 </section>'''
-s = s.replace('</main>', task_board_section + '</main>', 1)
+s = s.replace('</main>', task_board_section + call_training_section + '</main>', 1)
 
 # Rich training materials editor lives inside the existing training view.
 s = s.replace('<div class="empty"><h2>Навчальні матеріали</h2></div>', '<div id="trainingMaterialsApp"></div>', 1)
@@ -67,7 +71,12 @@ css = '''<style>
 </style>'''
 s = s.replace('</head>', css + '</head>', 1)
 
-loaders = '<script src="scripts-data-1.js"></script><script src="scripts-data-2.js"></script><script src="scripts-data-3.js"></script><script src="scripts-ui.js"></script><script src="call-scripts-data.js"></script><script src="call-scripts-ui.js"></script><script src="refusal-data.js"></script><script src="refusal-ui.js"></script><script src="boxes-ui.js"></script><script src="order-rules-ui.js"></script><script src="access-control.js?v=20261103-full-cat"></script><script src="task-board.js?v=3"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script><script src="call-training-guide.js?v=1"></script><script src="training-materials.js?v=5"></script>'
+css += '''<style>
+#callTrainingApp{max-width:1100px}.ct-intro{display:flex;align-items:center;gap:18px;background:linear-gradient(120deg,#e8f1ff,#f8fbff);border:1px solid #d4e3f8;border-radius:18px;padding:22px 26px;margin-bottom:22px}.ct-intro-icon{font-size:34px;background:white;border-radius:14px;padding:12px}.ct-intro h3{margin:0 0 6px;font-size:21px}.ct-intro p{margin:0;color:#5f7594;line-height:1.5}.ct-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:20px}.ct-tabs button{text-align:left;display:flex;flex-direction:column;gap:8px;padding:19px;border:1px solid #dce6f3;border-radius:16px;background:white;cursor:pointer;color:#203858;font:inherit;box-shadow:0 5px 16px #17385e08}.ct-tabs button>span{font-size:25px}.ct-tabs strong{font-size:17px}.ct-tabs small{color:#607896;line-height:1.5;font-size:12px}.ct-tabs button.selected{border:2px solid #1769f6;background:#edf4ff;padding:18px}.ct-panel{background:white;border:1px solid #dce6f3;border-radius:18px;padding:26px;box-shadow:0 8px 24px #17385e0a}.ct-panel-heading{display:flex;align-items:center;gap:15px;padding-bottom:18px;border-bottom:1px solid #e4ebf5}.ct-panel-heading>span{font-size:29px}.ct-panel-heading h3{margin:0 0 5px;font-size:24px}.ct-panel-heading p{margin:0;color:#667d9c}.ct-steps{display:grid;gap:13px;margin-top:20px}.ct-step{display:flex;gap:16px;background:#f7faff;border:1px solid #e5edf8;border-radius:13px;padding:18px}.ct-number{flex:0 0 37px;height:37px;display:grid;place-items:center;background:#e0ecff;border-radius:11px;color:#1260d6;font-weight:800}.ct-step-body{min-width:0;line-height:1.75;white-space:pre-line}.ct-step-body p{margin:0}.ct-step-body ul{margin:0;padding-left:19px}.ct-step-body li{margin-bottom:6px}.ct-next{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:23px}.ct-next button{border:1px solid #c8d9f0;background:#f4f8ff;border-radius:10px;padding:11px 16px;cursor:pointer;font-weight:750;color:#1c5596}.ct-next .ct-next-primary{background:#1769f6;color:#fff;border-color:#1769f6}@media(max-width:750px){.ct-tabs{grid-template-columns:1fr}.ct-panel{padding:16px}.ct-intro{padding:16px}.ct-step{padding:13px}}
+</style>'''
+s = s.replace('</head>', css + '</head>', 1)
+
+loaders = '<script src="scripts-data-1.js"></script><script src="scripts-data-2.js"></script><script src="scripts-data-3.js"></script><script src="scripts-ui.js"></script><script src="call-scripts-data.js"></script><script src="call-scripts-ui.js"></script><script src="refusal-data.js"></script><script src="refusal-ui.js"></script><script src="boxes-ui.js"></script><script src="order-rules-ui.js"></script><script src="access-control.js?v=20261103-full-cat"></script><script src="task-board.js?v=3"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script><script src="call-training-guide.js?v=1"></script><script src="call-training-ui.js?v=1"></script><script src="training-materials.js?v=5"></script>'
 pos = s.rfind('<script>')
 if pos < 0:
     raise SystemExit('Main frontend script not found')
