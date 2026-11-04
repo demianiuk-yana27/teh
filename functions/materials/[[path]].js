@@ -8,7 +8,12 @@ const cleanBlocks=blocks=>{
   if(!validTypes.has(type))throw Error('Невідомий тип блоку.');
   const text=String(b.text||'').slice(0,12000);
   const media=String(b.media||'');
-  if(['image','video'].includes(type)&&!/^materials\/[a-f0-9-]{36}\.(?:jpg|jpeg|png|webp|gif|mp4|webm|mov)$/i.test(media))throw Error('Спочатку завантажте файл.');
+  if(['image','video'].includes(type)){
+   const oldR2=/^materials\/[a-f0-9-]{36}\.(?:jpg|jpeg|png|webp|gif|mp4|webm|mov)$/i.test(media);
+   let cloud=false;
+   try{const u=new URL(media);cloud=u.protocol==='https:'&&u.hostname==='res.cloudinary.com'&&u.pathname.startsWith('/mctk9huf/'+type.replace('image','image').replace('video','video')+'/upload/')&&/^\/[a-zA-Z0-9_.,!~*'()/%-]+$/.test(u.pathname)&&!u.search&&!u.hash;}catch(_){}
+   if(!oldR2&&!cloud)throw Error('Спочатку завантажте файл у Cloudinary.');
+  }
   if(type==='embed'){
    let u;try{u=new URL(String(b.url||''))}catch{throw Error('Неправильне посилання на відео.')}
    if(u.protocol!=='https:'||!(['www.youtube.com','youtube.com','youtu.be','www.youtube-nocookie.com','vimeo.com','player.vimeo.com'].includes(u.hostname)))throw Error('Підтримуються посилання YouTube та Vimeo.');
