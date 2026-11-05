@@ -27,6 +27,7 @@ export async function onRequest({request,env,data}){
     {source:/камера відеоспостереж|ip камера|відеокамер/i,terms:['карта пам','micro sd','блок живлення']},
     {source:/намет|палатк/i,terms:['спальний мішок','каремат','туристичний ліхтар']},
     {source:/телефон|смартфон/i,terms:['чохол','захисне скло','кабель usb']},
+    {source:/столик.*ноутбук|стіл.*ноутбук|підставк.*ноутбук/i,terms:['органайзер для кабелів','килимок для миші','лампа настільна']},
     {source:/ноутбук/i,terms:['миша','сумка для ноутбука','підставка для ноутбука']},
     {source:/пилосос/i,terms:['фільтр для пилососа','насадка для пилососа']},
     {source:/акумуляторн.*пил|пила акумуляторн/i,terms:['ланцюг для пили','мастило для ланцюга']},
@@ -38,8 +39,8 @@ export async function onRequest({request,env,data}){
    if(!rule)return json({item,items:[],reason:'Для цієї групи товарів ще немає надійного правила підбору.'});
    const found=[];
    for(const term of rule.terms){
-    const {results}=await db.prepare('SELECT product_id,sku,title,category FROM product_catalog WHERE product_id<>? AND title LIKE ? ORDER BY title LIMIT 8').bind(id,'%'+term+'%').all();
-    for(const x of results){if(!found.some(y=>y.product_id===x.product_id))found.push({...x,match_reason:term})}
+    const {results}=await db.prepare('SELECT product_id,sku,title,category FROM product_catalog WHERE product_id<>? AND title LIKE ? ORDER BY title LIMIT 5').bind(id,'%'+term+'%').all();
+    const x=results.find(y=>!found.some(z=>z.product_id===y.product_id));if(x)found.push({...x,match_reason:term});
    }
    return json({item,items:found.slice(0,18),reason:'Кандидати за типом товару. Сумісність не перевірена — потрібне підтвердження.'});
   }
