@@ -1,5 +1,19 @@
 const json=(x,s=200)=>Response.json(x,{status:s,headers:{'Cache-Control':'no-store'}});
 const str=(x,n=500)=>String(x??'').trim().slice(0,n);
+const relatedRules=[
+ {re:/вакууматор|вакуумн.*пакувальник|вакуумн.*упаковщик/i,terms:['пакети для вакуумування','рулон для вакуумування'],needsReview:true},
+ {re:/столик.*ноутбук|стіл.*ноутбук|підставк.*ноутбук/i,terms:['органайзер для кабелів','килимок для миші','лампа настільна']},
+ {re:/шуруповерт|дрил|дрель|перфоратор/i,terms:['біти','свердла','набір інструментів']},
+ {re:/камера відеоспостереж|ip камера|відеокамер/i,terms:['карта пам','micro sd','блок живлення'],needsReview:true},
+ {re:/намет|палатк/i,terms:['спальний мішок','каремат','туристичний ліхтар']},
+ {re:/телефон|смартфон/i,terms:['чохол','захисне скло','кабель usb'],needsReview:true},
+ {re:/ноутбук/i,terms:['миша','сумка для ноутбука','підставка для ноутбука']},
+ {re:/пилосос/i,terms:['фільтр для пилососа','насадка для пилососа'],needsReview:true},
+ {re:/рація|радіостанц/i,terms:['гарнітура для рації','акумулятор для рації'],needsReview:true},
+ {re:/кавоварка|кавомашин/i,terms:['кавомолка','кава']},
+ {re:/принтер/i,terms:['папір для принтера','картридж'],needsReview:true}
+];
+const relatedRule=title=>relatedRules.find(x=>x.re.test(title));
 export async function onRequest({request,env,data}){
  if(!['manager','boss'].includes(data.role))return json({error:'Потрібен вхід'},401);
  if(!env.TASKS_DB)return json({error:'D1 не підключена'},503);
@@ -22,42 +36,21 @@ export async function onRequest({request,env,data}){
    const id=str(u.searchParams.get('id'),150);
    const item=await db.prepare('SELECT product_id,sku,title,category,brand FROM product_catalog WHERE product_id=?').bind(id).first();
    if(!item)return json({error:'Товар не знайдено'},404);
-   const rules=[
-    {source:/шуруповерт|дрил|дрель|перфоратор/i,terms:['біти','свердла','набір біт']},
-    {source:/камера відеоспостереж|ip камера|відеокамер/i,terms:['карта пам','micro sd','блок живлення']},
-    {source:/намет|палатк/i,terms:['спальний мішок','каремат','туристичний ліхтар']},
-    {source:/телефон|смартфон/i,terms:['чохол','захисне скло','кабель usb']},
-    {source:/столик.*ноутбук|стіл.*ноутбук|підставк.*ноутбук/i,terms:['органайзер для кабелів','килимок для миші','лампа настільна']},
-    {source:/ноутбук/i,terms:['миша','сумка для ноутбука','підставка для ноутбука']},
-    {source:/пилосос/i,terms:['фільтр для пилососа','насадка для пилососа']},
-    {source:/акумуляторн.*пил|пила акумуляторн/i,terms:['ланцюг для пили','мастило для ланцюга']},
-    {source:/рація|радіостанц/i,terms:['гарнітура для рації','акумулятор для рації']},
-    {source:/кавоварка|кавомашин/i,terms:['кавомолка','кава']},
-    {source:/принтер/i,terms:['папір для принтера','картридж']}
-   ];
-   const rule=rules.find(x=>x.source.test(item.title));
-   if(!rule)return json({item,items:[],reason:'Для цієї групи товарів ще немає надійного правила підбору.'});
+   const rule=relatedRule(item.title);
+   if(!rule)return json({item,items:[],reason:'Для цієї групи товарів ще немає правила підбору.'});
    const found=[];
    for(const term of rule.terms){
     const {results}=await db.prepare('SELECT product_id,sku,title,category FROM product_catalog WHERE product_id<>? AND title LIKE ? ORDER BY title LIMIT 5').bind(id,'%'+term+'%').all();
     const x=results.find(y=>!found.some(z=>z.product_id===y.product_id));if(x)found.push({...x,match_reason:term});
    }
-   return json({item,items:found.slice(0,18),reason:'Кандидати за типом товару. Сумісність не перевірена — потрібне підтвердження.'});
+   return json({item,items:found.slice(0,18),reason:rule.needsReview?'Кандидати за типами аксесуарів. Перевірте сумісність із конкретною моделлю перед збереженням.':'По одному кандидату кожного типу. Перевірте доречність перед збереженням.'});
   }
   if(action==='related-bulk'&&data.role==='boss'){
    const cursor=str(u.searchParams.get('after'),150);
    const rows=(await db.prepare('SELECT product_id,sku,title FROM product_catalog WHERE product_id>? ORDER BY product_id LIMIT 20').bind(cursor).all()).results;
-   const rules=[
-    {re:/столик.*ноутбук|стіл.*ноутбук|підставк.*ноутбук/i,terms:['органайзер для кабелів','килимок для миші','лампа настільна']},
-    {re:/шуруповерт|дрил|перфоратор/i,terms:['біти','свердла','набір інструментів']},
-    {re:/намет|палатк/i,terms:['спальний мішок','каремат','ліхтар туристичний']},
-    {re:/ноутбук/i,terms:['миша','сумка для ноутбука','підставка для ноутбука']},
-    {re:/кавоварка|кавомашин/i,terms:['кавомолка','кава']},
-    {re:/принтер/i,terms:['папір для принтера','картридж']}
-   ];
    const proposals=[];
    for(const p of rows){
-    const rule=rules.find(x=>x.re.test(p.title));if(!rule)continue;
+    const rule=relatedRule(p.title);if(!rule)continue;
     const known=await db.prepare('SELECT related_json FROM product_knowledge WHERE product_id=?').bind(p.product_id).first();
     if(known&&JSON.parse(known.related_json||'[]').length)continue;
     const related=[];
@@ -66,7 +59,7 @@ export async function onRequest({request,env,data}){
      const candidate=candidates.find(x=>!related.some(y=>y.product_id===x.product_id));
      if(candidate)related.push({...candidate,match_reason:term});
     }
-    if(related.length)proposals.push({product:p,related});
+    if(related.length)proposals.push({product:p,related,needsReview:!!rule.needsReview});
    }
    const next=rows.length?rows[rows.length-1].product_id:cursor;
    if(request.method==='GET')return json({proposals,next,done:rows.length<20,scanned:rows.length});
