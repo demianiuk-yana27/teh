@@ -18,6 +18,42 @@ export async function onRequest({request,env,data}){
    const k=await db.prepare('SELECT * FROM product_knowledge WHERE product_id=?').bind(id).first();
    return json({item,knowledge:k?{faq:JSON.parse(k.faq_json),instructions:k.instructions,related:JSON.parse(k.related_json)}:{faq:[],instructions:'',related:[]}});
   }
+  if(data.role==='boss'&&action==='review'){
+   if(request.method==='GET'){
+    const status=str(u.searchParams.get('status')||'pending',20);
+    if(!['pending','approved','rejected'].includes(status))return json({error:'Невірний статус'},400);
+    const {results}=await db.prepare('SELECT r.*,p.title product_title FROM product_faq_review r LEFT JOIN product_catalog p ON p.product_id=r.product_id WHERE r.status=? ORDER BY r.created_at,r.id LIMIT 200').bind(status).all();
+    const totals=await db.prepare('SELECT status,COUNT(*) n FROM product_faq_review GROUP BY status').all();
+    return json({items:results,totals:totals.results});
+   }
+   if(request.method==='POST'){
+    const b=await request.json();
+    if(!Array.isArray(b.items)||b.items.length>50)return json({error:'Максимум 50 записів'},400);
+    const statements=b.items.filter(x=>x.sku&&x.question&&x.answer&&x.source_answer_id).map(x=>db.prepare('INSERT OR IGNORE INTO product_faq_review(id,sku,product_id,question,answer,original_question,original_answer,source_question_id,source_answer_id,source_date) VALUES(?,?,(SELECT product_id FROM product_catalog WHERE sku=? LIMIT 1),?,?,?,?,?,?,?)').bind(str(x.source_answer_id,100),str(x.sku,150),str(x.sku,150),str(x.question,500),str(x.answer,5000),str(x.original_question,5000),str(x.original_answer,5000),str(x.source_question_id,100),str(x.source_answer_id,100),str(x.source_date,100)));
+    if(statements.length)await db.batch(statements);
+    return json({ok:true,processed:statements.length});
+   }
+   if(request.method==='PUT'){
+    const b=await request.json(),id=str(b.id,100),decision=str(b.decision,20);
+    if(!['approve','reject'].includes(decision))return json({error:'Невірна дія'},400);
+    const record=await db.prepare('SELECT * FROM product_faq_review WHERE id=?').bind(id).first();
+    if(!record||record.status!=='pending')return json({error:'Запис уже оброблено або не знайдено'},409);
+    if(decision==='reject'){await db.prepare("UPDATE product_faq_review SET status='rejected',reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(id).run();return json({ok:true})}
+    const q=str(b.question,500),a=str(b.answer,5000),pid=str(b.product_id||record.product_id,150);
+    if(!q||!a||!pid)return json({error:'Потрібно заповнити питання, відповідь та обрати товар'},400);
+    const product=await db.prepare('SELECT product_id FROM product_catalog WHERE product_id=?').bind(pid).first();
+    if(!product)return json({error:'Товар не знайдено в каталозі'},400);
+    const existing=await db.prepare('SELECT * FROM product_knowledge WHERE product_id=?').bind(pid).first();
+    const faq=existing?JSON.parse(existing.faq_json):[];
+    if(faq.length>=50)return json({error:'Для товару вже є 50 FAQ'},400);
+    if(!faq.some(x=>x.q.trim().toLowerCase()===q.toLowerCase()))faq.push({q,a});
+    await db.batch([
+      db.prepare('INSERT INTO product_knowledge(product_id,faq_json,instructions,related_json,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET faq_json=excluded.faq_json,updated_at=excluded.updated_at').bind(pid,JSON.stringify(faq),existing?.instructions||'',existing?.related_json||'[]',new Date().toISOString()),
+      db.prepare("UPDATE product_faq_review SET status='approved',product_id=?,question=?,answer=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(pid,q,a,id)
+    ]);
+    return json({ok:true});
+   }
+  }
   if(data.role!=='boss')return json({error:'Лише для Крутого боса'},403);
   if(request.method==='POST'&&action==='import'){
    const b=await request.json();if(!Array.isArray(b.items)||!b.items.length||b.items.length>60)return json({error:'Максимум 60 товарів у пакеті'},400);
