@@ -6,7 +6,8 @@
     "/",
     "/tasks/*",
     "/materials/*",
-    "/quick-requests/*"
+    "/quick-requests/*",
+    "/products/*"
   ],
   "exclude": []
 }
