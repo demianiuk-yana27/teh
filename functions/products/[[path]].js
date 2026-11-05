@@ -43,6 +43,30 @@ export async function onRequest({request,env,data}){
    }
    return json({item,items:found.slice(0,18),reason:'Кандидати за типом товару. Сумісність не перевірена — потрібне підтвердження.'});
   }
+  if(action==='related-bulk'&&data.role==='boss'){
+   const cursor=str(u.searchParams.get('after'),150);
+   const rows=(await db.prepare('SELECT product_id,sku,title FROM product_catalog WHERE product_id>? ORDER BY product_id LIMIT 20').bind(cursor).all()).results;
+   const rules=[[/шуруповерт|дрил|перфоратор/i,'біти'],[/намет|палатк/i,'спальний мішок'],[/ноутбук/i,'миша'],[/кавоварка|кавомашин/i,'кавомолка'],[/принтер/i,'папір для принтера']];
+   const proposals=[];
+   for(const p of rows){
+    const rule=rules.find(x=>x[0].test(p.title));if(!rule)continue;
+    const known=await db.prepare('SELECT related_json FROM product_knowledge WHERE product_id=?').bind(p.product_id).first();
+    if(known&&JSON.parse(known.related_json||'[]').length)continue;
+    const related=(await db.prepare('SELECT product_id,sku,title FROM product_catalog WHERE product_id<>? AND title LIKE ? ORDER BY title LIMIT 5').bind(p.product_id,'%'+rule[1]+'%').all()).results;
+    if(related.length)proposals.push({product:p,related});
+   }
+   const next=rows.length?rows[rows.length-1].product_id:cursor;
+   if(request.method==='GET')return json({proposals,next,done:rows.length<20,scanned:rows.length});
+   if(request.method==='POST'){
+    const b=await request.json();
+    if(!Array.isArray(b.approved)||b.approved.length>20)return json({error:'Некоректний пакет'},400);
+    const approved=new Set(b.approved.map(x=>str(x,150)));
+    const statements=proposals.filter(x=>approved.has(x.product.product_id)).map(x=>db.prepare("INSERT INTO product_knowledge(product_id,faq_json,instructions,related_json,updated_at) VALUES(?,'[]','',?,CURRENT_TIMESTAMP) ON CONFLICT(product_id) DO UPDATE SET related_json=excluded.related_json,updated_at=excluded.updated_at WHERE related_json IS NULL OR related_json='[]'").bind(x.product.product_id,JSON.stringify(x.related.map(y=>y.product_id))));
+    if(statements.length)await db.batch(statements);
+    return json({ok:true,processed:statements.length,next,done:rows.length<20,scanned:rows.length});
+   }
+   return json({error:'Метод не підтримується'},405);
+  }
   if(data.role==='boss'&&action==='review'){
    if(request.method==='GET'){
     const status=str(u.searchParams.get('status')||'pending',20);
