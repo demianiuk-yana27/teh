@@ -18,6 +18,31 @@ export async function onRequest({request,env,data}){
    const k=await db.prepare('SELECT * FROM product_knowledge WHERE product_id=?').bind(id).first();
    return json({item,knowledge:k?{faq:JSON.parse(k.faq_json),instructions:k.instructions,related:JSON.parse(k.related_json)}:{faq:[],instructions:'',related:[]}});
   }
+  if(request.method==='GET'&&action==='suggest-related'){
+   const id=str(u.searchParams.get('id'),150);
+   const item=await db.prepare('SELECT product_id,sku,title,category,brand FROM product_catalog WHERE product_id=?').bind(id).first();
+   if(!item)return json({error:'Товар не знайдено'},404);
+   const rules=[
+    {source:/шуруповерт|дрил|дрель|перфоратор/i,terms:['біти','свердла','набір біт']},
+    {source:/камера відеоспостереж|ip камера|відеокамер/i,terms:['карта пам','micro sd','блок живлення']},
+    {source:/намет|палатк/i,terms:['спальний мішок','каремат','туристичний ліхтар']},
+    {source:/телефон|смартфон/i,terms:['чохол','захисне скло','кабель usb']},
+    {source:/ноутбук/i,terms:['миша','сумка для ноутбука','підставка для ноутбука']},
+    {source:/пилосос/i,terms:['фільтр для пилососа','насадка для пилососа']},
+    {source:/акумуляторн.*пил|пила акумуляторн/i,terms:['ланцюг для пили','мастило для ланцюга']},
+    {source:/рація|радіостанц/i,terms:['гарнітура для рації','акумулятор для рації']},
+    {source:/кавоварка|кавомашин/i,terms:['кавомолка','кава']},
+    {source:/принтер/i,terms:['папір для принтера','картридж']}
+   ];
+   const rule=rules.find(x=>x.source.test(item.title));
+   if(!rule)return json({item,items:[],reason:'Для цієї групи товарів ще немає надійного правила підбору.'});
+   const found=[];
+   for(const term of rule.terms){
+    const {results}=await db.prepare('SELECT product_id,sku,title,category FROM product_catalog WHERE product_id<>? AND title LIKE ? ORDER BY title LIMIT 8').bind(id,'%'+term+'%').all();
+    for(const x of results){if(!found.some(y=>y.product_id===x.product_id))found.push({...x,match_reason:term})}
+   }
+   return json({item,items:found.slice(0,18),reason:'Кандидати за типом товару. Сумісність не перевірена — потрібне підтвердження.'});
+  }
   if(data.role==='boss'&&action==='review'){
    if(request.method==='GET'){
     const status=str(u.searchParams.get('status')||'pending',20);
@@ -60,6 +85,18 @@ export async function onRequest({request,env,data}){
    const b=await request.json();if(!Array.isArray(b.items)||!b.items.length||b.items.length>60)return json({error:'Максимум 60 товарів у пакеті'},400);
    const statements=b.items.map(x=>db.prepare('INSERT INTO product_catalog(product_id,sku,title,category,brand,description,image_url,product_url,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET sku=excluded.sku,title=excluded.title,category=excluded.category,brand=excluded.brand,description=excluded.description,image_url=excluded.image_url,product_url=excluded.product_url,updated_at=excluded.updated_at').bind(str(x.product_id,150),str(x.sku,150),str(x.title,600),str(x.category,250),str(x.brand,250),str(x.description,15000),str(x.image_url,1500),str(x.product_url,1500),new Date().toISOString()));
    await db.batch(statements);return json({ok:true,count:statements.length});
+  }
+  if(request.method==='PUT'&&action==='related'){
+   const b=await request.json(),id=str(b.product_id,150);
+   if(!Array.isArray(b.related)||b.related.length>50)return json({error:'Максимум 50 супутніх товарів'},400);
+   const related=[...new Set(b.related.map(x=>str(x,150)).filter(Boolean))].filter(x=>x!==id);
+   const exists=await db.prepare('SELECT product_id FROM product_catalog WHERE product_id=?').bind(id).first();
+   if(!exists)return json({error:'Товар не знайдено'},404);
+   for(const rid of related){if(!await db.prepare('SELECT product_id FROM product_catalog WHERE product_id=?').bind(rid).first())return json({error:'Невідомий ID супутнього товару: '+rid},400)}
+   const existing=await db.prepare('SELECT * FROM product_knowledge WHERE product_id=?').bind(id).first();
+   const merged=[...new Set([...(existing?JSON.parse(existing.related_json):[]),...related])].slice(0,50);
+   await db.prepare('INSERT INTO product_knowledge(product_id,faq_json,instructions,related_json,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET related_json=excluded.related_json,updated_at=excluded.updated_at').bind(id,existing?.faq_json||'[]',existing?.instructions||'',JSON.stringify(merged),new Date().toISOString()).run();
+   return json({ok:true,count:merged.length});
   }
   if(request.method==='PUT'&&action==='knowledge'){
    const b=await request.json(),id=str(b.product_id,150);
