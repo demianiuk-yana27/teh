@@ -46,13 +46,25 @@ export async function onRequest({request,env,data}){
   if(action==='related-bulk'&&data.role==='boss'){
    const cursor=str(u.searchParams.get('after'),150);
    const rows=(await db.prepare('SELECT product_id,sku,title FROM product_catalog WHERE product_id>? ORDER BY product_id LIMIT 20').bind(cursor).all()).results;
-   const rules=[[/шуруповерт|дрил|перфоратор/i,'біти'],[/намет|палатк/i,'спальний мішок'],[/ноутбук/i,'миша'],[/кавоварка|кавомашин/i,'кавомолка'],[/принтер/i,'папір для принтера']];
+   const rules=[
+    {re:/столик.*ноутбук|стіл.*ноутбук|підставк.*ноутбук/i,terms:['органайзер для кабелів','килимок для миші','лампа настільна']},
+    {re:/шуруповерт|дрил|перфоратор/i,terms:['біти','свердла','набір інструментів']},
+    {re:/намет|палатк/i,terms:['спальний мішок','каремат','ліхтар туристичний']},
+    {re:/ноутбук/i,terms:['миша','сумка для ноутбука','підставка для ноутбука']},
+    {re:/кавоварка|кавомашин/i,terms:['кавомолка','кава']},
+    {re:/принтер/i,terms:['папір для принтера','картридж']}
+   ];
    const proposals=[];
    for(const p of rows){
-    const rule=rules.find(x=>x[0].test(p.title));if(!rule)continue;
+    const rule=rules.find(x=>x.re.test(p.title));if(!rule)continue;
     const known=await db.prepare('SELECT related_json FROM product_knowledge WHERE product_id=?').bind(p.product_id).first();
     if(known&&JSON.parse(known.related_json||'[]').length)continue;
-    const related=(await db.prepare('SELECT product_id,sku,title FROM product_catalog WHERE product_id<>? AND title LIKE ? ORDER BY title LIMIT 5').bind(p.product_id,'%'+rule[1]+'%').all()).results;
+    const related=[];
+    for(const term of rule.terms){
+     const candidates=(await db.prepare('SELECT product_id,sku,title FROM product_catalog WHERE product_id<>? AND title LIKE ? ORDER BY title LIMIT 5').bind(p.product_id,'%'+term+'%').all()).results;
+     const candidate=candidates.find(x=>!related.some(y=>y.product_id===x.product_id));
+     if(candidate)related.push({...candidate,match_reason:term});
+    }
     if(related.length)proposals.push({product:p,related});
    }
    const next=rows.length?rows[rows.length-1].product_id:cursor;
