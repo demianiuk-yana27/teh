@@ -70,5 +70,5 @@ export async function onRequest({request,env,data}){
    return json({ok:true});
   }
   return json({error:'Невідомий запит'},404);
- }catch(e){console.error('products/'+action,e);return json({error:action==='review'?'Помилка черги FAQ. Перевірте таблицю product_faq_review у D1 та журнал Functions.':'Помилка каталогу. Перевірте міграцію 0004.'},500)}
+ }catch(e){console.error('products/'+action,e);return json({error:action==='review'&&data.role==='boss'?'Помилка FAQ: '+str(e.message,350):'Помилка каталогу. Перевірте міграцію 0004.'},500)}
 }
