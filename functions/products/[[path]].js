@@ -46,7 +46,8 @@ export async function onRequest({request,env,data}){
     const existing=await db.prepare('SELECT * FROM product_knowledge WHERE product_id=?').bind(pid).first();
     const faq=existing?JSON.parse(existing.faq_json):[];
     if(faq.length>=50)return json({error:'Для товару вже є 50 FAQ'},400);
-    if(!faq.some(x=>x.q.trim().toLowerCase()===q.toLowerCase()))faq.push({q,a});
+    if(faq.some(x=>x.q.trim().toLowerCase()===q.toLowerCase()))return json({error:'Таке питання вже є у FAQ товару. Перевірте дубль вручну.'},409);
+    faq.push({q,a});
     await db.batch([
       db.prepare('INSERT INTO product_knowledge(product_id,faq_json,instructions,related_json,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET faq_json=excluded.faq_json,updated_at=excluded.updated_at').bind(pid,JSON.stringify(faq),existing?.instructions||'',existing?.related_json||'[]',new Date().toISOString()),
       db.prepare("UPDATE product_faq_review SET status='approved',product_id=?,question=?,answer=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(pid,q,a,id)
