@@ -143,23 +143,36 @@ export async function onRequest({request,env,data}){
   }
   if(data.role!=='boss')return json({error:'Лише для Крутого боса'},403);
   if(request.method==='POST'&&action==='cleanup-chat-faq'){
-   const bad=a=>/^(?:користуйтесь|користуйтеся)\\s+(?:цим\\s+)?чатом[.!\\s]*$|^не\\s+(?:той|цей)\\s+чат[.!\\s]*$/iu.test(String(a||'').trim());
-   const {results:records}=await db.prepare("SELECT id,product_id,question,answer FROM product_faq_review WHERE status='approved' AND (LOWER(answer) LIKE '%чат%') LIMIT 200").all();
-   let removed=0,missing=0;
-   for(const rec of records){
-    if(!bad(rec.answer))continue;
-    const k=await db.prepare('SELECT faq_json FROM product_knowledge WHERE product_id=?').bind(rec.product_id).first();
-    if(!k){missing++;continue}
-    const faq=JSON.parse(k.faq_json||'[]');
-    const next=faq.filter(x=>!(String(x.q||'').trim()===String(rec.question||'').trim()&&String(x.a||'').trim()===String(rec.answer||'').trim()));
-    if(next.length===faq.length){missing++;continue}
-    await db.batch([
-     db.prepare('UPDATE product_knowledge SET faq_json=?,updated_at=? WHERE product_id=?').bind(JSON.stringify(next),new Date().toISOString(),rec.product_id),
-     db.prepare("UPDATE product_faq_review SET status='rejected',reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status='approved'").bind(rec.id)
-    ]);
-    removed+=faq.length-next.length;
+   const bad=a=>{
+    const normalized=String(a||'').toLocaleLowerCase('uk').replace(/[.!?,;:«»"'’()\s]+/g,' ').trim();
+    return /^(?:користуйтесь|користуйтеся) (?:цим )?чатом$|^не (?:той|цей) чат$/.test(normalized);
+   };
+   let cursor='',removed=0,scanned=0,matched=0;
+   // Scan published FAQ JSON directly, not only review records.
+   for(let page=0;page<200;page++){
+    const {results:rows}=await db.prepare("SELECT product_id,faq_json FROM product_knowledge WHERE product_id>? ORDER BY product_id LIMIT 250").bind(cursor).all();
+    if(!rows.length)break;
+    for(const row of rows){
+     scanned++;cursor=row.product_id;
+     let faq;
+     try{faq=JSON.parse(row.faq_json||'[]')}catch(e){continue}
+     if(!Array.isArray(faq))continue;
+     const next=faq.filter(item=>!bad(item.a));
+     const count=faq.length-next.length;
+     if(!count)continue;
+     matched++;
+     await db.prepare('UPDATE product_knowledge SET faq_json=?,updated_at=? WHERE product_id=?').bind(JSON.stringify(next),new Date().toISOString(),row.product_id).run();
+     removed+=count;
+    }
+    if(rows.length<250)break;
    }
-   return json({ok:true,removed,missing,checked:records.length});
+   const {results:reviewRows}=await db.prepare("SELECT id,answer FROM product_faq_review WHERE status='approved' AND LOWER(answer) LIKE '%чат%' LIMIT 500").all();
+   let marked=0;
+   for(const row of reviewRows)if(bad(row.answer)){
+    await db.prepare("UPDATE product_faq_review SET status='rejected',reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status='approved'").bind(row.id).run();
+    marked++;
+   }
+   return json({ok:true,removed,matched,scanned,marked});
   }
   if(request.method==='POST'&&action==='deduplicate-skus'){
    const {results:groups}=await db.prepare("SELECT sku,COUNT(*) n FROM product_catalog WHERE sku IS NOT NULL AND TRIM(sku)<>'' GROUP BY sku HAVING COUNT(*)>1 ORDER BY sku LIMIT 15").all();
