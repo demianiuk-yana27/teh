@@ -16,6 +16,8 @@ const relatedRules=[
 ];
 const relatedRule=title=>relatedRules.find(x=>x.re.test(title));
 export async function onRequest({request,env,data}){
+ // Feature paused: prevent catalog reads/writes while preserving D1 records for later reactivation.
+ return json({error:'Каталог товарів і FAQ тимчасово відключені'},503);
  if(!['manager','boss'].includes(data.role))return json({error:'Потрібен вхід'},401);
  if(!env.TASKS_DB)return json({error:'D1 не підключена'},503);
  const db=env.TASKS_DB,u=new URL(request.url),action=u.pathname.split('/')[2];
