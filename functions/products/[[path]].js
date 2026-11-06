@@ -87,6 +87,7 @@ export async function onRequest({request,env,data}){
      const a=answer.toLocaleLowerCase('uk').replace(/[.!?\\s]+$/g,'').trim();
      const q=question.toLocaleLowerCase('uk');
      const ambiguous=/як в попередн|так(?:а|і|ий|е)? ж як|так(?:а|і|ий|е)? сам(?:а|і|ий|е)?|як раніше|дивіться вище|на фото|скину фото|не знаю|напевно|мабуть|можливо|не вказ|немає інформац|нема інформац|не перевір|потрібно уточн|залежить|не гарант|певно|орієнтовно/i.test(a);
+     const offTopic=/користуйтесь\\s+(?:цим\\s+)?чатом|користуйтеся\\s+(?:цим\\s+)?чатом|пишіть\\s+(?:у|в)\\s+(?:цей|цьому)\\s+чат|не\\s+(?:в\\s+той|сюди)\\s+чат|помилково\\s+(?:написал|відправил)/i.test(a);
      const temporary=/сьогодні|завтра|ціна|вартіст|залишил|наявност|парті|пересорт|відправлю|уточню|пізніше/i.test(a+' '+q);
      const shortConcrete=/^(?:тут\\s+)?(?:один|одна|одне|два|дві|три|чотири|п'ять|загальн(?:ий|а|е)|фарба|фарбован(?:е|і|а)|пластик|пластиков(?:ий|а|е)|алюміній|алюмінієв(?:ий|а|е)|метал|металев(?:ий|а|е)|блакитн(?:ий|а|е|і)|чорн(?:ий|а|е|і)|біл(?:ий|а|е|і)|micro[ -]?usb|usb[ -]?c|type[ -]?c|lightning|до\\s*\\d+\\s*(?:гб|gb)|\\d+[xх×*]\\d+)/i.test(a);
      const yesNo=/^(так|ні|да|нет|є|немає|не має|входить|не входить|у комплекті|в комплекті)$/.test(a);
@@ -95,7 +96,8 @@ export async function onRequest({request,env,data}){
      const cleanedQuestion=question.replace(/^(?:добр(?:ого|ий)\\s+(?:дня|ранку)|привіт|підкажіть(?:\\s+будь ласка)?)[!,.:\\s-]*/i,'').replace(/(?:^|\\s)\\d{9,14}(?=\\s|$)/g,' ').replace(/\\s+/g,' ').trim();
      let status='ready',reason='Змістовна відповідь; перевірте перед публікацією',category='content';
      if(!product_id||matches.length>1){status='review';category='product_match';reason=!product_id?'Товар не зіставлено':'Кілька карток за артикулом — перевірте правильну модель';}
-     else if(ambiguous||temporary||!meaningful){status='review';category=ambiguous?'missing_context':temporary?'temporary':'short_unclear';reason=ambiguous?'Відповідь залежить від відсутнього контексту':temporary?'Тимчасова інформація, не для постійного FAQ':'Коротка відповідь потребує перевірки';}
+     else if(offTopic||ambiguous||temporary||!a){status='review';category=offTopic?'off_topic':ambiguous?'missing_context':temporary?'temporary':'empty';reason=offTopic?'Службове повідомлення, не відповідь про товар':ambiguous?'Відповідь залежить від відсутнього контексту':temporary?'Тимчасова інформація, не для постійного FAQ':'Порожня відповідь';}
+     else if(!meaningful){reason='Коротка відповідь — перевірте зміст перед публікацією';category='short_answer';}
      else if(shortConcrete){reason='Коротка, але конкретна характеристика';category='short_concrete';}
      else if(yesNo&&clearBinary){reason='Однозначна відповідь на конкретне запитання';category='binary';}
      if(/постійн.*запис|запис.*постійн|\\bвисот[аи]\\b|\\bрозмір[и]?\\b/.test(q)&&/^(постійно|\\d+(?:[.,]\\d+)?[xх×*]\\d+)/.test(a)){status='review';category='specification';reason='Уточніть умови роботи або порядок розмірів';}
