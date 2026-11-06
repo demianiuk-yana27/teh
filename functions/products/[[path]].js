@@ -77,10 +77,13 @@ export async function onRequest({request,env,data}){
   if(action==='related-bulk'&&data.role==='boss'){
    const cursor=str(u.searchParams.get('after'),150);
    const rows=(await db.prepare('SELECT product_id,sku,title FROM product_catalog WHERE product_id>? ORDER BY product_id LIMIT 20').bind(cursor).all()).results;
+   const ids=rows.map(p=>p.product_id);
+   const knownRows=ids.length?(await db.prepare('SELECT product_id,related_json FROM product_knowledge WHERE product_id IN ('+ids.map(()=>'?').join(',')+')').bind(...ids).all()).results:[];
+   const knownById=new Map(knownRows.map(x=>[x.product_id,x]));
    const proposals=[];
    for(const p of rows){
     const rule=relatedRule(p.title);if(!rule)continue;
-    const known=await db.prepare('SELECT related_json FROM product_knowledge WHERE product_id=?').bind(p.product_id).first();
+    const known=knownById.get(p.product_id);
     if(known&&JSON.parse(known.related_json||'[]').length)continue;
     const related=[];
     for(const term of rule.terms){
