@@ -150,7 +150,7 @@ export async function onRequest({request,env,data}){
    let cursor='',removed=0,scanned=0,matched=0;
    // Scan published FAQ JSON directly, not only review records.
    for(let page=0;page<200;page++){
-    const {results:rows}=await db.prepare("SELECT product_id,faq_json FROM product_knowledge WHERE product_id>? ORDER BY product_id LIMIT 250").bind(cursor).all();
+    const {results:rows}=await db.prepare("SELECT product_id,faq_json FROM product_knowledge WHERE product_id>? AND LOWER(faq_json) LIKE '%чат%' ORDER BY product_id LIMIT 250").bind(cursor).all();
     if(!rows.length)break;
     for(const row of rows){
      scanned++;cursor=row.product_id;
