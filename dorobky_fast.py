@@ -149,33 +149,56 @@ def _download_both_reports(legacy, download_dir="temp_downloads_dorobky"):
             pass
 
 
+def _filtered_report_rows(path):
+    """Read only needed columns in streaming mode to limit memory usage."""
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    try:
+        sheet = workbook.active
+        iterator = sheet.iter_rows(values_only=True)
+        headers = next(iterator, None)
+        if not headers:
+            return []
+        normalized = [str(h).strip() if h is not None else "" for h in headers]
+        required = ["№", "Статус", "Відповідальний"]
+        missing = [name for name in required if name not in normalized]
+        if missing:
+            raise ValueError("У звіті CRM немає стовпців: " + ", ".join(missing))
+        positions = {name: normalized.index(name) for name in required}
+        comments = [i for i, name in enumerate(normalized) if name == "Доробка"]
+        comment_index = comments[1] if len(comments) > 1 else (comments[0] if comments else None)
+        output = []
+        for row in iterator:
+            def value(index):
+                return row[index] if index is not None and index < len(row) and row[index] is not None else ""
+            status = str(value(positions["Статус"])).strip()
+            responsible = str(value(positions["Відповідальний"])).strip()
+            responsible_lower = responsible.casefold()
+            if status not in {"Доробка ТТН", "Доробка склад"}:
+                continue
+            if not (responsible_lower.startswith("тех") or "стажер" in responsible_lower):
+                continue
+            output.append([value(positions["№"]), status, responsible, value(comment_index)])
+        return output
+    finally:
+        workbook.close()
+
+
 def process_dorobky_fast(legacy, rework_slot):
     ttn_file, warehouse_file = _download_both_reports(legacy)
-    df = pd.concat([pd.read_excel(ttn_file), pd.read_excel(warehouse_file)], ignore_index=True)
-    df.columns = df.columns.astype(str).str.strip()
-
-    required = ["№", "Статус", "Відповідальний"]
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError("У звіті CRM не знайдено обов'язкові стовпці: " + ", ".join(missing))
-
-    comment = "Доробка.1" if "Доробка.1" in df.columns else "Доробка"
-    statuses = df["Статус"].fillna("").astype(str).str.strip()
-    responsible = df["Відповідальний"].fillna("").astype(str).str.strip()
-    responsible_lower = responsible.str.casefold()
-    manager_mask = responsible_lower.str.startswith("тех") | responsible_lower.str.contains("стажер", regex=False)
-    filtered = df[statuses.isin({"Доробка ТТН", "Доробка склад"}) & manager_mask].copy()
-    if comment not in filtered.columns:
-        filtered[comment] = ""
-    rows = filtered[["№", "Статус", "Відповідальний", comment]].fillna("").values.tolist()
+    rows = _filtered_report_rows(ttn_file)
+    rows.extend(_filtered_report_rows(warehouse_file))
 
     client = legacy.get_gspread_client()
     sheet = client.open_by_key("1dY9HLJzDW9lX94TCiH5zpbhohLJaDmkh0tq-EYOXPg0").worksheet("Листопад")
     existing = sheet.get("A:D")
+    header = f"Вивантаження від {datetime.now(ZoneInfo('Europe/Kyiv')).strftime('%d.%m.%Y')} — {rework_slot}"
+    if any(row and str(row[0]).strip() == header for row in existing):
+        raise RuntimeError("Вивантаження за цей день і час уже є в таблиці. Повторний запис зупинено, щоб уникнути дублів.")
     last_used = max((i for i, row in enumerate(existing, 1) if any(str(v).strip() for v in row)), default=0)
     first_row = last_used + 1
-    legacy.ensure_capacity(sheet, first_row + len(rows))
-    header = f"Вивантаження від {datetime.now(ZoneInfo('Europe/Kyiv')).strftime('%d.%m.%Y')} — {rework_slot}"
+    legacy.ensure_capacity(sheet, first_row + len(rows) + 1)
     values = [[header, "", "", ""]] + rows
     sheet.update(range_name=f"A{first_row}:D{first_row + len(values) - 1}", values=values, value_input_option="USER_ENTERED")
-    return len(filtered)
+    return len(rows)
