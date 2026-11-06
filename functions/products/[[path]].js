@@ -140,6 +140,30 @@ export async function onRequest({request,env,data}){
    }
   }
   if(data.role!=='boss')return json({error:'Лише для Крутого боса'},403);
+  if(request.method==='POST'&&action==='deduplicate-skus'){
+   const {results:groups}=await db.prepare("SELECT sku,COUNT(*) n FROM product_catalog WHERE sku IS NOT NULL AND TRIM(sku)<>'' GROUP BY sku HAVING COUNT(*)>1 ORDER BY sku LIMIT 15").all();
+   let removed=0,merged=0;
+   for(const group of groups){
+    const {results:products}=await db.prepare("SELECT p.product_id,p.title,k.faq_json,k.instructions,k.related_json FROM product_catalog p LEFT JOIN product_knowledge k ON k.product_id=p.product_id WHERE p.sku=? ORDER BY (CASE WHEN k.product_id IS NOT NULL THEN 1 ELSE 0 END) DESC,p.product_id").bind(group.sku).all();
+    if(products.length<2)continue;
+    const keep=products[0],extras=products.slice(1),keepId=keep.product_id;
+    let faq=JSON.parse(keep.faq_json||'[]'),instructions=keep.instructions||'',related=JSON.parse(keep.related_json||'[]');
+    for(const p of extras){
+     for(const item of JSON.parse(p.faq_json||'[]'))if(item.q&&!faq.some(x=>String(x.q).trim().toLowerCase()===String(item.q).trim().toLowerCase())&&faq.length<50)faq.push(item);
+     if(!instructions&&p.instructions)instructions=p.instructions;
+     for(const id of JSON.parse(p.related_json||'[]'))if(id!==keepId&&!related.includes(id)&&related.length<50)related.push(id);
+    }
+    const statements=[db.prepare("INSERT INTO product_knowledge(product_id,faq_json,instructions,related_json,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET faq_json=excluded.faq_json,instructions=excluded.instructions,related_json=excluded.related_json,updated_at=excluded.updated_at").bind(keepId,JSON.stringify(faq),instructions,JSON.stringify(related),new Date().toISOString())];
+    for(const p of extras){
+     statements.push(db.prepare("UPDATE product_faq_review SET product_id=? WHERE product_id=?").bind(keepId,p.product_id));
+     statements.push(db.prepare("DELETE FROM product_knowledge WHERE product_id=?").bind(p.product_id));
+     statements.push(db.prepare("DELETE FROM product_catalog WHERE product_id=?").bind(p.product_id));
+    }
+    await db.batch(statements);
+    removed+=extras.length;merged++;
+   }
+   return json({ok:true,removed,groups:merged,done:groups.length<15});
+  }
   if(request.method==='GET'&&action==='duplicate-audit'){
    const page=Math.max(1,Math.min(10000,Number(u.searchParams.get('page'))||1));
    const limit=30,offset=(page-1)*limit;
