@@ -80,11 +80,15 @@ export async function onRequest({request,env,data}){
     const ids=[...new Set(b.ids.map(x=>str(x,100)).filter(Boolean))];
     const records=ids.length?(await db.prepare('SELECT id,sku,product_id,question,answer,original_question,original_answer FROM product_faq_review WHERE status=? AND id IN ('+ids.map(()=>'?').join(',')+')').bind('pending',...ids).all()).results:[];
     const byId=new Map(records.map(x=>[x.id,x]));
+    const skus=[...new Set(records.map(x=>x.sku).filter(Boolean))];
+    const products=skus.length?(await db.prepare('SELECT product_id,sku,title FROM product_catalog WHERE sku IN ('+skus.map(()=>'?').join(',')+') OR product_id IN ('+skus.map(()=>'?').join(',')+')').bind(...skus,...skus).all()).results:[];
+    const productMatches=new Map();
+    for(const p of products){for(const key of [p.sku,p.product_id]){if(!skus.includes(key))continue;const matches=productMatches.get(key)||[];if(!matches.some(x=>x.product_id===p.product_id))matches.push(p);productMatches.set(key,matches)}}
     const results=[];
     for(const id of ids){
      const record=byId.get(id);
      if(!record)continue;
-     const matches=(await db.prepare('SELECT product_id,title FROM product_catalog WHERE sku=? OR product_id=? LIMIT 20').bind(record.sku,record.sku).all()).results;
+     const matches=(productMatches.get(record.sku)||[]).slice(0,20);
      const product_id=record.product_id||(matches.length===1?matches[0].product_id:null);
      const answer=str(record.answer,5000),question=str(record.question,500);
      const a=answer.toLocaleLowerCase('uk').replace(/[.!?\\s]+$/g,'').trim();
