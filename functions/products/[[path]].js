@@ -1,3 +1,4 @@
+const searchCache=new Map();
 const json=(x,s=200)=>Response.json(x,{status:s,headers:{'Cache-Control':'no-store'}});
 const str=(x,n=500)=>String(x??'').trim().slice(0,n);
 const relatedRules=[
@@ -21,10 +22,37 @@ export async function onRequest({request,env,data}){
  try{
   if(request.method==='GET'&&action==='search'){
    const q=str(u.searchParams.get('q'),100),page=Math.max(1,Math.min(10000,Number(u.searchParams.get('page'))||1));
-   const where=q?' WHERE title LIKE ? OR sku LIKE ? OR product_id LIKE ?':'',args=q?Array(3).fill('%'+q+'%'):[];
+   const key=q.toLocaleLowerCase('uk')+'|'+page;
+   const cached=searchCache.get(key);
+   if(cached&&cached.expires>Date.now())return json(cached.value);
+   // Exact SKU/ID and prefix title searches can use B-tree indexes.
+   const exact=q?(await db.prepare('SELECT product_id,sku,title,category,brand FROM product_catalog WHERE sku=? OR product_id=? ORDER BY title LIMIT 30').bind(q,q).all()).results:[];
+   let where='',args=[];
+   if(q){
+    if(exact.length){
+     const value={items:exact,total:exact.length,page:1,pages:1};
+     if(searchCache.size>150)searchCache.clear();
+     searchCache.set(key,{value,expires:Date.now()+30000});
+     return json(value);
+    }
+    // Preserve substring search for existing UI; use prefix first to avoid full scans for common queries.
+    const prefix=q.replace(/[\\%_]/g,'')+'%';
+    const prefixRows=(await db.prepare("SELECT product_id,sku,title,category,brand FROM product_catalog WHERE title LIKE ? OR sku LIKE ? ORDER BY title LIMIT 30").bind(prefix,prefix).all()).results;
+    if(prefixRows.length){
+     const value={items:prefixRows,total:prefixRows.length,page:1,pages:1};
+     if(searchCache.size>150)searchCache.clear();
+     searchCache.set(key,{value,expires:Date.now()+30000});
+     return json(value);
+    }
+    where=' WHERE title LIKE ? OR sku LIKE ? OR product_id LIKE ?';
+    args=Array(3).fill('%'+q+'%');
+   }
    const total=(await db.prepare('SELECT COUNT(*) n FROM product_catalog'+where).bind(...args).first()).n;
    const {results}=await db.prepare('SELECT product_id,sku,title,category,brand FROM product_catalog'+where+' ORDER BY title LIMIT 30 OFFSET ?').bind(...args,(page-1)*30).all();
-   return json({items:results,total,page,pages:Math.ceil(total/30)});
+   const value={items:results,total,page,pages:Math.ceil(total/30)};
+   if(searchCache.size>150)searchCache.clear();
+   searchCache.set(key,{value,expires:Date.now()+30000});
+   return json(value);
   }
   if(request.method==='GET'&&action==='item'){
    const id=str(u.searchParams.get('id'),150),item=await db.prepare('SELECT * FROM product_catalog WHERE product_id=?').bind(id).first();
