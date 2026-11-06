@@ -37,9 +37,10 @@ export async function onRequest({request,env,data}){
     }
     // Preserve substring search for existing UI; use prefix first to avoid full scans for common queries.
     const prefix=q.replace(/[\\%_]/g,'')+'%';
-    const prefixRows=(await db.prepare("SELECT product_id,sku,title,category,brand FROM product_catalog WHERE title LIKE ? OR sku LIKE ? ORDER BY title LIMIT 30").bind(prefix,prefix).all()).results;
+    const prefixRows=(await db.prepare("SELECT product_id,sku,title,category,brand FROM product_catalog WHERE title LIKE ? OR sku LIKE ? ORDER BY title LIMIT 30 OFFSET ?").bind(prefix,prefix,(page-1)*30).all()).results;
     if(prefixRows.length){
-     const value={items:prefixRows,total:prefixRows.length,page:1,pages:1};
+     const count=(await db.prepare("SELECT COUNT(*) n FROM product_catalog WHERE title LIKE ? OR sku LIKE ?").bind(prefix,prefix).first()).n;
+     const value={items:prefixRows,total:count,page,pages:Math.ceil(count/30)};
      if(searchCache.size>150)searchCache.clear();
      searchCache.set(key,{value,expires:Date.now()+30000});
      return json(value);
