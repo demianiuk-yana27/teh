@@ -74,6 +74,22 @@ export async function onRequest({request,env,data}){
    return json({error:'Метод не підтримується'},405);
   }
   if(data.role==='boss'&&action==='review'){
+   if(request.method==='POST'&&u.searchParams.get('operation')==='classify'){
+    const b=await request.json();
+    if(!Array.isArray(b.ids)||b.ids.length>200)return json({error:'Максимум 200 FAQ за раз'},400);
+    const results=[];
+    for(const id of b.ids){
+     const record=await db.prepare('SELECT id,sku,product_id,question,answer,original_question,original_answer FROM product_faq_review WHERE id=? AND status=?').bind(str(id,100),'pending').first();
+     if(!record)continue;
+     const matches=(await db.prepare('SELECT product_id,title FROM product_catalog WHERE sku=? OR product_id=? LIMIT 3').bind(record.sku,record.sku).all()).results;
+     const product_id=record.product_id||(matches.length===1?matches[0].product_id:null);
+     const answer=str(record.answer,5000);
+     const risky=/^(так|ні|да|нет|є|немає|есть|не має|ок|окей)\s*[.!?]*$/i.test(answer)||answer.length<18||/фото|на фото|дивіться|скину|відправлю|уточн|наявност|залишил|сьогодні|завтра|ціна|вартіст/i.test(answer+' '+record.question);
+     const status=!product_id||matches.length>1||risky?'review':'ready';
+     results.push({id:record.id,status,product_id,reason:!product_id?'Не знайдено однозначного товару':matches.length>1?'Кілька збігів артикулу':risky?'Коротка або контекстна відповідь':'Однозначний артикул і розгорнута відповідь'});
+    }
+    return json({items:results});
+   }
    if(request.method==='GET'){
     const status=str(u.searchParams.get('status')||'pending',20);
     if(!['pending','approved','rejected'].includes(status))return json({error:'Невірний статус'},400);
