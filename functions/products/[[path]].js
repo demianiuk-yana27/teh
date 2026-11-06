@@ -81,27 +81,25 @@ export async function onRequest({request,env,data}){
     for(const id of b.ids){
      const record=await db.prepare('SELECT id,sku,product_id,question,answer,original_question,original_answer FROM product_faq_review WHERE id=? AND status=?').bind(str(id,100),'pending').first();
      if(!record)continue;
-     const matches=(await db.prepare('SELECT product_id,title FROM product_catalog WHERE sku=? OR product_id=? LIMIT 3').bind(record.sku,record.sku).all()).results;
+     const matches=(await db.prepare('SELECT product_id,title FROM product_catalog WHERE sku=? OR product_id=? LIMIT 20').bind(record.sku,record.sku).all()).results;
      const product_id=record.product_id||(matches.length===1?matches[0].product_id:null);
-     const answer=str(record.answer,5000);
-     const question=str(record.question,500);
+     const answer=str(record.answer,5000),question=str(record.question,500);
      const a=answer.toLocaleLowerCase('uk').replace(/[.!?\\s]+$/g,'').trim();
      const q=question.toLocaleLowerCase('uk');
-     const shortYes=/^(так|да|є|входить|присутн(?:ій|я|є)|у комплекті|в комплекті)$/.test(a);
-     const shortNo=/^(ні|нет|немає|не має|відсутн(?:ій|я|є)|не входить|без нього|без неї)$/.test(a);
-     // A short yes/no is meaningful only for a single explicit yes/no product question.
-     const clearBinary=/(чи |є |має |наявн|входить|комплект|підтримує|можна |працює|сумісн|буде |йде |іде )/.test(q)
-       && !/(\\b(який|яка|яке|які|скільки|коли|де|чому|як саме|якого)\\b|\\?|,)/i.test(q.replace(/\\?\\s*$/,'').replace(/\\?/, ''))
-       && (q.match(/\\?/g)||[]).length<=1
-       && !/\\s(та|або|чи)\\s.{4,}\\s(та|або|чи)\\s/.test(q);
-     const uncertain=/напевно|мабуть|можливо|не знаю|не вказ|немає інформац|нема інформац|не перевір|потрібно уточн|залежить|не гарант|певно|орієнтовно/i.test(a);
-     const contextual=/фото|на фото|дивіться|скину|відправлю|уточн|наявност|залишил|сьогодні|завтра|ціна|вартіст|парті|склад|пересорт/i.test(a+' '+q);
-     const shortResolved=(shortYes||shortNo)&&clearBinary&&!uncertain&&!contextual;
-     const meaningful=/\\d/.test(a)||a.length>=18||/^(без |тільки |лише |з |із |до |від |пластик|метал|сталь|дерев|чорн|біл|червон|син|зелен)/.test(a);
-     const risky=uncertain||contextual||(!shortResolved&&((shortYes||shortNo)||(!meaningful&&a.length<18)));
-     const status=!product_id||matches.length>1||risky?'review':'ready';
-     const reason=!product_id?'Не знайдено однозначного товару':matches.length>1?'Кілька збігів артикулу':uncertain?'Непевна відповідь':contextual?'Потрібен додатковий контекст':shortResolved?'Коротка відповідь на однозначне запитання':risky?'Недостатньо змісту для попереднього підтвердження':'Артикул зіставлено, відповідь достатньо змістовна';
-     results.push({id:record.id,status,product_id,reason});
+     const ambiguous=/як в попередн|так(?:а|і|ий|е)? ж як|так(?:а|і|ий|е)? сам(?:а|і|ий|е)?|як раніше|дивіться вище|на фото|скину фото|не знаю|напевно|мабуть|можливо|не вказ|немає інформац|нема інформац|не перевір|потрібно уточн|залежить|не гарант|певно|орієнтовно/i.test(a);
+     const temporary=/сьогодні|завтра|ціна|вартіст|залишил|наявност|парті|пересорт|відправлю|уточню|пізніше/i.test(a+' '+q);
+     const shortConcrete=/^(?:тут\\s+)?(?:один|одна|одне|два|дві|три|чотири|п'ять|загальн(?:ий|а|е)|фарба|фарбован(?:е|і|а)|пластик|пластиков(?:ий|а|е)|алюміній|алюмінієв(?:ий|а|е)|метал|металев(?:ий|а|е)|блакитн(?:ий|а|е|і)|чорн(?:ий|а|е|і)|біл(?:ий|а|е|і)|micro[ -]?usb|usb[ -]?c|type[ -]?c|lightning|до\\s*\\d+\\s*(?:гб|gb)|\\d+[xх×*]\\d+)/i.test(a);
+     const yesNo=/^(так|ні|да|нет|є|немає|не має|входить|не входить|у комплекті|в комплекті)$/.test(a);
+     const clearBinary=/^(чи |є |має |наявн|входить|підтримує|можна |працює|сумісн|йде |іде )/.test(q)&&!/(який|яка|яке|які|скільки|коли|де|чому|або|\\sта\\s)/.test(q)&&(q.match(/\\?/g)||[]).length<=1;
+     const meaningful=shortConcrete||/\\d/.test(a)||a.length>=18||(yesNo&&clearBinary);
+     const cleanedQuestion=question.replace(/^(?:добр(?:ого|ий)\\s+(?:дня|ранку)|привіт|підкажіть(?:\\s+будь ласка)?)[!,.:\\s-]*/i,'').replace(/(?:^|\\s)\\d{9,14}(?=\\s|$)/g,' ').replace(/\\s+/g,' ').trim();
+     let status='ready',reason='Змістовна відповідь; перевірте перед публікацією',category='content';
+     if(!product_id||matches.length>1){status='review';category='product_match';reason=!product_id?'Товар не зіставлено':'Кілька карток за артикулом — перевірте правильну модель';}
+     else if(ambiguous||temporary||!meaningful){status='review';category=ambiguous?'missing_context':temporary?'temporary':'short_unclear';reason=ambiguous?'Відповідь залежить від відсутнього контексту':temporary?'Тимчасова інформація, не для постійного FAQ':'Коротка відповідь потребує перевірки';}
+     else if(shortConcrete){reason='Коротка, але конкретна характеристика';category='short_concrete';}
+     else if(yesNo&&clearBinary){reason='Однозначна відповідь на конкретне запитання';category='binary';}
+     if(/постійн.*запис|запис.*постійн|\\bвисот[аи]\\b|\\bрозмір[и]?\\b/.test(q)&&/^(постійно|\\d+(?:[.,]\\d+)?[xх×*]\\d+)/.test(a)){status='review';category='specification';reason='Уточніть умови роботи або порядок розмірів';}
+     results.push({id:record.id,status,product_id,reason,category,suggested_question:cleanedQuestion!==question?cleanedQuestion:null});
     }
     return json({items:results});
    }
