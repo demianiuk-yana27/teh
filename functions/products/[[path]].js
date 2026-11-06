@@ -77,9 +77,12 @@ export async function onRequest({request,env,data}){
    if(request.method==='POST'&&u.searchParams.get('operation')==='classify'){
     const b=await request.json();
     if(!Array.isArray(b.ids)||b.ids.length>200)return json({error:'Максимум 200 FAQ за раз'},400);
+    const ids=[...new Set(b.ids.map(x=>str(x,100)).filter(Boolean))];
+    const records=ids.length?(await db.prepare('SELECT id,sku,product_id,question,answer,original_question,original_answer FROM product_faq_review WHERE status=? AND id IN ('+ids.map(()=>'?').join(',')+')').bind('pending',...ids).all()).results:[];
+    const byId=new Map(records.map(x=>[x.id,x]));
     const results=[];
-    for(const id of b.ids){
-     const record=await db.prepare('SELECT id,sku,product_id,question,answer,original_question,original_answer FROM product_faq_review WHERE id=? AND status=?').bind(str(id,100),'pending').first();
+    for(const id of ids){
+     const record=byId.get(id);
      if(!record)continue;
      const matches=(await db.prepare('SELECT product_id,title FROM product_catalog WHERE sku=? OR product_id=? LIMIT 20').bind(record.sku,record.sku).all()).results;
      const product_id=record.product_id||(matches.length===1?matches[0].product_id:null);
