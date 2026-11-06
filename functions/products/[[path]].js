@@ -140,6 +140,18 @@ export async function onRequest({request,env,data}){
    }
   }
   if(data.role!=='boss')return json({error:'Лише для Крутого боса'},403);
+  if(request.method==='GET'&&action==='duplicate-audit'){
+   const page=Math.max(1,Math.min(10000,Number(u.searchParams.get('page'))||1));
+   const limit=30,offset=(page-1)*limit;
+   const totals=await db.prepare("SELECT COUNT(*) groups_count,COALESCE(SUM(n-1),0) extra_rows FROM (SELECT sku,COUNT(*) n FROM product_catalog WHERE sku IS NOT NULL AND TRIM(sku)<>'' GROUP BY sku HAVING COUNT(*)>1)").first();
+   const {results:groups}=await db.prepare("SELECT sku,COUNT(*) n FROM product_catalog WHERE sku IS NOT NULL AND TRIM(sku)<>'' GROUP BY sku HAVING COUNT(*)>1 ORDER BY n DESC,sku LIMIT ? OFFSET ?").bind(limit,offset).all();
+   const items=[];
+   for(const group of groups){
+    const {results:products}=await db.prepare("SELECT p.product_id,p.sku,p.title,p.category,CASE WHEN k.product_id IS NULL THEN 0 ELSE 1 END has_knowledge,COALESCE(json_array_length(k.faq_json),0) faq_count,COALESCE(json_array_length(k.related_json),0) related_count,CASE WHEN LENGTH(TRIM(COALESCE(k.instructions,'')))>0 THEN 1 ELSE 0 END has_instructions,(SELECT COUNT(*) FROM product_faq_review r WHERE r.product_id=p.product_id) review_count FROM product_catalog p LEFT JOIN product_knowledge k ON k.product_id=p.product_id WHERE p.sku=? ORDER BY p.product_id LIMIT 30").bind(group.sku).all();
+    items.push({sku:group.sku,count:group.n,products,has_variants:new Set(products.map(p=>p.title.trim().toLocaleLowerCase('uk'))).size>1});
+   }
+   return json({totals,page,pages:Math.ceil(totals.groups_count/limit),items,read_only:true});
+  }
   if(request.method==='POST'&&action==='import'){
    const b=await request.json();if(!Array.isArray(b.items)||!b.items.length||b.items.length>60)return json({error:'Максимум 60 товарів у пакеті'},400);
    const statements=b.items.map(x=>db.prepare('INSERT INTO product_catalog(product_id,sku,title,category,brand,description,image_url,product_url,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET sku=excluded.sku,title=excluded.title,category=excluded.category,brand=excluded.brand,description=excluded.description,image_url=excluded.image_url,product_url=excluded.product_url,updated_at=excluded.updated_at').bind(str(x.product_id,150),str(x.sku,150),str(x.title,600),str(x.category,250),str(x.brand,250),str(x.description,15000),str(x.image_url,1500),str(x.product_url,1500),new Date().toISOString()));
