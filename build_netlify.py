@@ -159,6 +159,30 @@ loaders += '<script src="ttn.js?v=2"></script><script src="boss-dashboard.js?v=4
 s = s.replace("setStatus(id,d.status==='started'?'running':'busy','⏳ '+d.message)}catch(e){setStatus(id,'error','❌ '+e.message)}}async function runOrderCount()",
 """setStatus(id,d.status==='started'?'running':'busy','⏳ '+d.message);if(d.status==='started'){clearInterval(timers[id]);timers[id]=setInterval(async()=>{try{const state=await jf(API+'/negative/status');if(state.status==='running')setStatus(id,'running','⏳ '+state.message);else if(state.status==='success'||state.status==='error'){clearInterval(timers[id]);setStatus(id,state.status,(state.status==='success'?'✅ ':'❌ ')+state.message)}}catch(e){clearInterval(timers[id]);setStatus(id,'error','❌ '+e.message)}},2000)}}catch(e){setStatus(id,'error','❌ '+e.message)}}async function runOrderCount()""",1)
 
+# Read-only diagnostics for the negative reviews integrations.
+negative_diagnostic_controls = '''<div class="card" style="margin-top:16px"><h3>Перевірка підключень</h3><p>Google-таблиця, аркуші, активні магазини та авторизація Prom. Без запису даних.</p><button class="run" onclick="checkNegativeConnections(this)">🔎 Перевірити підключення</button><div class="status negativeDiagnosticResult" style="white-space:pre-wrap">Перевірка ще не запускалася.</div></div>'''
+for view_id in ('negative-reviews', 'negative-analytics'):
+    start = s.find('<section class="view" id="' + view_id + '">')
+    if start >= 0:
+        end = s.find('</section>', start)
+        if end >= 0:
+            s = s[:end] + negative_diagnostic_controls + s[end:]
+
+negative_diagnostic_script = '''<script>
+async function checkNegativeConnections(button){
+ const panel=button.closest(".card"),out=panel.querySelector(".negativeDiagnosticResult");
+ button.disabled=true;out.textContent="⏳ Перевіряємо Google Sheets і Prom. Це може тривати до хвилини.";
+ try{
+  const response=await fetch("/api/negative/diagnostic",{method:"POST"});
+  const data=await response.json();
+  if(!response.ok)throw Error(data.message||"HTTP "+response.status);
+  out.textContent=(data.ok?"✅ Підключення працюють":"⚠️ Потрібна увага")+"\\n"+(data.checks||[]).map(c=>(c.ok?"✅ ":"❌ ")+c.name+": "+c.message).join("\\n");
+ }catch(error){out.textContent="❌ Не вдалося виконати перевірку: "+error.message}
+ finally{button.disabled=false}
+}
+</script>'''
+s = s.replace('</body>', negative_diagnostic_script + '</body>', 1)
+
 pos = s.rfind('<script>')
 if pos < 0:
     raise SystemExit('Main frontend script not found')
