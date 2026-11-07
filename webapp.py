@@ -385,7 +385,20 @@ def _negative_diagnostic_checks(sheet_id,run_id):
     from negative_reviews import _secret_path
     cookies_path=_secret_path("prom_cookies.json")
     cookies_present=_prom_os.path.isfile(cookies_path)
-    checks.append({"name":"Prom / файл cookies","ok":cookies_present,"message":"Файл знайдено" if cookies_present else "Файл prom_cookies.json не знайдено (вміст не читаємо)"})
+    if cookies_present:
+        try:
+            import json as _prom_json
+            with open(cookies_path, "r", encoding="utf-8") as _prom_cookie_file:
+                _prom_cookie_data = _prom_json.load(_prom_cookie_file)
+            _prom_cookie_valid = isinstance(_prom_cookie_data, list) and bool(_prom_cookie_data) and all(
+                isinstance(item, dict) and isinstance(item.get("name"), str)
+                and isinstance(item.get("value"), str) for item in _prom_cookie_data
+            )
+            checks.append({"name":"Prom / файл cookies","ok":_prom_cookie_valid,"message":"Формат cookies коректний; дійсність сесії ще не підтверджена" if _prom_cookie_valid else "Файл знайдено, але формат cookies некоректний"})
+        except (OSError, ValueError, TypeError):
+            checks.append({"name":"Prom / файл cookies","ok":False,"message":"Файл знайдено, але не вдалося безпечно перевірити JSON"})
+    else:
+        checks.append({"name":"Prom / файл cookies","ok":False,"message":"Файл prom_cookies.json не знайдено"})
     profile_config=_prom_os.environ.get("PROM_PROFILE_PATH","").strip()
     profile_exists=bool(profile_config and _prom_os.path.isdir(profile_config))
     checks.append({"name":"Prom / профіль Chromium","ok":profile_exists,"message":"Налаштований профіль знайдено" if profile_exists else ("PROM_PROFILE_PATH заданий, але каталог відсутній" if profile_config else "PROM_PROFILE_PATH не заданий")})
