@@ -311,8 +311,37 @@ def get_negative_status():
     return jsonify(negative_status)
 
 
-negative_diagnostic_lock = threading.Lock()
-negative_diagnostic_status = {"status":"idle","checks":[]}
+import json as _diag_json
+import os as _diag_os
+import tempfile as _diag_tempfile
+import time as _diag_time
+import uuid as _diag_uuid
+
+_DIAG_STATE_FILE = "/tmp/asteril_negative_diagnostic.json"
+_DIAG_LOCK_FILE = "/tmp/asteril_negative_diagnostic.lock"
+
+def _diag_write(state):
+    fd, path = _diag_tempfile.mkstemp(prefix="asteril_diag_",dir="/tmp")
+    try:
+        with _diag_os.fdopen(fd,"w",encoding="utf-8") as handle:
+            _diag_json.dump(state,handle,ensure_ascii=False)
+        _diag_os.replace(path,_DIAG_STATE_FILE)
+    finally:
+        if _diag_os.path.exists(path):
+            _diag_os.unlink(path)
+
+def _diag_read():
+    try:
+        with open(_DIAG_STATE_FILE,encoding="utf-8") as handle:
+            return _diag_json.load(handle)
+    except (OSError,ValueError):
+        return {"status":"idle","checks":[]}
+
+def _diag_release():
+    try:
+        _diag_os.unlink(_DIAG_LOCK_FILE)
+    except FileNotFoundError:
+        pass
 
 def _negative_diagnostic_checks(sheet_id):
     from negative_reviews import get_client, load_active_shops, PromBrowser
@@ -365,30 +394,44 @@ def _negative_diagnostic_checks(sheet_id):
     return {"ok":all(c["ok"] for c in checks),"checks":checks,"note":"Перевірка лише читає дані. Жодних змін у таблиці або Prom."}
 
 
-def _negative_diagnostic_worker(sheet_id):
-    global negative_diagnostic_status
+def _negative_diagnostic_worker(sheet_id,run_id):
     try:
         result = _negative_diagnostic_checks(sheet_id)
-        negative_diagnostic_status = {"status":"success","checks":result["checks"],"ok":result["ok"]}
+        _diag_write({"status":"success","checks":result["checks"],"ok":result["ok"],"run_id":run_id})
     except Exception as exc:
-        negative_diagnostic_status = {"status":"error","message":str(exc)[:250],"checks":[]}
+        _diag_write({"status":"error","message":str(exc)[:250],"checks":[],"run_id":run_id})
     finally:
-        negative_diagnostic_lock.release()
+        _diag_release()
 
 @app.route("/negative/diagnostic", methods=["POST"])
 def negative_diagnostic():
-    global negative_diagnostic_status
-    if not negative_diagnostic_lock.acquire(blocking=False):
-        return jsonify(negative_diagnostic_status)
+    current = _diag_read()
+    if current.get("status")=="running" and _diag_time.time()-current.get("started_at",0)<600:
+        return jsonify(current)
+    if _diag_os.path.exists(_DIAG_LOCK_FILE):
+        try:
+            if _diag_time.time()-_diag_os.stat(_DIAG_LOCK_FILE).st_mtime>600:
+                _diag_release()
+        except FileNotFoundError:
+            pass
     try:
-        sheet_id = _sheet_id()
+        fd=_diag_os.open(_DIAG_LOCK_FILE,_diag_os.O_CREAT|_diag_os.O_EXCL|_diag_os.O_WRONLY,0o600)
+        _diag_os.close(fd)
+    except FileExistsError:
+        return jsonify(_diag_read())
+    try:
+        sheet_id=_sheet_id()
     except Exception as exc:
-        negative_diagnostic_lock.release()
-        return jsonify({"status":"success","ok":False,"checks":[{"name":"Налаштування таблиці","ok":False,"message":str(exc)}]})
-    negative_diagnostic_status = {"status":"running","message":"Перевіряємо Google Sheets і Prom","checks":[]}
-    threading.Thread(target=_negative_diagnostic_worker,args=(sheet_id,),daemon=True).start()
-    return jsonify(negative_diagnostic_status)
+        _diag_release()
+        result={"status":"success","ok":False,"checks":[{"name":"Налаштування таблиці","ok":False,"message":str(exc)}]}
+        _diag_write(result)
+        return jsonify(result)
+    run_id=_diag_uuid.uuid4().hex
+    state={"status":"running","message":"Перевіряємо Google Sheets і Prom","checks":[],"run_id":run_id,"started_at":_diag_time.time()}
+    _diag_write(state)
+    threading.Thread(target=_negative_diagnostic_worker,args=(sheet_id,run_id),daemon=True).start()
+    return jsonify(state)
 
 @app.route("/negative/diagnostic/status", methods=["GET"])
 def negative_diagnostic_result():
-    return jsonify(negative_diagnostic_status)
+    return jsonify(_diag_read())
