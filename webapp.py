@@ -315,60 +315,59 @@ negative_diagnostic_lock = threading.Lock()
 negative_diagnostic_status = {"status":"idle","checks":[]}
 
 def _negative_diagnostic_checks():
+    from negative_reviews import get_client, load_active_shops, PromBrowser
+    checks = []
     try:
-        from negative_reviews import get_client, load_active_shops, PromBrowser
-        checks = []
+        sheet_id = _sheet_id()
+    except Exception as exc:
+        return {"ok":False,"checks":[{"name":"Налаштування таблиці","ok":False,"message":str(exc)}]}
+    try:
+        client = get_client()
+        book = client.open_by_key(sheet_id)
+        checks.append({"name":"Google Sheets / авторизація","ok":True,"message":"Таблиця відкривається"})
+    except Exception as exc:
+        return {"ok":False,"checks":[{"name":"Google Sheets / авторизація","ok":False,"message":str(exc)[:250]}]}
+    expected = ["Список магазинів","Аналітика відгуків","Показники роботи"]
+    for title in expected:
         try:
-            sheet_id = _sheet_id()
-        except Exception as exc:
-            return {"ok":False,"checks":[{"name":"Налаштування таблиці","ok":False,"message":str(exc)}]}
-        try:
-            client = get_client()
-            book = client.open_by_key(sheet_id)
-            checks.append({"name":"Google Sheets / авторизація","ok":True,"message":"Таблиця відкривається"})
-        except Exception as exc:
-            return {"ok":False,"checks":[{"name":"Google Sheets / авторизація","ok":False,"message":str(exc)[:250]}]}
-        expected = ["Список магазинів","Аналітика відгуків","Показники роботи"]
-        for title in expected:
+            book.worksheet(title)
+            checks.append({"name":"Аркуш: "+title,"ok":True,"message":"Знайдено"})
+        except Exception:
+            checks.append({"name":"Аркуш: "+title,"ok":False,"message":"Не знайдено"})
+    try:
+        from review_export import _sheet_name
+        for kind, label in (("company","Відгуки про компанію"),("product","Відгуки про товари")):
             try:
-                book.worksheet(title)
-                checks.append({"name":"Аркуш: "+title,"ok":True,"message":"Знайдено"})
-            except Exception:
-                checks.append({"name":"Аркуш: "+title,"ok":False,"message":"Не знайдено"})
-        try:
-            from review_export import _sheet_name
-            for kind, label in (("company","Відгуки про компанію"),("product","Відгуки про товари")):
-                try:
-                    name = _sheet_name(book, kind)
-                    checks.append({"name":"Аркуш: "+label,"ok":True,"message":"Знайдено: "+name})
-                except Exception as exc:
-                    checks.append({"name":"Аркуш: "+label,"ok":False,"message":str(exc)[:200]})
-        except Exception as exc:
-            checks.append({"name":"Аркуші відгуків","ok":False,"message":str(exc)[:200]})
-        shops = []
-        try:
-            shops = load_active_shops(sheet_id)
-            checks.append({"name":"Активні магазини","ok":bool(shops),"message":"Знайдено: "+str(len(shops))})
-        except Exception as exc:
-            checks.append({"name":"Активні магазини","ok":False,"message":str(exc)[:200]})
-        browser = None
-        try:
-            browser = PromBrowser()
-            browser.open_cms()
-            checks.append({"name":"Авторизація Prom","ok":True,"message":"Сесія відкривається"})
-            if shops:
-                try:
-                    browser.switch_shop(shops[0])
-                    checks.append({"name":"Перемикання магазину Prom","ok":True,"message":"Перевірено на першому активному магазині"})
-                except Exception as exc:
-                    checks.append({"name":"Перемикання магазину Prom","ok":False,"message":str(exc)[:200]})
-        except Exception as exc:
-            checks.append({"name":"Авторизація Prom","ok":False,"message":str(exc)[:200]})
-        finally:
-            if browser:
-                browser.close()
-        return {"ok":all(c["ok"] for c in checks),"checks":checks,"note":"Перевірка лише читає дані. Жодних змін у таблиці або Prom."}
-    
+                name = _sheet_name(book, kind)
+                checks.append({"name":"Аркуш: "+label,"ok":True,"message":"Знайдено: "+name})
+            except Exception as exc:
+                checks.append({"name":"Аркуш: "+label,"ok":False,"message":str(exc)[:200]})
+    except Exception as exc:
+        checks.append({"name":"Аркуші відгуків","ok":False,"message":str(exc)[:200]})
+    shops = []
+    try:
+        shops = load_active_shops(sheet_id)
+        checks.append({"name":"Активні магазини","ok":bool(shops),"message":"Знайдено: "+str(len(shops))})
+    except Exception as exc:
+        checks.append({"name":"Активні магазини","ok":False,"message":str(exc)[:200]})
+    browser = None
+    try:
+        browser = PromBrowser()
+        browser.open_cms()
+        checks.append({"name":"Авторизація Prom","ok":True,"message":"Сесія відкривається"})
+        if shops:
+            try:
+                browser.switch_shop(shops[0])
+                checks.append({"name":"Перемикання магазину Prom","ok":True,"message":"Перевірено на першому активному магазині"})
+            except Exception as exc:
+                checks.append({"name":"Перемикання магазину Prom","ok":False,"message":str(exc)[:200]})
+    except Exception as exc:
+        checks.append({"name":"Авторизація Prom","ok":False,"message":str(exc)[:200]})
+    finally:
+        if browser:
+            browser.close()
+    return {"ok":all(c["ok"] for c in checks),"checks":checks,"note":"Перевірка лише читає дані. Жодних змін у таблиці або Prom."}
+
 
 def _negative_diagnostic_worker():
     global negative_diagnostic_status
