@@ -52,6 +52,8 @@ export async function onRequest(context) {
     return Response.json({status:'ok'}, {headers:{'Set-Cookie':'asteril_role=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'}});
   }
 
+  // Dedicated machine-to-machine endpoint authenticates its own secret.
+  if(path==='/export-completed')return next();
   const role = await roleFromRequest(request, env);
   if (path === '/auth/me') return Response.json(role ? {authenticated:true, role} : {authenticated:false}, {status: role ? 200 : 401});
 
