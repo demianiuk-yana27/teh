@@ -43,8 +43,9 @@ function doPost(e){
   const manager=String(b.manager||''),operation=b.operation,type=type_(v[6]),ttn=type_(v[3]);
   if(!['Яна','Наталя'].includes(manager))return response_({ok:false,error:'Оберіть виконавця'});
   if(operation==='bogdan'){
-   sh.getRange(b.row,8).setValue('В роботі');
+   // Assignment only: leave status (H) and processing date (I) untouched.
    sh.getRange(b.row,10).setValue('Богдан');
+   return response_({ok:true});
   }else if(operation==='return'&&type==='Повернення посилки'){
    sh.getRange(b.row,8).setValue('Виконано');
    sh.getRange(b.row,10).setValue(manager);
