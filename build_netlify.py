@@ -177,11 +177,12 @@ async function checkNegativeConnections(button){
   let raw=await response.text(),data;
   try{data=JSON.parse(raw)}catch(_){throw Error("HTTP "+response.status+" · "+(raw?"неочікувана відповідь":"порожня відповідь"))}
   if(!response.ok)throw Error("HTTP "+response.status+" · "+(data.message||"Помилка сервера"));
-  for(let i=0;data.status==="running"&&i<90;i++){
+  for(let i=0;data.status==="running"&&i<24;i++){
    out.textContent="⏳ Перевірка триває… "+(i*3)+" с. Дані не змінюються.";
-   await new Promise(resolve=>setTimeout(resolve,3000));
+   await new Promise(resolve=>setTimeout(resolve,15000));
    response=await fetch("/api/negative/diagnostic/status",{cache:"no-store"});
    raw=await response.text();
+   if(response.status===429){out.textContent="⏳ Сервер тимчасово обмежує запити (429). Зачекайте, перевірку не запускаємо повторно.";continue}
    try{data=JSON.parse(raw)}catch(_){throw Error("HTTP "+response.status+" · не вдалося прочитати статус")}
   }
   if(data.status==="running")throw Error("Перевірка триває понад 4 хвилини. Не запускайте її повторно.");
