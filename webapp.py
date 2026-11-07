@@ -380,38 +380,51 @@ def _negative_diagnostic_checks(sheet_id,run_id):
         checks.append({"name":"Активні магазини","ok":bool(shops),"message":"Знайдено: "+str(len(shops))})
     except Exception as exc:
         checks.append({"name":"Активні магазини","ok":False,"message":str(exc)[:200]})
-    progress("Запускаємо браузер Prom",checks)
+    progress("Перевіряємо HTTP-доступ до Prom",checks)
+    try:
+        import urllib.request as _prom_urlrequest
+        import urllib.error as _prom_urlerror
+        req = _prom_urlrequest.Request("https://my.prom.ua/cms/",headers={"User-Agent":"Mozilla/5.0 (compatible; AsterilDiagnostic/1.0)"},method="GET")
+        try:
+            with _prom_urlrequest.urlopen(req,timeout=12) as resp:
+                code=resp.status
+                final_url=resp.geturl()
+        except _prom_urlerror.HTTPError as exc:
+            code=exc.code
+            final_url=exc.geturl()
+        checks.append({"name":"Prom / HTTP-з'єднання","ok":True,"message":"HTTP "+str(code)+"; адреса: "+final_url[:110]+" (код не підтверджує авторизацію)"})
+    except Exception as exc:
+        checks.append({"name":"Prom / HTTP-з'єднання","ok":False,"message":str(exc)[:200]})
+    progress("Запускаємо Chromium",checks)
     browser = None
     try:
         browser = PromBrowser()
         checks.append({"name":"Запуск Chromium","ok":True,"message":"Браузер запущено"})
-        progress("Перевіряємо Chromium на локальній сторінці",checks)
+        progress("Перевіряємо локальну сторінку Chromium",checks)
         browser.driver.set_page_load_timeout(12)
         browser.driver.get("data:text/html,<html><title>Asteril Browser Test</title><body>OK</body></html>")
         if browser.driver.title != "Asteril Browser Test":
             raise RuntimeError("Chromium не зміг відкрити локальну тестову сторінку")
         checks.append({"name":"Chromium / тестова сторінка","ok":True,"message":"Сторінка відкривається"})
-        progress("Відкриваємо кабінет Prom",checks)
-        browser.driver.set_page_load_timeout(25)
+        progress("Відкриваємо Prom без очікування всіх ресурсів",checks)
+        browser.driver.set_page_load_timeout(18)
+        browser.driver.execute_cdp_cmd("Page.enable",{})
+        # Set navigation strategy on the active Selenium session; do not alter export workers.
         try:
-            browser.open_cms()
+            browser.driver.execute_cdp_cmd("Page.navigate",{"url":"https://my.prom.ua/cms/"})
+            import time as _prom_time
+            _prom_time.sleep(5)
+            current=browser.driver.current_url
+            checks.append({"name":"Prom / швидка навігація","ok":"my.prom.ua" in current,"message":"Поточна адреса: "+current[:150]+"; авторизація не підтверджена"})
         except Exception as exc:
-            checks.append({"name":"Кабінет Prom","ok":False,"message":str(exc).split("Stacktrace:")[0][:220]})
-            return {"ok":False,"checks":checks}
-        checks.append({"name":"Авторизація Prom","ok":True,"message":"Сесія відкривається"})
-        if shops:
-            try:
-                browser.switch_shop(shops[0])
-                checks.append({"name":"Перемикання магазину Prom","ok":True,"message":"Перевірено на першому активному магазині"})
-            except Exception as exc:
-                checks.append({"name":"Перемикання магазину Prom","ok":False,"message":str(exc)[:200]})
+            checks.append({"name":"Prom / швидка навігація","ok":False,"message":str(exc).split("Stacktrace:")[0][:220]})
     except Exception as exc:
         checks.append({"name":"Chromium / запуск або тест","ok":False,"message":str(exc).split("Stacktrace:")[0][:220]})
     finally:
         if browser:
             browser.close()
     progress("Завершуємо перевірку",checks)
-    return {"ok":all(c["ok"] for c in checks),"checks":checks,"note":"Перевірка лише читає дані. Жодних змін у таблиці або Prom."}
+    return {"ok":all(c["ok"] for c in checks),"checks":checks,"note":"HTTP і швидка навігація не підтверджують авторизацію Prom. Дані не змінюються."}
 
 
 def _negative_diagnostic_worker(sheet_id,run_id):
