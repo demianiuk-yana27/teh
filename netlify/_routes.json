@@ -9,7 +9,8 @@
     "/quick-requests/*",
     "/products/*",
     "/ttn",
-    "/dashboard"
+    "/dashboard",
+    "/export-completed"
   ],
   "exclude": []
 }
