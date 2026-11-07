@@ -380,6 +380,17 @@ def _negative_diagnostic_checks(sheet_id,run_id):
         checks.append({"name":"Активні магазини","ok":bool(shops),"message":"Знайдено: "+str(len(shops))})
     except Exception as exc:
         checks.append({"name":"Активні магазини","ok":False,"message":str(exc)[:200]})
+    progress("Перевіряємо наявність авторизаційних файлів Prom",checks)
+    import os as _prom_os
+    from negative_reviews import _secret_path
+    cookies_path=_secret_path("prom_cookies.json")
+    cookies_present=_prom_os.path.isfile(cookies_path)
+    checks.append({"name":"Prom / файл cookies","ok":cookies_present,"message":"Файл знайдено" if cookies_present else "Файл prom_cookies.json не знайдено (вміст не читаємо)"})
+    profile_config=_prom_os.environ.get("PROM_PROFILE_PATH","").strip()
+    profile_exists=bool(profile_config and _prom_os.path.isdir(profile_config))
+    checks.append({"name":"Prom / профіль Chromium","ok":profile_exists,"message":"Налаштований профіль знайдено" if profile_exists else ("PROM_PROFILE_PATH заданий, але каталог відсутній" if profile_config else "PROM_PROFILE_PATH не заданий")})
+    if not cookies_present and not profile_exists:
+        checks.append({"name":"Prom / джерело авторизації","ok":False,"message":"Немає ні файлу cookies, ні доступного профілю; авторизація Prom не підтверджена"})
     progress("Перевіряємо HTTP-доступ до Prom",checks)
     try:
         import urllib.request as _prom_urlrequest
@@ -406,6 +417,14 @@ def _negative_diagnostic_checks(sheet_id,run_id):
         if browser.driver.title != "Asteril Browser Test":
             raise RuntimeError("Chromium не зміг відкрити локальну тестову сторінку")
         checks.append({"name":"Chromium / тестова сторінка","ok":True,"message":"Сторінка відкривається"})
+        progress("Перевіряємо зовнішню сторінку Chromium",checks)
+        try:
+            browser.driver.set_page_load_timeout(12)
+            browser.driver.get("https://example.com/")
+            title=browser.driver.title or ""
+            checks.append({"name":"Chromium / зовнішня сторінка","ok":"Example Domain" in title,"message":"Сторінка відкрилася" if "Example Domain" in title else "Сторінка відповіла, але заголовок неочікуваний"})
+        except Exception as exc:
+            checks.append({"name":"Chromium / зовнішня сторінка","ok":False,"message":str(exc).split("Stacktrace:")[0][:180]})
         progress("Відкриваємо Prom без очікування всіх ресурсів",checks)
         browser.driver.set_page_load_timeout(18)
         browser.driver.execute_cdp_cmd("Page.enable",{})
