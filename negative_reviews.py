@@ -88,6 +88,65 @@ def load_active_shops(spreadsheet_id):
     return shops
 
 
+def check_prom_http_session(timeout=10):
+    """Read-only authentication preflight; never logs cookie values."""
+    import json
+    import http.cookiejar
+    import urllib.request
+    import urllib.parse
+    import urllib.error
+
+    path = _secret_path("prom_cookies.json")
+    if not os.path.isfile(path):
+        return False, "На сервері немає файлу сесії Prom."
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            items = json.load(fh)
+        if not isinstance(items, list):
+            return False, "Некоректний формат файлу сесії Prom."
+        jar = http.cookiejar.CookieJar()
+        count = 0
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            domain = str(item.get("domain", "")).lower()
+            bare = domain.lstrip(".")
+            if bare != "prom.ua" and not bare.endswith(".prom.ua"):
+                continue
+            if not isinstance(item.get("name"), str) or not isinstance(item.get("value"), str):
+                continue
+            raw_expiry = item.get("expirationDate", item.get("expiry"))
+            try:
+                expiry = int(raw_expiry) if raw_expiry is not None else None
+            except (ValueError, TypeError):
+                expiry = None
+            jar.set_cookie(http.cookiejar.Cookie(
+                version=0, name=item["name"], value=item["value"], port=None,
+                port_specified=False, domain=domain, domain_specified=True,
+                domain_initial_dot=domain.startswith("."), path=str(item.get("path", "/")),
+                path_specified=True, secure=bool(item.get("secure", False)),
+                expires=expiry, discard=expiry is None, comment=None,
+                comment_url=None, rest={}, rfc2109=False,
+            ))
+            count += 1
+        if not count:
+            return False, "У файлі немає cookies для Prom."
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        req = urllib.request.Request(CMS_URL, headers={
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml",
+        })
+        with opener.open(req, timeout=timeout) as resp:
+            target = urllib.parse.urlsplit(resp.geturl())
+            if target.hostname != "my.prom.ua" or not target.path.startswith("/cms/"):
+                return False, "Prom перенаправляє на сторінку входу: серверна сесія недійсна."
+            if resp.status != 200:
+                return False, "Prom не підтвердив доступ до кабінету."
+        return True, "Prom відкрив кабінет із cookies; доступ до відгуків ще не перевірено."
+    except (OSError, ValueError, urllib.error.URLError):
+        return False, "Не вдалося перевірити серверну сесію Prom."
+
+
 class PromBrowser:
     def __init__(self):
         options = webdriver.ChromeOptions()
@@ -118,6 +177,10 @@ class PromBrowser:
             pass
 
     def open_cms(self):
+        authorized, message = check_prom_http_session()
+        if not authorized and os.path.isfile(_secret_path("prom_cookies.json")):
+            raise RuntimeError(message)
+        self.driver.set_page_load_timeout(15)
         self.driver.get(CMS_URL)
         time.sleep(2)
         self._load_cookies_if_available()
