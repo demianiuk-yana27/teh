@@ -214,7 +214,7 @@ def _sheet_id():
     return value
 
 
-def _negative_worker(process_name, sheet_id, since, until):
+def _negative_worker(process_name, sheet_id, since, until, run_id):
     global negative_status
     try:
         if process_name == "reviews":
@@ -245,6 +245,9 @@ def _negative_worker(process_name, sheet_id, since, until):
             "process": process_name,
             "status": "success",
             "message": message,
+            "run_id": run_id,
+            "count": result["written"],
+            "unit": "відгуків" if process_name == "reviews" else "магазинів" if process_name == "analytics" else "замовлень",
         }
     except Exception as exc:
         traceback.print_exc()
@@ -253,6 +256,7 @@ def _negative_worker(process_name, sheet_id, since, until):
             "process": process_name,
             "status": "error",
             "message": str(exc),
+            "run_id": run_id,
         }
     finally:
         negative_lock.release()
@@ -279,7 +283,9 @@ def run_negative(process_name):
     except Exception as exc:
         negative_lock.release()
         return jsonify({"status": "error", "message": str(exc)}), 400
+    run_id = __import__("uuid").uuid4().hex
     negative_status = {
+        "run_id": run_id,
         "running": True,
         "process": process_name,
         "status": "running",
@@ -287,11 +293,11 @@ def run_negative(process_name):
     }
     thread = threading.Thread(
         target=_negative_worker,
-        args=(process_name, sheet_id, since, until),
+        args=(process_name, sheet_id, since, until, run_id),
         daemon=True,
     )
     thread.start()
-    return jsonify({"status": "started", "message": "Процес запущено. Очікуємо завершення."})
+    return jsonify({"status": "started", "run_id": run_id, "message": "Процес запущено. Очікуємо завершення."})
 
 
 @app.route("/negative/status")
