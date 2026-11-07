@@ -1,4 +1,4 @@
-import {record} from '../_dashboard-log.js';
+import {recordExport} from '../_dashboard-log.js';
 const BACKEND = 'https://teh-new.onrender.com';
 
 export async function onRequest(context) {
@@ -29,10 +29,18 @@ export async function onRequest(context) {
     const outHeaders = new Headers(response.headers);
     outHeaders.delete('content-encoding');
     outHeaders.delete('content-length');
-    if(context.data.role==='boss'&&context.request.method==='POST'&&response.ok){
-      const match=suffix.match(/^run\/(1|2|3|4)$/),neg=suffix.match(/^negative\/run\/(reviews|analytics)$/);
-      const section=match?({'1':'КТВ','2':'КТВ','3':'Відгуки','4':'Доробки'}[match[1]]):neg?'Негативні відгуки':suffix==='operations/order-count-report'?'Звіт по кількості замовлень':null;
-      if(section){const raw=await response.clone().json().catch(()=>({}));if(raw.status==='started'||raw.status==='success'||raw.status==='ok')await record(context.env.TASKS_DB,section,'Запуск вигрузки',raw.status,'Крутий бос',raw.message||'');}
+    if(response.ok && context.data.role && context.env.TASKS_DB){
+      const raw=await response.clone().json().catch(()=>null);
+      if(raw?.status==='success' && (suffix==='status'||suffix==='negative/status')){
+        const section=suffix==='status'?({'1':'КТВ','3':'Відгуки','4':'Доробки'}[String(raw.process_num)]):'Негативні відгуки';
+        if(section)await recordExport(context.env.TASKS_DB,section,raw.run_id,raw.count,raw.unit,raw.message||'');
+      }
+      if(suffix==='operations/order-count-report'&&raw?.status==='success'){
+        // The report counts status categories, not exported orders: no fabricated order count.
+        // It is a synchronous confirmed completion, recorded with an explicitly different unit.
+        const m=String(raw.message||'').match(/Записано статусів:\s*(\d+)/);
+        if(m)await recordExport(context.env.TASKS_DB,'Звіт по кількості замовлень',crypto.randomUUID(),Number(m[1]),'статусів',raw.message||'');
+      }
     }
     return new Response(response.body, {
       status: response.status,
