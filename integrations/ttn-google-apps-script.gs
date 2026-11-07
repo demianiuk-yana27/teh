@@ -42,7 +42,14 @@ function doPost(e){
   if(v[7].trim()||v[9].trim())return response_({ok:false,error:'Запит уже взято в роботу. Оновіть список.'});
   const manager=String(b.manager||''),operation=b.operation,type=type_(v[6]),ttn=type_(v[3]);
   if(!['Яна','Наталя'].includes(manager))return response_({ok:false,error:'Оберіть виконавця'});
-  if(operation==='bogdan'){
+  if(operation==='impossible'){
+   const reason=String(b.detail||'').trim();
+   if(!reason)return response_({ok:false,error:'Вкажіть причину неможливості виконання'});
+   sh.getRange(b.row,8).setValue('Неможливо виконати');
+   sh.getRange(b.row,9).setNumberFormat('@').setValue(reason);
+   sh.getRange(b.row,10).setValue(manager);
+   return response_({ok:true});
+  }else if(operation==='bogdan'){
    // Assignment only: leave status (H) and processing date (I) untouched.
    sh.getRange(b.row,10).setValue('Богдан');
    return response_({ok:true});
