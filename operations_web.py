@@ -181,6 +181,10 @@ def order_count_report_endpoint():
         return jsonify({"status":"busy","message":"Зараз уже виконується інший процес Asteril. Дочекайтеся його завершення."}), 409
     try:
         result = run_order_count_report()
+        from export_events import report_export
+        report_export("Звіт по кількості замовлень", __import__("uuid").uuid4().hex,
+                      int(result["statuses"]), "статусів",
+                      f"Звіт оновлено за {result['date']}. Записано статусів: {result['statuses']}.")
         return jsonify({"status":"success","message":f"Звіт оновлено за {result['date']}. Записано статусів: {result['statuses']}."})
     except Exception as exc:
         return jsonify({"status":"error","message":str(exc)}), 500
