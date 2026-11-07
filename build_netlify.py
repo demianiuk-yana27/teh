@@ -177,7 +177,7 @@ async function checkNegativeConnections(button){
   let raw=await response.text(),data;
   try{data=JSON.parse(raw)}catch(_){throw Error("HTTP "+response.status+" · "+(raw?"неочікувана відповідь":"порожня відповідь"))}
   if(!response.ok)throw Error("HTTP "+response.status+" · "+(data.message||"Помилка сервера"));
-  for(let i=0;data.status==="running"&&i<24;i++){
+  for(let i=0;data.status==="running"&&i<8;i++){
    out.textContent="⏳ Перевірка триває… "+(i*3)+" с. Дані не змінюються.";
    await new Promise(resolve=>setTimeout(resolve,15000));
    response=await fetch("/api/negative/diagnostic/status",{cache:"no-store"});
@@ -185,7 +185,7 @@ async function checkNegativeConnections(button){
    if(response.status===429){out.textContent="⏳ Сервер тимчасово обмежує запити (429). Зачекайте, перевірку не запускаємо повторно.";continue}
    try{data=JSON.parse(raw)}catch(_){throw Error("HTTP "+response.status+" · не вдалося прочитати статус")}
   }
-  if(data.status==="running")throw Error("Перевірка триває понад 6 хвилин. Не запускайте її повторно.");
+  if(data.status==="running"){out.textContent="⚠️ Перевірка перевищила 2 хвилини. Останній етап: "+(data.stage||"невідомий")+"\\n"+(data.checks||[]).map(c=>(c.ok?"✅ ":"❌ ")+c.name+": "+c.message).join("\\n")+"\\nНе запускайте перевірку повторно.";return}
   if(data.status==="idle")throw Error("Render повернув порожній стан перевірки (idle). Можливо, запити потрапили в різні процеси сервера.");
   if(!Array.isArray(data.checks)||!data.checks.length)throw Error("Render не повернув результати перевірки. Статус: "+String(data.status||"невідомий")+".");
   if(data.status==="error")throw Error(data.message||"Помилка перевірки");
