@@ -240,6 +240,12 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
             )
         else:
             raise ValueError("Невідомий процес негативних відгуків.")
+        from export_events import report_export
+        report_export(
+            "Негативні відгуки", run_id, result["written"],
+            "відгуків" if process_name == "reviews" else "магазинів" if process_name == "analytics" else "замовлень",
+            message,
+        )
         negative_status = {
             "running": False,
             "process": process_name,
