@@ -51,15 +51,13 @@ function doPost(e){
   }else if(operation==='send'&&LABELS[type]&&!BOGDAN.includes(type)){
    const detail=String(b.detail||'').trim();
    const body=draft_(type,ttn,detail);
-   // Mark first to avoid duplicate sends if a response is lost; on Gmail failure roll back.
-   sh.getRange(b.row,8).setValue('Надсилання');
-   sh.getRange(b.row,10).setValue(manager);
-   SpreadsheetApp.flush();
-   try{GmailApp.sendEmail(RECIPIENT,'Зміни з ТТН '+ttn,body,{name:'Технічний відділ'});}
-   catch(err){sh.getRange(b.row,8).clearContent();sh.getRange(b.row,10).clearContent();throw err}
+   // Never write an intermediate status: column H has strict dropdown validation.
+   // Lock prevents concurrent managers processing the same row during this operation.
+   GmailApp.sendEmail(RECIPIENT,'Зміни з ТТН '+ttn,body,{name:'Технічний відділ'});
    sh.getRange(b.row,8).setValue('В роботі');
+   sh.getRange(b.row,10).setValue(manager);
   }else return response_({ok:false,error:'Ця дія недоступна для обраного типу'});
-  sh.getRange(b.row,9).setValue(new Date());
+  sh.getRange(b.row,9).setValue(new Date()).setNumberFormat('dd.MM.yyyy');
   return response_({ok:true});
  }catch(err){return response_({ok:false,error:String(err.message||err)})}
  finally{if(lock.hasLock())lock.releaseLock()}
