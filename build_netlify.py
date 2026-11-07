@@ -58,6 +58,10 @@ s = s.replace('<section class="view active" id="home"><div class="empty"><h2>Г�
 
 # Product catalog and FAQ feature temporarily disabled; source and D1 data retained.
 
+# TTN workflow is isolated under Operational Managers.
+s = s.replace('data-view="dorobky">• Доробки</div>', 'data-view="dorobky">• Доробки</div><div class="sub" data-view="ttn">• Зміни з ТТН</div>', 1)
+s = s.replace('</main>', '<section class="view" id="ttn"><div class="pagehead"><div class="pageicon">📦</div><div><h2>Зміни з ТТН</h2><p>Неопрацьовані запити, листи та передача Богдану.</p></div></div><div id="ttnApp"></div></section></main>', 1)
+
 # Database navigation: correspondence scripts, call scripts and refusal handling.
 s = s.replace('data-view="scripts">💬 Скрипти</div>', 'data-view="scripts">💬 Скрипти для переписок</div><div class="sub" data-view="call-scripts">☎️ Скрипти для дзвінка</div><div class="sub" data-view="refusal-work">🚫 Робота з відмовою</div>', 1)
 # Training materials subsections.
@@ -146,6 +150,7 @@ s = s.replace('</head>', css + '</head>', 1)
 
 loaders = '<script src="scripts-data-1.js"></script><script src="scripts-data-2.js"></script><script src="scripts-data-3.js"></script><script src="scripts-ui.js"></script><script src="call-scripts-data.js"></script><script src="call-scripts-ui.js"></script><script src="refusal-data.js"></script><script src="refusal-ui.js"></script><script src="boxes-ui.js"></script><script src="order-rules-ui.js"></script><script src="access-control.js?v=20261103-full-cat"></script><script src="task-board.js?v=3"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script><script src="call-training-guide.js?v=1"></script><script src="call-training-ui.js?v=3"></script><script src="quick-requests.js?v=1"></script><script src="training-materials.js?v=6"></script>'
 # Product catalog scripts intentionally not loaded while feature is disabled.
+loaders += '<script src="ttn.js?v=1"></script>'
 pos = s.rfind('<script>')
 if pos < 0:
     raise SystemExit('Main frontend script not found')
