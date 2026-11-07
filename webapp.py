@@ -384,8 +384,20 @@ def _negative_diagnostic_checks(sheet_id,run_id):
     browser = None
     try:
         browser = PromBrowser()
+        checks.append({"name":"Запуск Chromium","ok":True,"message":"Браузер запущено"})
+        progress("Перевіряємо Chromium на локальній сторінці",checks)
+        browser.driver.set_page_load_timeout(12)
+        browser.driver.get("data:text/html,<html><title>Asteril Browser Test</title><body>OK</body></html>")
+        if browser.driver.title != "Asteril Browser Test":
+            raise RuntimeError("Chromium не зміг відкрити локальну тестову сторінку")
+        checks.append({"name":"Chromium / тестова сторінка","ok":True,"message":"Сторінка відкривається"})
+        progress("Відкриваємо кабінет Prom",checks)
         browser.driver.set_page_load_timeout(25)
-        browser.open_cms()
+        try:
+            browser.open_cms()
+        except Exception as exc:
+            checks.append({"name":"Кабінет Prom","ok":False,"message":str(exc).split("Stacktrace:")[0][:220]})
+            return {"ok":False,"checks":checks}
         checks.append({"name":"Авторизація Prom","ok":True,"message":"Сесія відкривається"})
         if shops:
             try:
@@ -394,7 +406,7 @@ def _negative_diagnostic_checks(sheet_id,run_id):
             except Exception as exc:
                 checks.append({"name":"Перемикання магазину Prom","ok":False,"message":str(exc)[:200]})
     except Exception as exc:
-        checks.append({"name":"Авторизація Prom","ok":False,"message":str(exc)[:200]})
+        checks.append({"name":"Chromium / запуск або тест","ok":False,"message":str(exc).split("Stacktrace:")[0][:220]})
     finally:
         if browser:
             browser.close()
