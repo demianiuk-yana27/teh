@@ -174,8 +174,11 @@ async function checkNegativeConnections(button){
  button.disabled=true;out.textContent="⏳ Перевіряємо Google Sheets і Prom. Це може тривати до хвилини.";
  try{
   const response=await fetch("/api/negative/diagnostic",{method:"POST"});
-  const data=await response.json();
-  if(!response.ok)throw Error(data.message||"HTTP "+response.status);
+  const raw=await response.text();
+  let data;
+  try{data=raw?JSON.parse(raw):null}catch(_){data=null}
+  if(!data){throw Error("HTTP "+response.status+" · сервер повернув "+(raw?"не JSON: "+raw.slice(0,160):"порожню відповідь")+". Можливий таймаут Render або Cloudflare.")}
+  if(!response.ok)throw Error("HTTP "+response.status+" · "+(data.message||data.error||"Помилка сервера"));
   out.textContent=(data.ok?"✅ Підключення працюють":"⚠️ Потрібна увага")+"\\n"+(data.checks||[]).map(c=>(c.ok?"✅ ":"❌ ")+c.name+": "+c.message).join("\\n");
  }catch(error){out.textContent="❌ Не вдалося виконати перевірку: "+error.message}
  finally{button.disabled=false}
