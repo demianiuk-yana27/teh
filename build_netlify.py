@@ -171,16 +171,23 @@ for view_id in ('negative-reviews', 'negative-analytics'):
 negative_diagnostic_script = '''<script>
 async function checkNegativeConnections(button){
  const panel=button.closest(".card"),out=panel.querySelector(".negativeDiagnosticResult");
- button.disabled=true;out.textContent="⏳ Перевіряємо Google Sheets і Prom. Це може тривати до хвилини.";
+ button.disabled=true;out.textContent="⏳ Запускаємо перевірку Google Sheets і Prom...";
  try{
-  const response=await fetch("/api/negative/diagnostic",{method:"POST"});
-  const raw=await response.text();
-  let data;
-  try{data=raw?JSON.parse(raw):null}catch(_){data=null}
-  if(!data){throw Error("HTTP "+response.status+" · сервер повернув "+(raw?"не JSON: "+raw.slice(0,160):"порожню відповідь")+". Можливий таймаут Render або Cloudflare.")}
-  if(!response.ok)throw Error("HTTP "+response.status+" · "+(data.message||data.error||"Помилка сервера"));
+  let response=await fetch("/api/negative/diagnostic",{method:"POST"});
+  let raw=await response.text(),data;
+  try{data=JSON.parse(raw)}catch(_){throw Error("HTTP "+response.status+" · "+(raw?"неочікувана відповідь":"порожня відповідь"))}
+  if(!response.ok)throw Error("HTTP "+response.status+" · "+(data.message||"Помилка сервера"));
+  for(let i=0;data.status==="running"&&i<90;i++){
+   out.textContent="⏳ Перевірка триває… "+(i*3)+" с. Дані не змінюються.";
+   await new Promise(resolve=>setTimeout(resolve,3000));
+   response=await fetch("/api/negative/diagnostic/status",{cache:"no-store"});
+   raw=await response.text();
+   try{data=JSON.parse(raw)}catch(_){throw Error("HTTP "+response.status+" · не вдалося прочитати статус")}
+  }
+  if(data.status==="running")throw Error("Перевірка триває понад 4 хвилини. Не запускайте її повторно.");
+  if(data.status==="error")throw Error(data.message||"Помилка перевірки");
   out.textContent=(data.ok?"✅ Підключення працюють":"⚠️ Потрібна увага")+"\\n"+(data.checks||[]).map(c=>(c.ok?"✅ ":"❌ ")+c.name+": "+c.message).join("\\n");
- }catch(error){out.textContent="❌ Не вдалося виконати перевірку: "+error.message}
+ }catch(error){out.textContent="❌ "+error.message}
  finally{button.disabled=false}
 }
 </script>'''
