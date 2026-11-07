@@ -343,15 +343,19 @@ def _diag_release():
     except FileNotFoundError:
         pass
 
-def _negative_diagnostic_checks(sheet_id):
+def _negative_diagnostic_checks(sheet_id,run_id):
+    def progress(stage,checks):
+        _diag_write({"status":"running","stage":stage,"checks":list(checks),"run_id":run_id,"started_at":_diag_time.time()})
     from negative_reviews import get_client, load_active_shops, PromBrowser
     checks = []
+    progress("Перевіряємо Google Sheets",checks)
     try:
         client = get_client()
         book = client.open_by_key(sheet_id)
         checks.append({"name":"Google Sheets / авторизація","ok":True,"message":"Таблиця відкривається"})
     except Exception as exc:
         return {"ok":False,"checks":[{"name":"Google Sheets / авторизація","ok":False,"message":str(exc)[:250]}]}
+    progress("Перевіряємо аркуші таблиці",checks)
     expected = ["Список магазинів","Аналітика відгуків","Показники роботи"]
     for title in expected:
         try:
@@ -369,15 +373,18 @@ def _negative_diagnostic_checks(sheet_id):
                 checks.append({"name":"Аркуш: "+label,"ok":False,"message":str(exc)[:200]})
     except Exception as exc:
         checks.append({"name":"Аркуші відгуків","ok":False,"message":str(exc)[:200]})
+    progress("Перевіряємо активні магазини",checks)
     shops = []
     try:
         shops = load_active_shops(sheet_id)
         checks.append({"name":"Активні магазини","ok":bool(shops),"message":"Знайдено: "+str(len(shops))})
     except Exception as exc:
         checks.append({"name":"Активні магазини","ok":False,"message":str(exc)[:200]})
+    progress("Запускаємо браузер Prom",checks)
     browser = None
     try:
         browser = PromBrowser()
+        browser.driver.set_page_load_timeout(25)
         browser.open_cms()
         checks.append({"name":"Авторизація Prom","ok":True,"message":"Сесія відкривається"})
         if shops:
@@ -391,12 +398,13 @@ def _negative_diagnostic_checks(sheet_id):
     finally:
         if browser:
             browser.close()
+    progress("Завершуємо перевірку",checks)
     return {"ok":all(c["ok"] for c in checks),"checks":checks,"note":"Перевірка лише читає дані. Жодних змін у таблиці або Prom."}
 
 
 def _negative_diagnostic_worker(sheet_id,run_id):
     try:
-        result = _negative_diagnostic_checks(sheet_id)
+        result = _negative_diagnostic_checks(sheet_id,run_id)
         _diag_write({"status":"success","checks":result["checks"],"ok":result["ok"],"run_id":run_id})
     except Exception as exc:
         _diag_write({"status":"error","message":str(exc)[:250],"checks":[],"run_id":run_id})
