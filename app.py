@@ -1683,6 +1683,13 @@ def run_process_background(
         else:
             raise ValueError("Невідомий процес")
 
+        # Send only after the export function has completed successfully.
+        from export_events import report_export
+        report_export(
+            {1: "КТВ", 3: "Відгуки", 4: "Доробки"}[process_num],
+            run_id, count, "замовлень" if process_num == 4 else "рядків", msg,
+        )
+
         process_status = {
             "running": False,
             "process_num": process_num,
