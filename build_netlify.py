@@ -160,7 +160,7 @@ s = s.replace("setStatus(id,d.status==='started'?'running':'busy','⏳ '+d.messa
 """setStatus(id,d.status==='started'?'running':'busy','⏳ '+d.message);if(d.status==='started'){clearInterval(timers[id]);timers[id]=setInterval(async()=>{try{const state=await jf(API+'/negative/status');if(state.status==='running')setStatus(id,'running','⏳ '+state.message);else if(state.status==='success'||state.status==='error'){clearInterval(timers[id]);setStatus(id,state.status,(state.status==='success'?'✅ ':'❌ ')+state.message)}}catch(e){clearInterval(timers[id]);setStatus(id,'error','❌ '+e.message)}},2000)}}catch(e){setStatus(id,'error','❌ '+e.message)}}async function runOrderCount()""",1)
 
 # Read-only diagnostics for the negative reviews integrations.
-negative_diagnostic_controls = '''<div class="card" style="margin-top:16px"><h3>Перевірка підключень</h3><p>Google-таблиця, аркуші, активні магазини та авторизація Prom. Без запису даних.</p><button class="run" onclick="checkNegativeConnections(this)">🔎 Перевірити підключення</button><div class="status negativeDiagnosticResult" style="white-space:pre-wrap">Перевірка ще не запускалася.</div></div>'''
+negative_diagnostic_controls = '''<div class="card" style="margin-top:16px"><h3>Перевірка підключень</h3><p>Google-таблиця, аркуші, активні магазини та авторизація Prom. Без запису даних.</p><button class="run" onclick="checkNegativeConnections(this)">🔎 Перевірити підключення</button> <button class="run" type="button" onclick="showPromConnectionGuide(this)">🔐 Підключити Prom</button><div class="status promConnectionGuide" style="display:none;white-space:normal;margin-top:12px"><strong>Підключення головного акаунта Prom</strong><p>1. Відкрийте офіційний кабінет Prom і увійдіть у головний акаунт.</p><p>2. У розділі «Налаштування → Управління API-токенами» можна переглянути офіційні можливості інтеграції.</p><p>3. Не вводьте пароль або API-токен на цьому сайті. Вхід у браузері не авторизує Chromium на Render автоматично. Для вигрузки відгуків серверна сесія ще потребує окремого безпечного підключення.</p><a href="https://my.prom.ua/cms/" target="_blank" rel="noopener noreferrer">Відкрити офіційний кабінет Prom ↗</a><p><strong>Статус:</strong> серверну авторизацію ще не підтверджено.</p></div><div class="status negativeDiagnosticResult" style="white-space:pre-wrap">Перевірка ще не запускалася.</div></div>'''
 for view_id in ('negative-reviews', 'negative-analytics'):
     start = s.find('<section class="view" id="' + view_id + '">')
     if start >= 0:
@@ -169,6 +169,7 @@ for view_id in ('negative-reviews', 'negative-analytics'):
             s = s[:end] + negative_diagnostic_controls + s[end:]
 
 negative_diagnostic_script = '''<script>
+function showPromConnectionGuide(button){const guide=button.closest(".card").querySelector(".promConnectionGuide");guide.style.display=guide.style.display==="none"?"block":"none";}
 async function checkNegativeConnections(button){
  const panel=button.closest(".card"),out=panel.querySelector(".negativeDiagnosticResult");
  button.disabled=true;out.textContent="⏳ Запускаємо перевірку Google Sheets і Prom...";
