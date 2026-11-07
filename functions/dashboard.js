@@ -14,6 +14,7 @@ export async function onRequest({request,env,data}){
   const taskWhere=(from?' AND completed_at>=?':'')+(to?' AND completed_at<?':'');
   const taskSummary=await db.prepare('SELECT COUNT(*) AS completed FROM manager_tasks WHERE completed_at IS NOT NULL'+taskWhere).bind(...args).first();
   const tasks=await db.prepare('SELECT id,title,completed_by,completed_at FROM manager_tasks WHERE completed_at IS NOT NULL'+taskWhere+' ORDER BY completed_at DESC LIMIT 100').bind(...args).all();
-  return json({ok:true,events:events.results,tasks:tasks.results,completedTasks:taskSummary.completed,historyStarts:'Історія запусків і дій записується з моменту ввімкнення журналу; попередні вигрузки недоступні.'});
+  const audit=await db.prepare("SELECT section,COUNT(*) AS total FROM manager_activity_log GROUP BY section").all();
+  return json({ok:true,diagnostics:{databaseConnected:true,totalRecordedEvents:audit.results.reduce((n,r)=>n+r.total,0),bySection:audit.results},events:events.results,tasks:tasks.results,completedTasks:taskSummary.completed,historyStarts:'Історія запусків і дій записується з моменту ввімкнення журналу; попередні вигрузки недоступні.'});
  }catch(e){console.error('Dashboard error',e);return json({error:'Не вдалося завантажити статистику'},500)}
 }
