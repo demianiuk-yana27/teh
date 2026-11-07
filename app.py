@@ -1646,6 +1646,7 @@ def run_process_background(
     reviews_date=None,
     export_mode="partial",
     rework_slot=None,
+    run_id=None,
 ):
     global process_status
 
@@ -1687,6 +1688,9 @@ def run_process_background(
             "process_num": process_num,
             "status": "success",
             "message": msg,
+            "count": count,
+            "unit": "замовлень" if process_num == 4 else "рядків",
+            "run_id": run_id,
         }
 
     except Exception as error:
@@ -1698,6 +1702,7 @@ def run_process_background(
             "process_num": process_num,
             "status": "error",
             "message": str(error),
+            "run_id": run_id,
         }
 
     finally:
@@ -1787,8 +1792,10 @@ def run_process_endpoint(process_num):
             ),
         }), 409
 
+    run_id = __import__("uuid").uuid4().hex
     process_status = {
         "running": True,
+        "run_id": run_id,
         "process_num": process_num,
         "status": "running",
         "message": f"Виконується процес {process_num}...",
@@ -1796,7 +1803,7 @@ def run_process_endpoint(process_num):
 
     thread = threading.Thread(
         target=run_process_background,
-        args=(process_num, reviews_date, export_mode, rework_slot),
+        args=(process_num, reviews_date, export_mode, rework_slot, run_id),
         daemon=True,
     )
 
@@ -1815,6 +1822,7 @@ def run_process_endpoint(process_num):
 
     return jsonify({
         "status": "started",
+        "run_id": run_id,
         "message": f"Процес {process_num} запущено.",
     })
 
