@@ -7,11 +7,18 @@ export async function record(db,section,action,outcome,actor='',details=''){
 }
 
 export async function recordExport(db,section,runId,count,unit,message){
- if(!db||!runId||!Number.isSafeInteger(count)||count<0)return;
+ if(!db||!runId||!Number.isSafeInteger(count)||count<0)throw Error('Invalid export event');
+ await ensureLog(db);
+ await db.prepare("CREATE TABLE IF NOT EXISTS export_completion_ids (run_id TEXT PRIMARY KEY, section TEXT NOT NULL, recorded_at TEXT NOT NULL)").run();
+ const now=new Date().toISOString();
+ const inserted=await db.prepare('INSERT OR IGNORE INTO export_completion_ids(run_id,section,recorded_at) VALUES(?,?,?)').bind(runId,section,now).run();
+ if(!inserted.meta.changes)return false;
+ const detail=JSON.stringify({runId,count,unit,message}).slice(0,400);
  try{
-  await ensureLog(db);
-  await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS manager_export_run_unique ON manager_activity_log(details) WHERE action='Вигрузка завершена'").run();
-  const detail=JSON.stringify({runId,count,unit,message}).slice(0,400);
-  await db.prepare("INSERT OR IGNORE INTO manager_activity_log(section,action,outcome,actor,details,created_at) VALUES(?,?,?,?,?,?)").bind(section,'Вигрузка завершена','success','Автоматично',detail,new Date().toISOString()).run();
- }catch(e){console.error('Export completion logging failed',e)}
+  await db.prepare("INSERT INTO manager_activity_log(section,action,outcome,actor,details,created_at) VALUES(?,?,?,?,?,?)").bind(section,'Вигрузка завершена','success','Автоматично',detail,now).run();
+ }catch(e){
+  await db.prepare('DELETE FROM export_completion_ids WHERE run_id=?').bind(runId).run();
+  throw e;
+ }
+ return true;
 }
