@@ -190,3 +190,31 @@ def order_count_report_endpoint():
         return jsonify({"status":"error","message":str(exc)}), 500
     finally:
         legacy.process_lock.release()
+
+
+@app.route("/operations/export-diagnostic", methods=["POST"])
+def export_diagnostic():
+    """Safe invalid-payload POST: validates network and auth, never creates an event."""
+    import os
+    import json
+    from urllib.request import Request, urlopen
+    from urllib.error import HTTPError, URLError
+    url = os.environ.get("EXPORT_EVENT_URL", "").strip()
+    secret = os.environ.get("EXPORT_EVENT_SECRET", "").strip()
+    if not url or not secret:
+        return jsonify({"status":"error","message":"EXPORT_EVENT_URL або EXPORT_EVENT_SECRET не налаштовані."}), 503
+    if not url.startswith("https://teh-7rt.pages.dev/export-completed"):
+        return jsonify({"status":"error","message":"Невірна адреса webhook."}), 400
+    req = Request(url, data=b'{"diagnostic":true}', headers={
+        "Content-Type":"application/json",
+        "X-Export-Secret":secret,
+        "User-Agent":"Asteril-Export-Reporter/1.0",
+        "Accept":"application/json",
+    }, method="POST")
+    try:
+        with urlopen(req, timeout=12) as response:
+            return jsonify({"status":"ok","http_status":response.status,"response":response.read(500).decode("utf-8","replace")})
+    except HTTPError as exc:
+        return jsonify({"status":"diagnostic","http_status":exc.code,"response":exc.read(500).decode("utf-8","replace")})
+    except URLError as exc:
+        return jsonify({"status":"error","message":"Помилка з'єднання: "+str(exc.reason)}), 502
