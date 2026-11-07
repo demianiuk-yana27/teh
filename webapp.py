@@ -314,13 +314,9 @@ def get_negative_status():
 negative_diagnostic_lock = threading.Lock()
 negative_diagnostic_status = {"status":"idle","checks":[]}
 
-def _negative_diagnostic_checks():
+def _negative_diagnostic_checks(sheet_id):
     from negative_reviews import get_client, load_active_shops, PromBrowser
     checks = []
-    try:
-        sheet_id = _sheet_id()
-    except Exception as exc:
-        return {"ok":False,"checks":[{"name":"Налаштування таблиці","ok":False,"message":str(exc)}]}
     try:
         client = get_client()
         book = client.open_by_key(sheet_id)
@@ -369,10 +365,10 @@ def _negative_diagnostic_checks():
     return {"ok":all(c["ok"] for c in checks),"checks":checks,"note":"Перевірка лише читає дані. Жодних змін у таблиці або Prom."}
 
 
-def _negative_diagnostic_worker():
+def _negative_diagnostic_worker(sheet_id):
     global negative_diagnostic_status
     try:
-        result = _negative_diagnostic_checks()
+        result = _negative_diagnostic_checks(sheet_id)
         negative_diagnostic_status = {"status":"success","checks":result["checks"],"ok":result["ok"]}
     except Exception as exc:
         negative_diagnostic_status = {"status":"error","message":str(exc)[:250],"checks":[]}
@@ -384,8 +380,13 @@ def negative_diagnostic():
     global negative_diagnostic_status
     if not negative_diagnostic_lock.acquire(blocking=False):
         return jsonify(negative_diagnostic_status)
+    try:
+        sheet_id = _sheet_id()
+    except Exception as exc:
+        negative_diagnostic_lock.release()
+        return jsonify({"status":"success","ok":False,"checks":[{"name":"Налаштування таблиці","ok":False,"message":str(exc)}]})
     negative_diagnostic_status = {"status":"running","message":"Перевіряємо Google Sheets і Prom","checks":[]}
-    threading.Thread(target=_negative_diagnostic_worker,daemon=True).start()
+    threading.Thread(target=_negative_diagnostic_worker,args=(sheet_id,),daemon=True).start()
     return jsonify(negative_diagnostic_status)
 
 @app.route("/negative/diagnostic/status", methods=["GET"])
