@@ -438,18 +438,47 @@ def _negative_diagnostic_checks(sheet_id,run_id):
             checks.append({"name":"Chromium / зовнішня сторінка","ok":"Example Domain" in title,"message":"Сторінка відкрилася" if "Example Domain" in title else "Сторінка відповіла, але заголовок неочікуваний"})
         except Exception as exc:
             checks.append({"name":"Chromium / зовнішня сторінка","ok":False,"message":str(exc).split("Stacktrace:")[0][:180]})
-        progress("Відкриваємо Prom без очікування всіх ресурсів",checks)
-        browser.driver.set_page_load_timeout(18)
-        browser.driver.execute_cdp_cmd("Page.enable",{})
-        # Set navigation strategy on the active Selenium session; do not alter export workers.
+        progress("Перевіряємо cookies до переходу на Prom",checks)
         try:
-            browser.driver.execute_cdp_cmd("Page.navigate",{"url":"https://my.prom.ua/cms/"})
+            import json as _prom_json
+            _prom_cookies = []
+            if cookies_present:
+                with open(cookies_path, "r", encoding="utf-8") as _prom_f:
+                    _prom_cookies = _prom_json.load(_prom_f)
+            _prom_allowed = []
+            for _prom_cookie in _prom_cookies if isinstance(_prom_cookies, list) else []:
+                if not isinstance(_prom_cookie, dict):
+                    continue
+                _prom_domain = str(_prom_cookie.get("domain", "")).lstrip(".").lower()
+                if not (_prom_domain == "prom.ua" or _prom_domain.endswith(".prom.ua")):
+                    continue
+                if not isinstance(_prom_cookie.get("name"), str) or not isinstance(_prom_cookie.get("value"), str):
+                    continue
+                _prom_clean = {"name": _prom_cookie["name"], "value": _prom_cookie["value"], "domain": _prom_cookie.get("domain", "prom.ua"), "path": _prom_cookie.get("path", "/")}
+                if isinstance(_prom_cookie.get("secure"), bool):
+                    _prom_clean["secure"] = _prom_cookie["secure"]
+                if isinstance(_prom_cookie.get("httpOnly"), bool):
+                    _prom_clean["httpOnly"] = _prom_cookie["httpOnly"]
+                _prom_allowed.append(_prom_clean)
+            if _prom_allowed:
+                browser.driver.execute_cdp_cmd("Network.enable", {})
+                browser.driver.execute_cdp_cmd("Network.setCookies", {"cookies": _prom_allowed})
+            checks.append({"name":"Prom / cookies до навігації","ok":bool(_prom_allowed) or profile_exists,"message":"Cookies для домену Prom встановлено до відкриття сайту" if _prom_allowed else ("Використовується профіль Chromium" if profile_exists else "У файлі немає cookies для домену Prom")})
+        except Exception:
+            checks.append({"name":"Prom / cookies до навігації","ok":False,"message":"Не вдалося застосувати cookies (секретні дані приховано)"})
+        progress("Відкриваємо Prom з обмеженням очікування",checks)
+        try:
+            browser.driver.set_page_load_timeout(10)
+            browser.driver.execute_cdp_cmd("Page.enable", {})
+            browser.driver.execute_cdp_cmd("Page.navigate", {"url":"https://my.prom.ua/cms/"})
             import time as _prom_time
-            _prom_time.sleep(5)
-            current=browser.driver.current_url
-            checks.append({"name":"Prom / швидка навігація","ok":"my.prom.ua" in current,"message":"Поточна адреса: "+current[:150]+"; авторизація не підтверджена"})
+            _prom_time.sleep(3)
+            _prom_current = browser.driver.current_url
+            _prom_authorized = _prom_current.startswith("https://my.prom.ua/cms/") and "/sign-in" not in _prom_current
+            checks.append({"name":"Prom / навігація після cookies","ok":_prom_authorized,"message":("Кабінет відкрито; доступ до даних ще не перевірено" if _prom_authorized else "Кабінет не підтверджено; поточна адреса: "+_prom_current[:150])})
         except Exception as exc:
-            checks.append({"name":"Prom / швидка навігація","ok":False,"message":str(exc).split("Stacktrace:")[0][:220]})
+            checks.append({"name":"Prom / навігація після cookies","ok":False,"message":str(exc).split("Stacktrace:")[0][:180]})
+
     except Exception as exc:
         checks.append({"name":"Chromium / запуск або тест","ok":False,"message":str(exc).split("Stacktrace:")[0][:220]})
     finally:
