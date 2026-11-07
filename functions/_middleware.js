@@ -54,6 +54,8 @@ export async function onRequest(context) {
 
   // Dedicated machine-to-machine endpoint authenticates its own secret.
   if(path==='/export-completed')return next();
+  // Machine access to the encrypted Prom vault uses a separate bearer token.
+  if(path==='/prom-session' && request.method==='GET' && request.headers.has('Authorization'))return next();
   const role = await roleFromRequest(request, env);
   if (path === '/auth/me') return Response.json(role ? {authenticated:true, role} : {authenticated:false}, {status: role ? 200 : 401});
 
