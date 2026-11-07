@@ -10,7 +10,8 @@
     "/products/*",
     "/ttn",
     "/dashboard",
-    "/export-completed"
+    "/export-completed",
+    "/prom-session"
   ],
   "exclude": []
 }
