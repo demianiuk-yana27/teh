@@ -54,7 +54,7 @@ function doPost(e){
    const body=draft_(type,ttn,detail);
    // Never write an intermediate status: column H has strict dropdown validation.
    // Lock prevents concurrent managers processing the same row during this operation.
-   GmailApp.sendEmail(RECIPIENT,'Зміни з ТТН '+ttn,body,{name:'Технічний відділ'});
+   GmailApp.sendEmail(RECIPIENT,'',body,{name:'Технічний відділ'});
    sh.getRange(b.row,8).setValue('В роботі');
    sh.getRange(b.row,10).setValue(manager);
   }else return response_({ok:false,error:'Ця дія недоступна для обраного типу'});
