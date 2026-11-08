@@ -11,6 +11,10 @@ export async function onRequest({request,env,data}){
  try{
   const db=env.TASKS_DB;
   await db.prepare('CREATE TABLE IF NOT EXISTS prom_session_transfer (id INTEGER PRIMARY KEY CHECK(id=1), token_hash TEXT NOT NULL, expires_at INTEGER NOT NULL)').run();
+  if(method==='GET'){
+   if(data.role!=='boss')return json({error:'forbidden'},403);
+   return new Response(`<!doctype html><html lang="uk"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Підключення Prom</title><style>body{font:16px system-ui;max-width:650px;margin:5vh auto;padding:20px}button{padding:12px 18px;cursor:pointer}code{overflow-wrap:anywhere;font-size:20px}p{line-height:1.5}</style><h2>Захищене підключення Prom</h2><p>Натисніть кнопку, щоб створити одноразовий код на 5 хвилин. Вставте його лише в локальний інструмент на MacBook. Код не є паролем Prom.</p><button id="make">Створити одноразовий код</button><p id="status"></p><code id="code"></code><script>document.getElementById('make').onclick=async()=>{const status=document.getElementById('status');document.getElementById('code').textContent='';status.textContent='Створюємо код…';try{const r=await fetch('/prom-session-transfer',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});const d=await r.json();if(!r.ok)throw Error(d.error||'Помилка');document.getElementById('code').textContent=d.code;status.textContent='Код діє 5 хвилин, використовується один раз.'}catch(e){status.textContent=e.message}};</script></html>`,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"}});
+  }
   if(method==='POST'){
    if(data.role!=='boss')return json({error:'forbidden'},403);
    if(request.headers.get('Origin')!==new URL(request.url).origin)return json({error:'origin'},403);
