@@ -968,3 +968,108 @@ def negative_http_reviews_probe():
                         "note": "HTTP-тест не перемикає магазин. Дані можуть належати поточному магазину сесії, а не Ладно. HTTP 200 не доводить авторизацію або читання відгуків."})
     except Exception:
         return jsonify({"status": "error", "message": "Не вдалося отримати або перевірити HTTP-сесію Prom. Секретні дані не показуються."})
+
+
+@app.route("/negative/http-context-probe", methods=["GET"])
+def negative_http_context_probe():
+    """Read-only authenticated JSON check; never changes the selected shop or writes data."""
+    import http.cookiejar
+    import urllib.request
+    import urllib.error
+    from negative_reviews import _prom_session_cookies, COMPANY_REVIEWS_URL, PRODUCT_REVIEWS_URL
+
+    try:
+        jar = http.cookiejar.CookieJar()
+        for item in _prom_session_cookies():
+            if not isinstance(item, dict):
+                continue
+            domain = str(item.get("domain") or "").lower()
+            if domain.lstrip(".") != "prom.ua" and not domain.lstrip(".").endswith(".prom.ua"):
+                continue
+            if not isinstance(item.get("name"), str) or not isinstance(item.get("value"), str):
+                continue
+            expiry = item.get("expirationDate", item.get("expiry"))
+            try:
+                expiry = int(expiry) if expiry is not None else None
+            except (ValueError, TypeError):
+                expiry = None
+            jar.set_cookie(http.cookiejar.Cookie(
+                version=0, name=item["name"], value=item["value"], port=None,
+                port_specified=False, domain=domain, domain_specified=True,
+                domain_initial_dot=domain.startswith("."), path=str(item.get("path") or "/"),
+                path_specified=True, secure=bool(item.get("secure", False)),
+                expires=expiry, discard=expiry is None, comment=None,
+                comment_url=None, rest={}, rfc2109=False))
+        if not list(jar):
+            return jsonify({"status": "error", "message": "Cookies Prom не знайдено."})
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect())
+        results = []
+        for kind, base in (("company", COMPANY_REVIEWS_URL), ("product", PRODUCT_REVIEWS_URL)):
+            for page in (1, 2) if kind == "company" else (1,):
+                url = base + "/context?page=" + str(page) + "&per_page=20"
+                req = urllib.request.Request(url, headers={
+                    "Accept": "application/json, text/plain, */*",
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                    "Referer": base,
+                    "X-Requested-With": "XMLHttpRequest",
+                })
+                entry = {"type": kind, "page": page}
+                try:
+                    try:
+                        response = opener.open(req, timeout=10)
+                    except urllib.error.HTTPError as exc:
+                        response = exc
+                    with response:
+                        entry["http"] = response.code
+                        entry["content_type"] = (response.headers.get("Content-Type") or "").split(";")[0]
+                        if response.code == 200:
+                            raw = response.read(600001)
+                            entry["oversized"] = len(raw) > 600000
+                            if not entry["oversized"]:
+                                try:
+                                    payload = __import__("json").loads(raw)
+                                except (ValueError, UnicodeDecodeError):
+                                    payload = None
+                                if isinstance(payload, dict):
+                                    context = payload.get("context") or {}
+                                    opinions = context.get("opinions") if isinstance(context, dict) else None
+                                    pagination = context.get("pagination") if isinstance(context, dict) else None
+                                    entry["json_ok"] = payload.get("status") == "ok"
+                                    entry["opinions_count"] = len(opinions) if isinstance(opinions, list) else None
+                                    entry["negative_count"] = sum(
+                                        1 for x in opinions if isinstance(x, dict) and isinstance(x.get("rating"), int) and 1 <= x["rating"] <= 3
+                                    ) if isinstance(opinions, list) else None
+                                    entry["company_ids"] = sorted({
+                                        str(x["company_id"]) for x in (opinions or [])
+                                        if isinstance(x, dict) and x.get("company_id") is not None
+                                    })[:5] if isinstance(opinions, list) else []
+                                    if isinstance(pagination, dict):
+                                        entry["pagination"] = {
+                                            k: pagination.get(k) for k in ("current_page", "num_pages", "items_per_page", "item_count")
+                                        }
+                                    entry["first_opinion_id"] = next(
+                                        (str(x.get("id")) for x in (opinions or []) if isinstance(x, dict) and x.get("id") is not None),
+                                        None
+                                    ) if isinstance(opinions, list) else None
+                                else:
+                                    entry["json_ok"] = False
+                except (OSError, TimeoutError, ValueError) as exc:
+                    entry["error"] = type(exc).__name__
+                results.append(entry)
+        first, second = results[0], results[1]
+        pagination_verified = bool(
+            first.get("json_ok") and second.get("json_ok")
+            and first.get("pagination", {}).get("current_page") == 1
+            and second.get("pagination", {}).get("current_page") == 2
+            and first.get("first_opinion_id") != second.get("first_opinion_id")
+        )
+        return jsonify({
+            "status": "ok", "results": results,
+            "pagination_verified": pagination_verified,
+            "note": "Лише читання; магазини не перемикаються, відгуки не записуються. Товари — непідтверджений endpoint.",
+        })
+    except Exception as exc:
+        return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:180]})
