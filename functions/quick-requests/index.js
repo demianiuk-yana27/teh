@@ -46,6 +46,19 @@ export async function onRequest({request,env,data}){
   const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(book)+'/values/'+encodeURIComponent(range)+':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
   const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({majorDimension:'ROWS',values:[rowValues]})});
   const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error?.message||'Google Sheets HTTP '+r.status);
-  return json({ok:true,sheetName:sheet,updatedRange:d.updates?.updatedRange||''});
+  const updatedRange=d.updates?.updatedRange||'';
+  // Never claim success without a concrete destination and a read-after-write check.
+  if(!updatedRange)return json({ok:false,unverified:true,sheetName:sheet,message:'Google прийняв запит, але не повідомив, у які клітинки його записано. Перевірте таблицю перед повторним надсиланням.'},202);
+  try{
+    const check=await google(token,book,updatedRange);
+    const actual=check.values?.[0]||[];
+    if(actual.length!==rowValues.length || rowValues.some((v,i)=>String(actual[i]??'').trim()!==String(v).trim())){
+      return json({ok:false,unverified:true,sheetName:sheet,updatedRange,message:'Google повідомив про запис, але повторне читання не підтвердило всі значення. Перевірте вказаний діапазон перед повторним надсиланням.'},202);
+    }
+  }catch(e){
+    console.error('Request write verification failed:',e.message);
+    return json({ok:false,unverified:true,sheetName:sheet,updatedRange,message:'Запит на запис прийнято, але перевірити результат не вдалося. Не надсилайте повторно, доки не перевірите вказаний діапазон.'},202);
+  }
+  return json({ok:true,sheetName:sheet,updatedRange});
  }catch(e){console.error('Request submission failed',e);return json({error:'Не вдалося записати в Google Таблицю: '+e.message},502)}
 }
