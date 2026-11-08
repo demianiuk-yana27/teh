@@ -139,12 +139,44 @@ def _prom_session_cookies():
 
 
 def check_prom_http_session(timeout=10):
-    """Read-only authentication preflight; never logs cookie values."""
-    import json
+    """Read-only Prom HTTP preflight with safe, per-stage status diagnostics.
+
+    No cookies, tokens, response bodies, or arbitrary redirect URLs are logged.
+    HTTP results are not proof of Chromium authentication.
+    """
     import http.cookiejar
     import urllib.request
     import urllib.parse
     import urllib.error
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    def probe(url, jar):
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(jar), NoRedirect()
+        )
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml",
+        })
+        try:
+            with opener.open(req, timeout=timeout) as response:
+                status, headers = response.status, response.headers
+        except urllib.error.HTTPError as exc:
+            status, headers = exc.code, exc.headers
+        except (OSError, ValueError, urllib.error.URLError, TimeoutError):
+            return "network-error", False, "none"
+        redirect = headers.get("Location", "")
+        target = urllib.parse.urlsplit(urllib.parse.urljoin(url, redirect)) if redirect else None
+        # Only report whether a redirect remains within an expected Prom hostname.
+        location_class = (
+            "none" if target is None else
+            "prom" if target.hostname in ("prom.ua", "my.prom.ua") else
+            "other"
+        )
+        return str(status), bool(headers.get("CF-Ray")), location_class
 
     try:
         items = _prom_session_cookies()
@@ -176,21 +208,23 @@ def check_prom_http_session(timeout=10):
             ))
             count += 1
         if not count:
-            return False, "У файлі немає cookies для Prom."
-        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
-        req = urllib.request.Request(CMS_URL, headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml",
-        })
-        with opener.open(req, timeout=timeout) as resp:
-            target = urllib.parse.urlsplit(resp.geturl())
-            if target.hostname != "my.prom.ua" or not target.path.startswith("/cms/"):
-                return False, "Prom перенаправляє на сторінку входу: серверна сесія недійсна."
-            if resp.status != 200:
-                return False, "Prom не підтвердив доступ до кабінету."
-        return True, "Prom відкрив кабінет із cookies; доступ до відгуків ще не перевірено."
-    except (OSError, ValueError, urllib.error.URLError):
-        return False, "Не вдалося перевірити серверну сесію Prom."
+            return False, "У сховищі немає cookies для Prom."
+
+        # Separate anonymous origin access from authenticated CMS navigation.
+        empty_jar = http.cookiejar.CookieJar()
+        public_status, public_ray, public_redirect = probe("https://prom.ua/", empty_jar)
+        cms_status, cms_ray, cms_redirect = probe(CMS_URL, jar)
+        summary = (
+            f"Prom етапи: prom.ua без cookies HTTP {public_status} "
+            f"(CF-Ray={public_ray}, redirect={public_redirect}); "
+            f"my.prom.ua/cms/ з cookies HTTP {cms_status} "
+            f"(CF-Ray={cms_ray}, redirect={cms_redirect})."
+        )
+        if cms_status == "200":
+            return True, summary + " HTTP-доступ є; авторизація в Chromium потребує окремого підтвердження."
+        return False, summary + " Доступ до кабінету не підтверджено."
+    except Exception:
+        return False, "Не вдалося виконати поетапну HTTP-перевірку Prom."
 
 
 class PromBrowser:
