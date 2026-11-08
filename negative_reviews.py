@@ -93,6 +93,7 @@ def _prom_session_cookies():
     import json
     import urllib.request
     import urllib.parse
+    import urllib.error
 
     endpoint = os.environ.get("PROM_SESSION_VAULT_URL", "").strip()
     token = os.environ.get("PROM_SESSION_MACHINE_TOKEN", "").strip()
@@ -106,8 +107,14 @@ def _prom_session_cookies():
         try:
             with urllib.request.urlopen(req, timeout=12) as response:
                 data = json.load(response)
-        except Exception as exc:
-            raise RuntimeError("Не вдалося отримати сесію з Cloudflare; перевірте налаштування сховища.") from None
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"Cloudflare повернув HTTP {exc.code} під час отримання сесії (без розкриття токена).") from None
+        except urllib.error.URLError:
+            raise RuntimeError("Не вдалося з’єднатися з Cloudflare (мережа або TLS).") from None
+        except TimeoutError:
+            raise RuntimeError("Час очікування відповіді Cloudflare вичерпано.") from None
+        except Exception:
+            raise RuntimeError("Не вдалося прочитати відповідь сховища Cloudflare.") from None
         cookies = data.get("cookies")
         if not isinstance(cookies, list):
             raise RuntimeError("Cloudflare не повернув коректну сесію Prom.")
