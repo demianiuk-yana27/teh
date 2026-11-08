@@ -179,7 +179,10 @@ def check_prom_http_session(timeout=10):
         return str(status), bool(headers.get("CF-Ray")), location_class
 
     try:
-        items = _prom_session_cookies()
+        try:
+            items = _prom_session_cookies()
+        except RuntimeError:
+            return False, "Етап отримання cookies із Worker: помилка. Перевірте доступ Render до сховища; деталі приховано."
         if not items:
             return False, "На сервері немає сесії Prom."
         jar = http.cookiejar.CookieJar()
