@@ -160,7 +160,7 @@ s = s.replace("setStatus(id,d.status==='started'?'running':'busy','⏳ '+d.messa
 """setStatus(id,d.status==='started'?'running':'busy','⏳ '+d.message);if(d.status==='started'){clearInterval(timers[id]);timers[id]=setInterval(async()=>{try{const state=await jf(API+'/negative/status');if(state.status==='running')setStatus(id,'running','⏳ '+state.message);else if(state.status==='success'||state.status==='error'){clearInterval(timers[id]);setStatus(id,state.status,(state.status==='success'?'✅ ':'❌ ')+state.message)}}catch(e){clearInterval(timers[id]);setStatus(id,'error','❌ '+e.message)}},2000)}}catch(e){setStatus(id,'error','❌ '+e.message)}}async function runOrderCount()""",1)
 
 # Read-only diagnostics for the negative reviews integrations.
-negative_diagnostic_controls = '''<div class="card" style="margin-top:16px"><h3>Перевірка підключень</h3><p>Google-таблиця, аркуші, активні магазини та авторизація Prom. Без запису даних.</p><button class="run" onclick="checkNegativeConnections(this)">🔎 Перевірити підключення</button> <button class="run" type="button" onclick="checkReviewReadProbe(this)">📖 Перевірити читання відгуків</button> <button class="run" type="button" onclick="checkPromReviewsHttp(this)">🌐 Перевірити відгуки через HTTP (без браузера)</button> <button class="run" type="button" onclick="showPromConnectionGuide(this)">🔐 Підключити Prom</button><div class="status promConnectionGuide" style="display:none;white-space:normal;margin-top:12px"><strong>Підключення головного акаунта Prom</strong><p>1. Відкрийте офіційний кабінет Prom і увійдіть у головний акаунт.</p><p>2. Офіційний публічний API Prom не документує отримання відгуків про компанію та товари, потрібних цим вигрузкам. Створення API-токена поки не допоможе.</p><p>3. Вхід у браузері не передає сесію Chromium на Render. Сервер має отримати окрему захищену авторизацію; автоматичне підключення ще не реалізоване. Не надсилайте логін, пароль, токен або cookies у чат.</p><a href="https://my.prom.ua/cms/" target="_blank" rel="noopener noreferrer">Відкрити офіційний кабінет Prom ↗</a><p><strong>Статус:</strong> серверну авторизацію ще не підтверджено.</p></div><div class="status negativeDiagnosticResult" style="white-space:pre-wrap">Перевірка ще не запускалася.</div><div class="status reviewReadProbeResult" style="white-space:pre-wrap">Читання відгуків ще не перевірялося.</div><div class="status promReviewsHttpResult" style="white-space:pre-wrap">HTTP-перевірка ще не запускалася.</div><button class="run" type="button" onclick="checkNegativeSystemHealth(this)">🩺 Перевірити стан Render (без браузера)</button><div class="status negativeSystemHealthResult" style="white-space:pre-wrap">Моніторинг ще не запускався.</div></div>'''
+negative_diagnostic_controls = '''<div class="card" style="margin-top:16px"><h3>Перевірка підключень</h3><p>Google-таблиця, аркуші, активні магазини та авторизація Prom. Без запису даних.</p><button class="run" onclick="checkNegativeConnections(this)">🔎 Перевірити підключення</button> <button class="run" type="button" onclick="checkReviewReadProbe(this)">📖 Перевірити читання відгуків</button> <button class="run" type="button" onclick="checkPromReviewsHttp(this)">🌐 Перевірити відгуки через HTTP (без браузера)</button> <button class="run" type="button" onclick="checkPromContextJson(this)">🧪 Перевірити JSON відгуків</button> <button class="run" type="button" onclick="showPromConnectionGuide(this)">🔐 Підключити Prom</button><div class="status promConnectionGuide" style="display:none;white-space:normal;margin-top:12px"><strong>Підключення головного акаунта Prom</strong><p>1. Відкрийте офіційний кабінет Prom і увійдіть у головний акаунт.</p><p>2. Офіційний публічний API Prom не документує отримання відгуків про компанію та товари, потрібних цим вигрузкам. Створення API-токена поки не допоможе.</p><p>3. Вхід у браузері не передає сесію Chromium на Render. Сервер має отримати окрему захищену авторизацію; автоматичне підключення ще не реалізоване. Не надсилайте логін, пароль, токен або cookies у чат.</p><a href="https://my.prom.ua/cms/" target="_blank" rel="noopener noreferrer">Відкрити офіційний кабінет Prom ↗</a><p><strong>Статус:</strong> серверну авторизацію ще не підтверджено.</p></div><div class="status negativeDiagnosticResult" style="white-space:pre-wrap">Перевірка ще не запускалася.</div><div class="status reviewReadProbeResult" style="white-space:pre-wrap">Читання відгуків ще не перевірялося.</div><div class="status promReviewsHttpResult" style="white-space:pre-wrap">HTTP-перевірка ще не запускалася.</div><div class="status promContextJsonResult" style="white-space:pre-wrap">JSON-перевірка ще не запускалася.</div><button class="run" type="button" onclick="checkNegativeSystemHealth(this)">🩺 Перевірити стан Render (без браузера)</button><div class="status negativeSystemHealthResult" style="white-space:pre-wrap">Моніторинг ще не запускався.</div></div>'''
 for view_id in ('negative-reviews', 'negative-analytics'):
     start = s.find('<section class="view" id="' + view_id + '">')
     if start >= 0:
@@ -169,6 +169,23 @@ for view_id in ('negative-reviews', 'negative-analytics'):
             s = s[:end] + negative_diagnostic_controls + s[end:]
 
 negative_diagnostic_script = '''<script>
+async function checkPromContextJson(button){
+ const out=button.closest(".card").querySelector(".promContextJsonResult");
+ button.disabled=true;out.textContent="⏳ Читаємо JSON відгуків через HTTP…";
+ try{
+  const response=await fetch("/api/negative/http-context-probe",{cache:"no-store"});
+  if(!response.ok)throw Error("HTTP "+response.status);
+  const d=await response.json();
+  if(d.status!=="ok")throw Error(d.message||"Не вдалося перевірити JSON");
+  out.textContent=[
+   "JSON-відгуки Prom (без Chromium):",
+   ...(d.results||[]).map(x=>x.type+" сторінка "+x.page+": "+(x.error||("HTTP "+x.http+", JSON "+(x.json_ok?"OK":"не підтверджено")+", відгуків "+(x.opinions_count??"—")+", негативних "+(x.negative_count??"—")+", магазин ID "+(x.company_ids||[]).join(", ")+", сторінок "+(x.pagination?.num_pages??"—")))),
+   "Пагінація сторінок 1 і 2: "+(d.pagination_verified?"✅ підтверджена":"⚠️ не підтверджена"),
+   d.note||""
+  ].join("\\n");
+ }catch(e){out.textContent="❌ "+e.message}
+ finally{button.disabled=false}
+}
 async function checkPromReviewsHttp(button){
  const out=button.closest(".card").querySelector(".promReviewsHttpResult");
  button.disabled=true;out.textContent="⏳ Перевіряємо HTTP-доступ без Chromium…";
