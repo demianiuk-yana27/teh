@@ -223,8 +223,9 @@ def check_prom_http_session(timeout=10):
         if cms_status == "200":
             return True, summary + " HTTP-доступ є; авторизація в Chromium потребує окремого підтвердження."
         return False, summary + " Доступ до кабінету не підтверджено."
-    except Exception:
-        return False, "Не вдалося виконати поетапну HTTP-перевірку Prom."
+    except Exception as exc:
+        # Expose only exception type, never cookies, URLs, response bodies or secrets.
+        return False, "Поетапна HTTP-перевірка: внутрішня помилка " + type(exc).__name__ + "."
 
 
 class PromBrowser:
