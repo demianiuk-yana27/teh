@@ -613,3 +613,81 @@ def review_probe_status():
         return jsonify(state)
     except (OSError, ValueError):
         return jsonify({"status": "idle"})
+
+
+@app.route("/negative/system-health", methods=["GET"])
+def negative_system_health():
+    """Read-only Linux diagnostics; no Chromium or external service calls."""
+    import os as _os
+    import time as _time
+    import json as _json
+    import uuid as _uuid
+    from pathlib import Path as _Path
+
+    def _proc_rss_kb(pid):
+        try:
+            for line in _Path("/proc", str(pid), "status").read_text().splitlines():
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1])
+        except (OSError, ValueError, IndexError):
+            pass
+        return 0
+
+    processes = []
+    try:
+        for entry in _os.scandir("/proc"):
+            if not entry.name.isdigit():
+                continue
+            try:
+                cmd = _Path(entry.path, "cmdline").read_bytes().replace(b"\\x00", b" ").decode("utf-8", "replace").lower()
+                if "chromium" in cmd or "chromedriver" in cmd:
+                    processes.append({"pid": int(entry.name), "rss_mb": round(_proc_rss_kb(entry.name) / 1024, 1)})
+            except (OSError, ValueError):
+                continue
+    except OSError:
+        pass
+
+    memory = {}
+    try:
+        for line in _Path("/proc/meminfo").read_text().splitlines():
+            key, _, value = line.partition(":")
+            if key in ("MemTotal", "MemAvailable"):
+                memory[key] = round(int(value.strip().split()[0]) / 1024, 1)
+    except (OSError, ValueError, IndexError):
+        pass
+
+    cgroup = {}
+    for key, paths in {
+        "limit_bytes": ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+        "used_bytes": ("/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+        "events": ("/sys/fs/cgroup/memory.events",),
+    }.items():
+        for path in paths:
+            try:
+                raw = _Path(path).read_text().strip()
+                cgroup[key] = (int(raw) if raw.isdigit() else raw[:250])
+                break
+            except (OSError, ValueError):
+                continue
+
+    probe = {"status": "idle"}
+    try:
+        probe = _json.loads(_Path("/tmp/asteril_review_probe.json").read_text(encoding="utf-8"))
+        if probe.get("status") == "running" and _time.time() - probe.get("updated_at", probe.get("started_at", 0)) > 90:
+            probe = {"status": "stale", "stage": probe.get("stage", ""), "updated_at": probe.get("updated_at")}
+    except (OSError, ValueError):
+        pass
+
+    try:
+        uptime = round(float(_Path("/proc/uptime").read_text().split()[0]))
+    except (OSError, ValueError, IndexError):
+        uptime = None
+
+    return jsonify({
+        "status": "ok", "instance_boot_id": _Path("/proc/sys/kernel/random/boot_id").read_text().strip()[:12] if _Path("/proc/sys/kernel/random/boot_id").exists() else None,
+        "system_uptime_seconds": uptime, "worker_pid": _os.getpid(),
+        "worker_rss_mb": round(_proc_rss_kb(_os.getpid()) / 1024, 1),
+        "chromium_count": len(processes), "chromium_rss_mb": round(sum(p["rss_mb"] for p in processes), 1),
+        "memory_host_mb": memory, "memory_cgroup": cgroup,
+        "probe": {k: probe.get(k) for k in ("status", "stage", "updated_at", "message", "shop") if k in probe},
+    })
