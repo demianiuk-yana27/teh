@@ -832,6 +832,49 @@ def negative_http_reviews_probe():
                         "cabinet_terms": any(term in body for term in ("cabinet", "кабінет", "кабинет")),
                         "html_truncated": len(body.encode("utf-8")) >= 120000,
                     }
+                    # Scan at most three same-origin JS assets, with no cookies.
+                    # Do not expose asset URLs, API paths, query strings or JS contents.
+                    js_scan = {"checked": 0, "review_assets": 0, "api_assets": 0,
+                               "fetch_assets": 0, "review_api_assets": 0, "errors": 0}
+                    asset_urls = []
+                    for tag in script_tags:
+                        match = _re.search(r'\bsrc\s*=\s*["\x27]([^"\x27]+)', tag)
+                        if not match:
+                            continue
+                        candidate = urllib.parse.urljoin(url, match.group(1))
+                        parsed = urllib.parse.urlsplit(candidate)
+                        if parsed.scheme != "https" or parsed.hostname not in ("my.prom.ua", "prom.ua"):
+                            continue
+                        if parsed.port not in (None, 443) or candidate in asset_urls:
+                            continue
+                        asset_urls.append(candidate)
+                    anonymous = urllib.request.build_opener(NoRedirect())
+                    for asset_url in asset_urls[:3]:
+                        try:
+                            req = urllib.request.Request(asset_url, headers={
+                                "User-Agent": "Mozilla/5.0",
+                                "Accept": "application/javascript,text/javascript,*/*",
+                            })
+                            with anonymous.open(req, timeout=3) as js_response:
+                                if js_response.status != 200:
+                                    js_scan["errors"] += 1
+                                    continue
+                                js_type = (js_response.headers.get("Content-Type") or "").lower()
+                                if not any(x in js_type for x in ("javascript", "text/plain", "application/octet-stream")):
+                                    js_scan["errors"] += 1
+                                    continue
+                                js_body = js_response.read(150001)[:150000].decode("utf-8", "replace").lower()
+                            js_scan["checked"] += 1
+                            has_review = any(x in js_body for x in ("review", "opinion", "відгук", "отзыв"))
+                            has_api = any(x in js_body for x in ("/api/", "graphql", "api/v"))
+                            has_fetch = any(x in js_body for x in ("fetch(", "axios", "xmlhttprequest"))
+                            js_scan["review_assets"] += int(has_review)
+                            js_scan["api_assets"] += int(has_api)
+                            js_scan["fetch_assets"] += int(has_fetch)
+                            js_scan["review_api_assets"] += int(has_review and has_api)
+                        except (OSError, ValueError, TimeoutError, urllib.error.HTTPError):
+                            js_scan["errors"] += 1
+                    structure["js_scan"] = js_scan
                     results.append({"type": name, "http": code, "content_type": mime,
                                     "review_markup": review_markup, "login_markup": login_markup,
                                     "redirect": "prom" if redirect_host in ("my.prom.ua", "prom.ua") else ("other" if redirect_host else "none"),
