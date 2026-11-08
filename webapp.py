@@ -419,63 +419,13 @@ def _negative_diagnostic_checks(sheet_id,run_id):
         checks.append({"name":"Prom / HTTP-з'єднання","ok":True,"message":"HTTP "+str(code)+"; адреса: "+final_url[:110]+" (код не підтверджує авторизацію)"})
     except Exception as exc:
         checks.append({"name":"Prom / HTTP-з'єднання","ok":False,"message":str(exc)[:200]})
-    progress("Перевіряємо HTTP-сесію Prom із cookies без Chromium",checks)
+    progress("Перевіряємо поетапний HTTP-доступ Prom",checks)
     try:
-        import json as _session_json
-        import http.cookiejar as _session_cookiejar
-        import urllib.request as _session_request
-        import urllib.parse as _session_parse
-        import time as _session_time
-        _jar = _session_cookiejar.CookieJar()
-        if cookies_present:
-            with open(cookies_path, "r", encoding="utf-8") as _cookie_file:
-                _cookie_list = _session_json.load(_cookie_file)
-            for _item in _cookie_list if isinstance(_cookie_list, list) else []:
-                if not isinstance(_item, dict):
-                    continue
-                _domain = str(_item.get("domain", "")).lower().lstrip(".")
-                if not (_domain == "prom.ua" or _domain.endswith(".prom.ua")):
-                    continue
-                _name, _value = _item.get("name"), _item.get("value")
-                if not isinstance(_name, str) or not isinstance(_value, str):
-                    continue
-                _expiry = _item.get("expirationDate", _item.get("expiry"))
-                try:
-                    _expiry = int(_expiry) if _expiry is not None else None
-                except (TypeError, ValueError):
-                    _expiry = None
-                if _expiry is not None and _expiry <= _session_time.time():
-                    continue
-                _cookie_domain = str(_item.get("domain", ".prom.ua"))
-                _jar.set_cookie(_session_cookiejar.Cookie(
-                    version=0, name=_name, value=_value, port=None, port_specified=False,
-                    domain=_cookie_domain, domain_specified=True,
-                    domain_initial_dot=_cookie_domain.startswith("."),
-                    path=str(_item.get("path", "/")), path_specified=True,
-                    secure=bool(_item.get("secure", False)), expires=_expiry,
-                    discard=_expiry is None, comment=None, comment_url=None, rest={},
-                    rfc2109=False
-                ))
-        _opener = _session_request.build_opener(_session_request.HTTPCookieProcessor(_jar))
-        _request = _session_request.Request(
-            "https://my.prom.ua/cms/",
-            headers={"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-                     "Accept":"text/html,application/xhtml+xml"}
-        )
-        try:
-            with _opener.open(_request, timeout=12) as _response:
-                _status = _response.status
-                _url = _response.geturl()
-        except _session_request.HTTPError as _http_error:
-            _status = _http_error.code
-            _url = _http_error.geturl()
-        _host = (_session_parse.urlsplit(_url).hostname or "").lower()
-        _path = _session_parse.urlsplit(_url).path
-        _authenticated_route = _host == "my.prom.ua" and _path.startswith("/cms/")
-        checks.append({"name":"Prom / HTTP із cookies","ok":_authenticated_route and _status == 200,
-                       "message":("Кабінет повернув HTTP 200 без перенаправлення на вхід; доступ до відгуків ще не перевірено" if _authenticated_route and _status == 200 else "HTTP "+str(_status)+"; "+("перенаправлення на вхід" if "sign-in" in _path else "кабінет не підтверджено")+". Cookies не показуються")})
+        from negative_reviews import check_prom_http_session as _check_prom_http_session
+        _http_ok, _http_message = _check_prom_http_session(timeout=12)
+        checks.append({"name":"Prom / HTTP поетапно","ok":_http_ok,"message":_http_message})
     except Exception as exc:
-        checks.append({"name":"Prom / HTTP із cookies","ok":False,"message":"Не вдалося перевірити HTTP-сесію: "+type(exc).__name__})
+        checks.append({"name":"Prom / HTTP поетапно","ok":False,"message":"Помилка діагностики: "+type(exc).__name__})
     progress("Запускаємо Chromium",checks)
     browser = None
     try:
