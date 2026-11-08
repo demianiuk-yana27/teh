@@ -111,8 +111,14 @@ def _prom_session_cookies():
             # Never log response bodies or authorization headers.
             content_type = (exc.headers.get("Content-Type", "") or "").lower()
             if exc.code == 403:
-                reason = ("HTML-блокування (можливо, захист Cloudflare)" if "text/html" in content_type else "відмова API або захисного правила")
-                raise RuntimeError(f"Cloudflare повернув HTTP 403: {reason}.") from None
+                # These response-header flags are safe to expose; never show bodies, cookies, or tokens.
+                cf_ray = bool(exc.headers.get("CF-Ray"))
+                cf_mitigated = (exc.headers.get("cf-mitigated", "") or "").lower() == "challenge"
+                app_json = "application/json" in content_type
+                reason = ("Cloudflare challenge" if cf_mitigated else
+                          "JSON-відповідь застосунку" if app_json else
+                          "відповідь не у форматі JSON")
+                raise RuntimeError(f"HTTP 403: {reason}; CF-Ray={cf_ray}.") from None
             raise RuntimeError(f"Cloudflare повернув HTTP {exc.code} під час отримання сесії (без розкриття токена).") from None
         except urllib.error.URLError:
             raise RuntimeError("Не вдалося з’єднатися з Cloudflare (мережа або TLS).") from None
