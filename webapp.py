@@ -601,6 +601,28 @@ def start_review_probe():
                     with open(tmp, "w", encoding="utf-8") as f:
                         _sample_json.dump(samples, f)
                     _diag_os.replace(tmp, "/tmp/asteril_review_probe_metrics.json")
+                    # Stop before the 512 MB cgroup limit makes the web service unresponsive.
+                    if mem is not None and mem >= 450 * 1048576:
+                        import signal as _probe_signal
+                        try:
+                            _diag_os.killpg(process.pid, _probe_signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        try:
+                            with open(state_path, encoding="utf-8") as f:
+                                latest = _sample_json.load(f)
+                            latest.update(status="error", message="Тест зупинено: використання пам’яті досягло 450 МБ (захист сервера).")
+                            temp_state = state_path + ".memory"
+                            with open(temp_state, "w", encoding="utf-8") as f:
+                                _sample_json.dump(latest, f, ensure_ascii=False)
+                            _diag_os.replace(temp_state, state_path)
+                        except (OSError, ValueError):
+                            pass
+                        try:
+                            _diag_os.unlink(lock)
+                        except FileNotFoundError:
+                            pass
+                        break
                 except (OSError, ValueError):
                     pass
                 _sample_time.sleep(2)
