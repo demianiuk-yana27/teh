@@ -21,7 +21,7 @@ SCOPES = [
 
 CMS_URL = "https://my.prom.ua/cms/"
 COMPANY_REVIEWS_URL = "https://my.prom.ua/cms/opinions/company"
-PRODUCT_REVIEWS_URL = "https://my.prom.ua/cms/opinions/product"
+PRODUCT_REVIEWS_URL = "https://my.prom.ua/cms/opinions/product/prom"
 GRADES_URL = "https://my.prom.ua/cms/company/grades"
 REVIEWS_ANALYTICS_URL = COMPANY_REVIEWS_URL
 ORDER_REVIEW_SHEET_ID = "1Ci_AoA6PBtlglbY_CY4d16tRX-7rxZ8_1YbEFft_hGs"
