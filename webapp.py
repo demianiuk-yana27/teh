@@ -561,11 +561,13 @@ def start_review_probe():
     try:
         with open(state_path, "w", encoding="utf-8") as f:
             _probe_json.dump(state, f)
+        probe_env = _diag_os.environ.copy()
+        probe_env["REVIEW_PROBE_SHEET_ID"] = _sheet_id()
         _probe_subprocess.Popen(
             [_probe_sys.executable, "-m", "review_read_probe"],
             stdin=_probe_subprocess.DEVNULL, stdout=_probe_subprocess.DEVNULL,
             stderr=_probe_subprocess.DEVNULL, close_fds=True, start_new_session=True,
-            cwd=_diag_os.path.dirname(__file__) or ".",
+            cwd=_diag_os.path.dirname(__file__) or ".", env=probe_env,
         )
         return jsonify(state), 202
     except Exception:
