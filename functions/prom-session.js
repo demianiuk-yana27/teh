@@ -34,14 +34,14 @@ function validCookies(value) {
   return Array.isArray(value) && value.length>0 && value.length<=250 && value.every(c=>
     c && typeof c==='object' && typeof c.name==='string' && c.name.length>0 &&
     typeof c.value==='string' && typeof c.domain==='string' &&
-    (c.domain.toLowerCase().replace(/^\\./,'')==='prom.ua' || c.domain.toLowerCase().replace(/^\\./,'').endsWith('.prom.ua'))
+    (c.domain.toLowerCase().replace(/^\./,'')==='prom.ua' || c.domain.toLowerCase().replace(/^\./,'').endsWith('.prom.ua'))
   );
 }
 export async function onRequest({request,env,data}) {
   const method=request.method;
   const machine=method==='GET' && request.headers.has('Authorization');
   if(machine) {
-    const token=(request.headers.get('Authorization')||'').replace(/^Bearer\\s+/i,'');
+    const token=(request.headers.get('Authorization')||'').replace(/^Bearer\s+/i,'');
     if(!env.PROM_SESSION_MACHINE_TOKEN || !constantTime(token,env.PROM_SESSION_MACHINE_TOKEN)) return json({error:'unauthorized'},401);
   } else {
     if(data.role!=='boss') return json({error:'forbidden'},403);
