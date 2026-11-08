@@ -11,7 +11,8 @@
     "/ttn",
     "/dashboard",
     "/export-completed",
-    "/prom-session"
+    "/prom-session",
+    "/prom-session-transfer"
   ],
   "exclude": []
 }
