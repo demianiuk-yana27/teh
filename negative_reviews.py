@@ -346,55 +346,87 @@ class PromBrowser:
                 self.open_cms()
         raise RuntimeError(f"Не вдалося перемкнути магазин {shop.name}: {last_error}")
 
+    def _visible_shop_ids(self):
+        """Read only visible shop labels; never infer the active shop from a menu option."""
+        ids = set()
+        selectors = (
+            '[data-qaid="company_info"]',
+            '[data-testid="shop-selector-toggle"]',
+            '[data-testid*="company-switch"]',
+            '[data-testid*="shop-switch"]',
+        )
+        for selector in selectors:
+            for element in self.driver.find_elements(By.CSS_SELECTOR, selector):
+                if element.is_displayed():
+                    ids.update(re.findall(r"\bID\s*[:№]?\s*(\d{4,12})\b", element.text, re.I))
+        # Sidebar label is another active-shop indicator in the Prom cabinet.
+        for element in self.driver.find_elements(
+            By.XPATH, "//*[contains(normalize-space(text()), 'ID:')]"
+        ):
+            if element.is_displayed():
+                text = element.text
+                if len(text) < 150:
+                    ids.update(re.findall(r"\bID\s*[:№]?\s*(\d{4,12})\b", text, re.I))
+        return ids
+
     def _switch_shop_once(self, shop):
         if not self.driver.current_url.startswith(CMS_URL):
             self.driver.get(CMS_URL)
             time.sleep(1.5)
         self.dismiss_dialogs()
+        expected = str(shop.id).strip()
+        # Existing shop can already be selected; no dropdown interaction needed.
+        current_ids = self._visible_shop_ids()
+        if current_ids == {expected}:
+            return
         selectors = [
             '[data-qaid="company_info"] [data-qaid="toggler_btn"]',
-            '[data-qaid="company_info"]',
             '[data-testid="shop-selector-toggle"]',
             '[data-testid*="company-switch"]',
             '[data-testid*="shop-switch"]',
+            '[data-qaid="company_info"]',
         ]
         toggle = None
         for selector in selectors:
-            for el in self.driver.find_elements(By.CSS_SELECTOR, selector):
-                if el.is_displayed():
-                    toggle = el
+            for element in self.driver.find_elements(By.CSS_SELECTOR, selector):
+                if element.is_displayed():
+                    toggle = element
                     break
             if toggle:
                 break
         if not toggle:
-            candidates = self.driver.find_elements(By.XPATH, "//*[contains(normalize-space(.), 'ID:')]")
-            visible = [x for x in candidates if x.is_displayed()]
-            if visible:
-                toggle = visible[-1]
-        if not toggle:
             raise RuntimeError("Не знайдено перемикач магазину Prom.")
         self.driver.execute_script("arguments[0].click();", toggle)
         time.sleep(0.7)
-        shop_targets = self.driver.find_elements(
-            By.XPATH,
-            f"//*[contains(normalize-space(.), '{shop.id}') or contains(normalize-space(.), {repr(shop.name)})]",
+        # Match the exact ID, not a partial shop name or substring of another ID.
+        options = self.driver.find_elements(
+            By.XPATH, "//*[contains(normalize-space(.), 'ID:')]"
         )
-        target = next((x for x in shop_targets if x.is_displayed()), None)
+        target = None
+        for element in options:
+            if not element.is_displayed() or len(element.text) > 180:
+                continue
+            ids = re.findall(r"\bID\s*[:№]?\s*(\d{4,12})\b", element.text, re.I)
+            if expected in ids:
+                target = element
+                break
         if not target:
-            raise RuntimeError(f"Магазин {shop.name} (ID {shop.id}) не знайдено у перемикачі Prom.")
+            raise RuntimeError(f"Магазин {shop.name} (ID {expected}) не знайдено у перемикачі Prom.")
         self.driver.execute_script("arguments[0].click();", target)
-        time.sleep(1.5)
         self.dismiss_dialogs()
-        # Verify the visible active shop ID before exporting any reviews.
-        # Never rely on the clicked dropdown item alone as proof of switching.
-        header_ids = []
-        for selector in ('[data-qaid="company_info"]', '[data-testid="shop-selector-toggle"]'):
-            for element in self.driver.find_elements(By.CSS_SELECTOR, selector):
-                if element.is_displayed():
-                    header_ids.extend(re.findall(r"ID\\s*[:№]?\\s*(\\d+)", element.text, re.I))
-        if header_ids and shop.id not in header_ids:
-            raise RuntimeError("Prom показує інший активний магазин після перемикання; вигрузку зупинено.")
-
+        deadline = time.time() + 8
+        while time.time() < deadline:
+            active_ids = self._visible_shop_ids()
+            if active_ids == {expected}:
+                return
+            if active_ids and expected not in active_ids:
+                time.sleep(0.4)
+                continue
+            time.sleep(0.4)
+        raise RuntimeError(
+            f"Не підтверджено активний магазин Prom (очікувався ID {expected}); "
+            "вигрузку зупинено для безпеки."
+        )
 
     def review_order_ids(self, since, until=None, wanted=None):
         found = set()
