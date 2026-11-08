@@ -196,6 +196,12 @@ async function checkPromReviewsHttp(button){
        "; пропущено зовнішніх скриптів "+(h.excluded_script_tags??"—")+
        " з "+(h.external_script_hosts_count??"—")+" інших доменів";
    }),
+   ...(d.results||[]).map(x=>{
+     const c=x.cookie_comparison||{};
+     return x.type+" — порівняння із запитом без cookies: HTTP "+(c.anonymous_http??"помилка")+
+       ", HTML "+(c.same_markup===true?"однаковий":c.same_markup===false?"відрізняється":"не вдалося порівняти")+
+       ", схожість "+(c.similarity_percent??"—")+"%";
+   }),
    "HTML сторінок компанії та товарів: "+(d.html_identical?"однаковий":"відрізняється або порівняння недоступне"),
    ...(d.results||[]).map(x=>{
      const j=x.html_structure?.js_scan;
