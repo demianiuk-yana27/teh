@@ -99,7 +99,7 @@ def _prom_session_cookies():
     token = os.environ.get("PROM_SESSION_MACHINE_TOKEN", "").strip()
     if endpoint or token:
         parsed = urllib.parse.urlsplit(endpoint)
-        if parsed.scheme != "https" or parsed.hostname != "teh-7rt.pages.dev" or parsed.path != "/prom-session":
+        if (parsed.scheme != "https" or parsed.hostname not in {"teh-7rt.pages.dev", "flat-rice-6fc0-teh-prom-session-reader.demianiuk-yana27.workers.dev"} or parsed.path != "/prom-session" or parsed.port is not None or parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment):
             raise RuntimeError("Неправильний PROM_SESSION_VAULT_URL: потрібен захищений endpoint Cloudflare.")
         if not token:
             raise RuntimeError("PROM_SESSION_MACHINE_TOKEN не налаштований на Render.")
