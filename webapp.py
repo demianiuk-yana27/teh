@@ -834,6 +834,33 @@ def negative_http_reviews_probe():
                         "cabinet_terms": any(term in body for term in ("cabinet", "кабінет", "кабинет")),
                         "html_truncated": len(body.encode("utf-8")) >= 120000,
                     }
+                    # Compare safe structural authentication hints without exposing shop IDs.
+                    # Presence of a shop ID is only a hint, not proof of login.
+                    visible_ids = _re.findall(r"\bid\s*[:№]\s*(\d{4,12})\b", body, _re.I)
+                    structure["auth_hints"] = {
+                        "shop_id_pattern": bool(visible_ids),
+                        "shop_selector": any(x in body for x in ("company_info", "shop-selector", "company-switch")),
+                        "logout_marker": any(x in body for x in ("logout", "signout", "вийти", "выйти")),
+                        "login_form": login_markup,
+                        "review_route_marker": "/cms/opinions/" in body,
+                    }
+                    # Count excluded script hosts only; do not fetch or expose their URLs.
+                    excluded_hosts = set()
+                    for tag in script_tags:
+                        match = _re.search(r'\bsrc\s*=\s*["\x27]([^"\x27]+)', tag)
+                        if not match:
+                            continue
+                        parsed = urllib.parse.urlsplit(urllib.parse.urljoin(url, match.group(1)))
+                        if parsed.hostname not in ("my.prom.ua", "prom.ua"):
+                            excluded_hosts.add(parsed.hostname or "unknown")
+                    structure["external_script_hosts_count"] = len(excluded_hosts)
+                    structure["excluded_script_tags"] = sum(
+                        bool(_re.search(r'\bsrc\s*=', tag)) and
+                        urllib.parse.urlsplit(urllib.parse.urljoin(
+                            url, (_re.search(r'\bsrc\s*=\s*["\x27]([^"\x27]+)', tag) or ["", ""])[1]
+                        )).hostname not in ("my.prom.ua", "prom.ua")
+                        for tag in script_tags
+                    )
                     import hashlib as _hashlib
                     html_fingerprints.append(_hashlib.sha256(body.encode("utf-8")).hexdigest())
                     # Scan up to nine same-origin JS assets without cookies; reuse results.
