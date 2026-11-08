@@ -535,3 +535,55 @@ def negative_diagnostic():
 @app.route("/negative/diagnostic/status", methods=["GET"])
 def negative_diagnostic_result():
     return jsonify(_diag_read())
+
+
+# Separate read-only review test. The HTTP request never runs Chromium.
+@app.route("/negative/review-probe", methods=["POST"])
+def start_review_probe():
+    import subprocess as _probe_subprocess
+    import sys as _probe_sys
+    import json as _probe_json
+    lock = "/tmp/asteril_review_probe.lock"
+    state_path = "/tmp/asteril_review_probe.json"
+    try:
+        fd = _diag_os.open(lock, _diag_os.O_CREAT | _diag_os.O_EXCL | _diag_os.O_WRONLY, 0o600)
+        _diag_os.close(fd)
+    except FileExistsError:
+        try:
+            age = _diag_time.time() - _diag_os.stat(lock).st_mtime
+            if age < 300:
+                return jsonify({"status": "running", "message": "Перевірка вже виконується"})
+            _diag_os.unlink(lock)
+        except OSError:
+            pass
+        return jsonify({"status": "error", "message": "Попередній процес завершився некоректно; повторіть запуск"}), 409
+    state = {"status": "running", "stage": "Запускаємо окремий тест", "started_at": _diag_time.time()}
+    try:
+        with open(state_path, "w", encoding="utf-8") as f:
+            _probe_json.dump(state, f)
+        _probe_subprocess.Popen(
+            [_probe_sys.executable, "-m", "review_read_probe"],
+            stdin=_probe_subprocess.DEVNULL, stdout=_probe_subprocess.DEVNULL,
+            stderr=_probe_subprocess.DEVNULL, close_fds=True, start_new_session=True,
+            cwd=_diag_os.path.dirname(__file__) or ".",
+        )
+        return jsonify(state), 202
+    except Exception:
+        try:
+            _diag_os.unlink(lock)
+        except OSError:
+            pass
+        return jsonify({"status": "error", "message": "Не вдалося запустити окрему перевірку"}), 500
+
+
+@app.route("/negative/review-probe/status", methods=["GET"])
+def review_probe_status():
+    import json as _probe_json
+    try:
+        with open("/tmp/asteril_review_probe.json", encoding="utf-8") as f:
+            state = _probe_json.load(f)
+        if state.get("status") == "running" and _diag_time.time() - state.get("updated_at", state.get("started_at", 0)) > 90:
+            return jsonify({"status": "error", "message": "Тест не відповідає. Не запускайте повторно до перевірки Render."})
+        return jsonify(state)
+    except (OSError, ValueError):
+        return jsonify({"status": "idle"})
