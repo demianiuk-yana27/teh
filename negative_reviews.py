@@ -233,13 +233,21 @@ def check_prom_http_session(timeout=10):
 
 
 class PromBrowser:
-    def __init__(self):
+    def __init__(self, lightweight=False):
         options = webdriver.ChromeOptions()
-        options.add_argument("--headless=old")
+        options.add_argument("--headless=new" if lightweight else "--headless=old")
+        if lightweight:
+            options.page_load_strategy = "eager"
+            options.add_argument("--disable-background-networking")
+            options.add_argument("--disable-component-update")
+            options.add_experimental_option("prefs", {
+                "profile.managed_default_content_settings.images": 2,
+                "profile.default_content_setting_values.notifications": 2,
+            })
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
-        options.add_argument("--window-size=1400,900")
+        options.add_argument("--window-size=900,650" if lightweight else "--window-size=1400,900")
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--disable-extensions")
         options.add_argument("--no-first-run")
@@ -253,7 +261,8 @@ class PromBrowser:
             self.driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=options)
         else:
             self.driver = webdriver.Chrome(options=options)
-        self.wait = WebDriverWait(self.driver, 30)
+        self.lightweight = lightweight
+        self.wait = WebDriverWait(self.driver, 15 if lightweight else 30)
 
     def close(self):
         try:
@@ -267,7 +276,7 @@ class PromBrowser:
         cookies = _prom_session_cookies()
         if not cookies and not os.environ.get("PROM_PROFILE_PATH"):
             raise RuntimeError("На сервері немає cookies або профілю Prom.")
-        self.driver.set_page_load_timeout(25)
+        self.driver.set_page_load_timeout(10 if self.lightweight else 25)
         try:
             self.driver.get("https://prom.ua/")
         except Exception:
