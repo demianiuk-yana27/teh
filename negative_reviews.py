@@ -88,6 +88,38 @@ def load_active_shops(spreadsheet_id):
     return shops
 
 
+def _prom_session_cookies():
+    """Load the encrypted Cloudflare vault over TLS, or fall back to Render secret file."""
+    import json
+    import urllib.request
+    import urllib.parse
+
+    endpoint = os.environ.get("PROM_SESSION_VAULT_URL", "").strip()
+    token = os.environ.get("PROM_SESSION_MACHINE_TOKEN", "").strip()
+    if endpoint or token:
+        parsed = urllib.parse.urlsplit(endpoint)
+        if parsed.scheme != "https" or parsed.hostname != "teh-7rt.pages.dev" or parsed.path != "/prom-session":
+            raise RuntimeError("Неправильний PROM_SESSION_VAULT_URL: потрібен захищений endpoint Cloudflare.")
+        if not token:
+            raise RuntimeError("PROM_SESSION_MACHINE_TOKEN не налаштований на Render.")
+        req = urllib.request.Request(endpoint, headers={"Authorization": "Bearer " + token, "Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=12) as response:
+                data = json.load(response)
+        except Exception as exc:
+            raise RuntimeError("Не вдалося отримати сесію з Cloudflare; перевірте налаштування сховища.") from None
+        cookies = data.get("cookies")
+        if not isinstance(cookies, list):
+            raise RuntimeError("Cloudflare не повернув коректну сесію Prom.")
+        return cookies
+    path = _secret_path("prom_cookies.json")
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    return data if isinstance(data, list) else []
+
+
 def check_prom_http_session(timeout=10):
     """Read-only authentication preflight; never logs cookie values."""
     import json
@@ -96,14 +128,10 @@ def check_prom_http_session(timeout=10):
     import urllib.parse
     import urllib.error
 
-    path = _secret_path("prom_cookies.json")
-    if not os.path.isfile(path):
-        return False, "На сервері немає файлу сесії Prom."
     try:
-        with open(path, "r", encoding="utf-8") as fh:
-            items = json.load(fh)
-        if not isinstance(items, list):
-            return False, "Некоректний формат файлу сесії Prom."
+        items = _prom_session_cookies()
+        if not items:
+            return False, "На сервері немає сесії Prom."
         jar = http.cookiejar.CookieJar()
         count = 0
         for item in items:
@@ -178,7 +206,7 @@ class PromBrowser:
 
     def open_cms(self):
         authorized, message = check_prom_http_session()
-        if not authorized and os.path.isfile(_secret_path("prom_cookies.json")):
+        if not authorized and (os.environ.get("PROM_SESSION_VAULT_URL") or os.path.isfile(_secret_path("prom_cookies.json"))):
             raise RuntimeError(message)
         self.driver.set_page_load_timeout(15)
         self.driver.get(CMS_URL)
