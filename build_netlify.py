@@ -188,6 +188,14 @@ async function checkPromReviewsHttp(button){
        "; згадки відгуків/API/магазину/кабінету: "+[h.review_terms,h.api_terms,h.shop_terms,h.cabinet_terms].map(v=>v?"так":"ні").join("/")+
        (h.html_truncated?"; перевірено лише перші 120 КБ":"");
    }),
+   ...(d.results||[]).map(x=>{
+     const h=x.html_structure||{},a=h.auth_hints||{};
+     return x.type+" — авторизація (ознаки, не підтвердження): ID магазину "+(a.shop_id_pattern?"є":"немає")+
+       ", перемикач "+(a.shop_selector?"є":"немає")+", вихід "+(a.logout_marker?"є":"немає")+
+       ", маршрут відгуків "+(a.review_route_marker?"є":"немає")+
+       "; пропущено зовнішніх скриптів "+(h.excluded_script_tags??"—")+
+       " з "+(h.external_script_hosts_count??"—")+" інших доменів";
+   }),
    "HTML сторінок компанії та товарів: "+(d.html_identical?"однаковий":"відрізняється або порівняння недоступне"),
    ...(d.results||[]).map(x=>{
      const j=x.html_structure?.js_scan;
