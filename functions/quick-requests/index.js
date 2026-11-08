@@ -39,33 +39,31 @@ export async function onRequest({request,env,data}){
  const sheet=mode==='ttn'?'Зміни з ТТН':tab,book=BOOKS[mode],first=mode==='ttn'?'A':'B',last=mode==='ttn'?'G':'E';
  const now=new Date();
  const today=now.toLocaleDateString('en-CA',{timeZone:'Europe/Kyiv'});
- const time=now.toLocaleTimeString('uk-UA',{timeZone:'Europe/Kyiv',hour:'2-digit',minute:'2-digit',hour12:false});
- const dateLabel=now.toLocaleDateString('uk-UA',{timeZone:'Europe/Kyiv',day:'2-digit',month:'2-digit'})+' '+time;
  const isTech=mode==='requests'&&tab==='Тех';
- const rowValues=mode==='ttn'?[today,...values]:(isTech?[dateLabel,...values]:values);
+ const rowValues=mode==='ttn'?[today,...values]:values;
  try{
   const token=await accessToken(env);
   let updatedRange='';
   if(isTech){
     // The Tech worksheet has formatted dropdowns far below the last real entry.
     // Sheets append incorrectly jumps to those rows. Locate the next free row
-    // after the latest dated request in column A instead.
+    // after the latest populated row in columns A:E instead.
     const sheetRange="'"+sheet.replace(/'/g,"''")+"'!";
-    const existing=await google(token,book,sheetRange+'A2:D12000');
+    const existing=await google(token,book,sheetRange+'A2:E12000');
     const rows=existing.values||[];
-    let lastDated=1;
+    let lastFilled=1;
     for(let i=0;i<rows.length;i++){
-      const date=String(rows[i]?.[0]||'').trim();
-      if(/^\\d{1,2}[.\\/]\\d{1,2}(?:[.\\/]\\d{2,4})?(?:\\s|$)/.test(date))lastDated=i+2;
+      const cells=rows[i]||[];
+      if(cells.slice(0,5).some(v=>String(v??'').trim()))lastFilled=i+2;
     }
-    let target=lastDated+1;
+    let target=lastFilled+1;
     while(target<=12000){
       const cells=rows[target-2]||[];
-      if([0,1,2,3].every(i=>!String(cells[i]??'').trim()))break;
+      if([0,1,2,3,4].every(i=>!String(cells[i]??'').trim()))break;
       target++;
     }
     if(target>12000)throw Error('Не знайдено вільного рядка у вкладці Тех');
-    const range=sheetRange+'A'+target+':E'+target;
+    const range=sheetRange+'B'+target+':E'+target;
     const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(book)+'/values/'+encodeURIComponent(range)+'?valueInputOption=USER_ENTERED';
     const r=await fetch(url,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({majorDimension:'ROWS',values:[rowValues]})});
     const d=await r.json().catch(()=>({}));
