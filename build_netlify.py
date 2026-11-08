@@ -185,7 +185,14 @@ async function checkNegativeSystemHealth(button){
    "Час роботи системи: "+Math.round((d.system_uptime_seconds||0)/60)+" хв",
    "ID запуску системи: "+(d.instance_boot_id||"невідомо"),
    "Останній тест: "+(p.status||"невідомо")+" / "+(p.stage||p.message||"—"),
-   "Події пам’яті: "+(m.events||"недоступні")
+   "Події пам’яті: "+(m.events||"недоступні"),
+   "— Заміри останнього тесту —",
+   ...((d.probe_metrics||[]).length ? [
+     "Кількість замірів: "+d.probe_metrics.length,
+     "Пік пам’яті: "+Math.max(...d.probe_metrics.map(x=>x.memory_mb||0)).toFixed(1)+" МБ",
+     "Пік процесів Chromium: "+Math.max(...d.probe_metrics.map(x=>x.chromium||0)),
+     ...d.probe_metrics.slice(-12).map(x=>x.seconds+" с: "+(x.memory_mb??"—")+" МБ, Chromium "+x.chromium)
+   ] : ["Замірів ще немає"])
   ].join("\\n");
  }catch(e){out.textContent="❌ Не вдалося отримати стан сервера: "+e.message}
  finally{button.disabled=false}
