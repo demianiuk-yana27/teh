@@ -103,7 +103,7 @@ def _prom_session_cookies():
             raise RuntimeError("Неправильний PROM_SESSION_VAULT_URL: потрібен захищений endpoint Cloudflare.")
         if not token:
             raise RuntimeError("PROM_SESSION_MACHINE_TOKEN не налаштований на Render.")
-        req = urllib.request.Request(endpoint, headers={"Authorization": "Bearer " + token, "Accept": "application/json"})
+        req = urllib.request.Request(endpoint, headers={"Authorization": "Bearer " + token, "Accept": "application/json", "User-Agent": "Asteril-Prom-Session-Reader/1.0"})
         try:
             with urllib.request.urlopen(req, timeout=12) as response:
                 data = json.load(response)
