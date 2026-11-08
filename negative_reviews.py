@@ -217,30 +217,28 @@ class PromBrowser:
         self.dismiss_dialogs()
 
     def _load_cookies_if_available(self):
-        cookie_path = _secret_path("prom_cookies.json")
-        if not os.path.exists(cookie_path):
+        cookies = _prom_session_cookies()
+        if not cookies:
             return
-        import json
-        try:
-            with open(cookie_path, "r", encoding="utf-8") as fh:
-                cookies = json.load(fh)
-            added = 0
-            for cookie in cookies:
-                clean = dict(cookie)
-                clean.pop("sameSite", None)
-                clean.pop("storeId", None)
-                clean.pop("hostOnly", None)
-                clean.pop("session", None)
+        added = 0
+        for cookie in cookies:
+            clean = dict(cookie)
+            for key in ("sameSite", "storeId", "hostOnly", "session", "expirationDate", "partitionKey"):
+                clean.pop(key, None)
+            if "expirationDate" in cookie and "expiry" not in clean:
                 try:
-                    self.driver.add_cookie(clean)
-                    added += 1
-                except Exception:
+                    clean["expiry"] = int(cookie["expirationDate"])
+                except (ValueError, TypeError):
                     pass
-            if added:
-                self.driver.refresh()
-                time.sleep(2)
-        except Exception:
-            pass
+            try:
+                self.driver.add_cookie(clean)
+                added += 1
+            except Exception:
+                continue
+        if not added:
+            raise RuntimeError("Не вдалося встановити cookies Prom у Chromium.")
+        self.driver.refresh()
+        time.sleep(2)
 
     def dismiss_dialogs(self):
         for text in ("Закрити", "Зрозуміло", "Пізніше", "Не зараз", "Пропустити"):
