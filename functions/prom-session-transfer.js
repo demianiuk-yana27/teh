@@ -8,6 +8,7 @@ async function key(env){const raw=Uint8Array.from(atob(env.PROM_SESSION_ENCRYPTI
 export async function onRequest({request,env,data}){
  const method=request.method;
  if(!env.TASKS_DB)return json({error:'D1 binding missing'},503);
+ let stage='database initialization';
  try{
   const db=env.TASKS_DB;
   await db.prepare('CREATE TABLE IF NOT EXISTS prom_session_transfer (id INTEGER PRIMARY KEY CHECK(id=1), token_hash TEXT NOT NULL, expires_at INTEGER NOT NULL)').run();
@@ -29,14 +30,20 @@ export async function onRequest({request,env,data}){
   // Consume the one-time code atomically, before processing the sensitive payload.
   const consumed=await db.prepare('DELETE FROM prom_session_transfer WHERE id=1 AND token_hash=? AND expires_at>?').bind(digest,Date.now()).run();
   if(consumed.meta?.changes!==1)return json({error:'code expired or used'},401);
+  stage='reading upload';
   const raw=await request.text();
   if(raw.length>150000)return json({error:'payload too large'},413);
   let payload;try{payload=JSON.parse(raw)}catch{return json({error:'invalid json'},400)}
   if(!cookiesValid(payload.cookies))return json({error:'invalid cookies'},400);
+  stage='encryption key';
+  const encryptionKey=await key(env);
+  stage='encrypting session';
   const iv=crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},await key(env),bytes.encode(JSON.stringify(payload.cookies))));
+  const ciphertext=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},encryptionKey,bytes.encode(JSON.stringify(payload.cookies))));
+  stage='vault table';
   await db.prepare('CREATE TABLE IF NOT EXISTS prom_session_vault (id INTEGER PRIMARY KEY CHECK(id=1), nonce TEXT NOT NULL, ciphertext TEXT NOT NULL, updated_at TEXT NOT NULL)').run();
+  stage='saving encrypted session';
   await db.prepare('INSERT INTO prom_session_vault(id,nonce,ciphertext,updated_at) VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET nonce=excluded.nonce,ciphertext=excluded.ciphertext,updated_at=excluded.updated_at').bind(b64(iv),b64(ciphertext),new Date().toISOString()).run();
   return json({stored:true,verified:false,cookie_count:payload.cookies.length});
- }catch{return json({error:'vault unavailable'},503)}
+ }catch(e){console.error('Prom transfer failed at stage:',stage, e?.name||'Error');return json({error:'vault unavailable',stage},503)}
 }
