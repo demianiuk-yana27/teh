@@ -523,18 +523,16 @@ def _negative_diagnostic_checks(sheet_id,run_id):
             checks.append({"name":"Prom / cookies до навігації","ok":bool(_prom_allowed) or profile_exists,"message":"Cookies для домену Prom встановлено до відкриття сайту" if _prom_allowed else ("Використовується профіль Chromium" if profile_exists else "У файлі немає cookies для домену Prom")})
         except Exception:
             checks.append({"name":"Prom / cookies до навігації","ok":False,"message":"Не вдалося застосувати cookies (секретні дані приховано)"})
-        progress("Відкриваємо Prom з обмеженням очікування",checks)
+        progress("Перевіряємо авторизацію Prom у Chromium",checks)
         try:
-            browser.driver.set_page_load_timeout(10)
-            browser.driver.execute_cdp_cmd("Page.enable", {})
-            browser.driver.execute_cdp_cmd("Page.navigate", {"url":"https://my.prom.ua/cms/"})
-            import time as _prom_time
-            _prom_time.sleep(3)
-            _prom_current = browser.driver.current_url
-            _prom_authorized = _prom_current.startswith("https://my.prom.ua/cms/") and "/sign-in" not in _prom_current
-            checks.append({"name":"Prom / навігація після cookies","ok":_prom_authorized,"message":("Кабінет відкрито; доступ до даних ще не перевірено" if _prom_authorized else "Кабінет не підтверджено; поточна адреса: "+_prom_current[:150])})
+            # Use the same navigation as the actual exporter, including Cloudflare vault.
+            # The older diagnostic used a 10-second WebDriver call that often timed out
+            # before it could inspect the browser.
+            browser.open_cms()
+            checks.append({"name":"Prom / навігація після cookies","ok":True,"message":"Chromium відкрив кабінет; доступ до відгуків ще не перевірено"})
         except Exception as exc:
-            checks.append({"name":"Prom / навігація після cookies","ok":False,"message":str(exc).split("Stacktrace:")[0][:180]})
+            _prom_error = str(exc).split("Stacktrace:")[0].strip()[:180]
+            checks.append({"name":"Prom / навігація після cookies","ok":False,"message":_prom_error or type(exc).__name__})
 
     except Exception as exc:
         checks.append({"name":"Chromium / запуск або тест","ok":False,"message":str(exc).split("Stacktrace:")[0][:220]})
