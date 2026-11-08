@@ -37,16 +37,49 @@ export async function onRequest({request,env,data}){
  if(mode==='requests'&&tab!=='Опт/дроп'&&!TAGS[tab].includes(values[3]))return json({error:'Невірна мітка'},400);
  if(mode==='ttn'&&(!ERROR_TYPES.includes(values[4])||!CHANGE_TYPES.includes(values[5])))return json({error:'Невірна категорія зміни'},400);
  const sheet=mode==='ttn'?'Зміни з ТТН':tab,book=BOOKS[mode],first=mode==='ttn'?'A':'B',last=mode==='ttn'?'G':'E';
- const today=new Date().toLocaleDateString('en-CA',{timeZone:'Europe/Kyiv'});
- const rowValues=mode==='ttn'?[today,...values]:values;
+ const now=new Date();
+ const today=now.toLocaleDateString('en-CA',{timeZone:'Europe/Kyiv'});
+ const time=now.toLocaleTimeString('uk-UA',{timeZone:'Europe/Kyiv',hour:'2-digit',minute:'2-digit',hour12:false});
+ const dateLabel=now.toLocaleDateString('uk-UA',{timeZone:'Europe/Kyiv',day:'2-digit',month:'2-digit'})+' '+time;
+ const isTech=mode==='requests'&&tab==='Тех';
+ const rowValues=mode==='ttn'?[today,...values]:(isTech?[dateLabel,...values]:values);
  try{
   const token=await accessToken(env);
-  // append is atomic on the Sheets API side; no race between managers finding the next row.
-  const range="'"+sheet.replace(/'/g,"''")+"'!"+first+'2:'+last;
-  const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(book)+'/values/'+encodeURIComponent(range)+':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
-  const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({majorDimension:'ROWS',values:[rowValues]})});
-  const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error?.message||'Google Sheets HTTP '+r.status);
-  const updatedRange=d.updates?.updatedRange||'';
+  let updatedRange='';
+  if(isTech){
+    // The Tech worksheet has formatted dropdowns far below the last real entry.
+    // Sheets append incorrectly jumps to those rows. Locate the next free row
+    // after the latest dated request in column A instead.
+    const sheetRange="'"+sheet.replace(/'/g,"''")+"'!";
+    const existing=await google(token,book,sheetRange+'A2:D12000');
+    const rows=existing.values||[];
+    let lastDated=1;
+    for(let i=0;i<rows.length;i++){
+      const date=String(rows[i]?.[0]||'').trim();
+      if(/^\\d{1,2}[.\\/]\\d{1,2}(?:[.\\/]\\d{2,4})?(?:\\s|$)/.test(date))lastDated=i+2;
+    }
+    let target=lastDated+1;
+    while(target<=12000){
+      const cells=rows[target-2]||[];
+      if([0,1,2,3].every(i=>!String(cells[i]??'').trim()))break;
+      target++;
+    }
+    if(target>12000)throw Error('Не знайдено вільного рядка у вкладці Тех');
+    const range=sheetRange+'A'+target+':E'+target;
+    const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(book)+'/values/'+encodeURIComponent(range)+'?valueInputOption=USER_ENTERED';
+    const r=await fetch(url,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({majorDimension:'ROWS',values:[rowValues]})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw Error(d.error?.message||'Google Sheets HTTP '+r.status);
+    updatedRange=d.updatedRange||range;
+  }else{
+    // Preserve existing layouts for other tabs until their column schemas are verified.
+    const range="'"+sheet.replace(/'/g,"''")+"'!"+first+'2:'+last;
+    const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(book)+'/values/'+encodeURIComponent(range)+':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
+    const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({majorDimension:'ROWS',values:[rowValues]})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw Error(d.error?.message||'Google Sheets HTTP '+r.status);
+    updatedRange=d.updates?.updatedRange||'';
+  }
   // Never claim success without a concrete destination and a read-after-write check.
   if(!updatedRange)return json({ok:false,unverified:true,sheetName:sheet,message:'Google прийняв запит, але не повідомив, у які клітинки його записано. Перевірте таблицю перед повторним надсиланням.'},202);
   try{
