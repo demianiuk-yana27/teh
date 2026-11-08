@@ -20,10 +20,9 @@ def main():
     browser = None
     try:
         from negative_reviews import PromBrowser, load_active_shops, COMPANY_REVIEWS_URL, PRODUCT_REVIEWS_URL
-        sheet_id = os.environ.get("NEGATIVE_SHEET_ID") or os.environ.get("SPREADSHEET_ID")
+        sheet_id = (os.environ.get("REVIEW_PROBE_SHEET_ID") or os.environ.get("SHEET_ID") or os.environ.get("PROM_SHEET_ID") or "").strip()
         if not sheet_id:
-            from webapp import _sheet_id
-            sheet_id = _sheet_id()
+            raise RuntimeError("Не задано ID таблиці для перевірки відгуків")
         write(status="running", stage="Завантажуємо список магазинів")
         shops = load_active_shops(sheet_id)
         if not shops:
