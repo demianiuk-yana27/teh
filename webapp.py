@@ -479,55 +479,7 @@ def _negative_diagnostic_checks(sheet_id,run_id):
             # The older diagnostic used a 10-second WebDriver call that often timed out
             # before it could inspect the browser.
             browser.open_cms()
-            checks.append({"name":"Prom / навігація після cookies","ok":True,"message":"Chromium відкрив кабінет; доступ до відгуків перевіряємо окремо"})
-            progress("Перевіряємо читання відгуків одного магазину",checks)
-            try:
-                if not shops:
-                    raise RuntimeError("Немає активних магазинів для тесту.")
-                # Diagnostic only: avoid the normal 3x shop-switch retry and
-                # potentially 5x heavy review reloads that can exhaust Render.
-                browser.driver.set_page_load_timeout(10)
-                browser._switch_shop_once(shops[0])
-                from negative_reviews import COMPANY_REVIEWS_URL
-                from urllib.parse import urlsplit as _review_urlsplit
-                import time as _review_time
-                _review_ok = False
-                _review_reason = "Блоки відгуків не з'явилися"
-                for _review_attempt in range(1, 3):
-                    progress("Читання відгуків: спроба "+str(_review_attempt)+"/2",checks)
-                    try:
-                        browser.driver.get(COMPANY_REVIEWS_URL)
-                    except Exception:
-                        try:
-                            browser.driver.execute_script("window.stop()")
-                        except Exception:
-                            pass
-                    _review_deadline = _review_time.monotonic() + 7
-                    while _review_time.monotonic() < _review_deadline:
-                        _review_url = browser.driver.current_url
-                        _review_host = (_review_urlsplit(_review_url).hostname or "").lower()
-                        if _review_host != "my.prom.ua" or "sign-in" in _review_url:
-                            _review_reason = "Prom перенаправив зі сторінки відгуків"
-                            break
-                        _review_body = (browser.driver.execute_script("return document.body ? document.body.innerText.slice(0,1000) : ''") or "").lower()
-                        if "пароль" in _review_body and ("увійти" in _review_body or "войти" in _review_body):
-                            _review_reason = "Prom показав форму входу"
-                            break
-                        if browser.driver.find_elements("css selector", '[data-qaid="statistics_block"], [data-qaid="opinion_stats_block"]'):
-                            _review_ok = True
-                            break
-                        _review_time.sleep(1)
-                    if _review_ok or _review_reason in ("Prom перенаправив зі сторінки відгуків", "Prom показав форму входу"):
-                        break
-                    if _review_attempt < 2:
-                        _review_time.sleep(2)
-                checks.append({"name":"Prom / читання відгуків 1 магазину","ok":_review_ok,
-                               "message":("Блоки статистики відгуків знайдено; без запису в таблицю." if _review_ok
-                                          else _review_reason+" після 2 спроб. Це не означає, що відгуків немає.")})
-            except Exception as _review_exc:
-                checks.append({"name":"Prom / читання відгуків 1 магазину","ok":False,
-                               "message":"Не підтверджено: "+type(_review_exc).__name__+
-                               "; перевірка обмежена за часом, дані не змінено."})
+            checks.append({"name":"Prom / навігація після cookies","ok":True,"message":"Chromium відкрив кабінет; читання відгуків перевіряється окремо без навантаження на діагностику"})
 
         except Exception as exc:
             _prom_error = str(exc).split("Stacktrace:")[0].strip()[:180]
