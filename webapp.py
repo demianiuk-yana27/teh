@@ -563,12 +563,36 @@ def start_review_probe():
             _probe_json.dump(state, f)
         probe_env = _diag_os.environ.copy()
         probe_env["REVIEW_PROBE_SHEET_ID"] = _sheet_id()
-        _probe_subprocess.Popen(
+        probe_process = _probe_subprocess.Popen(
             [_probe_sys.executable, "-m", "review_read_probe"],
             stdin=_probe_subprocess.DEVNULL, stdout=_probe_subprocess.DEVNULL,
             stderr=_probe_subprocess.DEVNULL, close_fds=True, start_new_session=True,
             cwd=_diag_os.path.dirname(__file__) or ".", env=probe_env,
         )
+        def _probe_watchdog(process):
+            import signal as _probe_signal
+            try:
+                process.wait(timeout=90)
+            except _probe_subprocess.TimeoutExpired:
+                try:
+                    _diag_os.killpg(process.pid, _probe_signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                try:
+                    with open(state_path, encoding="utf-8") as f:
+                        latest = _probe_json.load(f)
+                    if latest.get("status") == "running":
+                        latest.update(status="error", message="Тест зупинено після 90 секунд. Chromium не завершився вчасно.")
+                        with open(state_path + ".watchdog", "w", encoding="utf-8") as f:
+                            _probe_json.dump(latest, f, ensure_ascii=False)
+                        _diag_os.replace(state_path + ".watchdog", state_path)
+                except (OSError, ValueError):
+                    pass
+                try:
+                    _diag_os.unlink(lock)
+                except FileNotFoundError:
+                    pass
+        threading.Thread(target=_probe_watchdog, args=(probe_process,), daemon=True).start()
         return jsonify(state), 202
     except Exception:
         try:
