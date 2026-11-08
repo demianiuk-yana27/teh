@@ -814,10 +814,29 @@ def negative_http_reviews_probe():
                     redirect_host = urllib.parse.urlsplit(urllib.parse.urljoin(url, location)).hostname if location else None
                     review_markup = any(x in body for x in ('statistics_block', 'opinion_stats_block', 'data-qaid="opinion', 'data-qaid="review'))
                     login_markup = ("пароль" in body or "password" in body) and ("увійти" in body or "войти" in body or "login" in body)
+                    import re as _re
+                    # Structural signals only: never return HTML, script URLs, JSON, tokens or personal data.
+                    script_tags = _re.findall(r"<script\b[^>]*>", body)
+                    external_scripts = sum("src=" in tag for tag in script_tags)
+                    json_scripts = sum("application/json" in tag or "application/ld+json" in tag for tag in script_tags)
+                    structure = {
+                        "scripts_total": len(script_tags),
+                        "scripts_external": external_scripts,
+                        "json_scripts": json_scripts,
+                        "next_state": "__next_data__" in body,
+                        "nuxt_state": "__nuxt__" in body,
+                        "initial_state": "__initial_state__" in body or "__preloaded_state__" in body,
+                        "review_terms": any(term in body for term in ("review", "opinion", "відгук", "отзыв")),
+                        "api_terms": any(term in body for term in ("/api/", "graphql", "fetch(", "axios")),
+                        "shop_terms": any(term in body for term in ("company_id", "companyid", "shop_id", "shopid")),
+                        "cabinet_terms": any(term in body for term in ("cabinet", "кабінет", "кабинет")),
+                        "html_truncated": len(body.encode("utf-8")) >= 120000,
+                    }
                     results.append({"type": name, "http": code, "content_type": mime,
                                     "review_markup": review_markup, "login_markup": login_markup,
                                     "redirect": "prom" if redirect_host in ("my.prom.ua", "prom.ua") else ("other" if redirect_host else "none"),
-                                    "body_checked_bytes": min(len(body.encode("utf-8")), 120000)})
+                                    "body_checked_bytes": min(len(body.encode("utf-8")), 120000),
+                                    "html_structure": structure})
             except (OSError, TimeoutError, ValueError) as exc:
                 results.append({"type": name, "error": type(exc).__name__})
         return jsonify({"status": "ok", "results": results,
