@@ -797,6 +797,30 @@ def negative_http_reviews_probe():
         results = []
         asset_cache = {}
         html_fingerprints = []
+        # Cookie/no-cookie comparison is read-only and never returns body content.
+        # Compare normalized markup to avoid incidental session-dependent tokens.
+        def _anonymous_snapshot(target):
+            req = urllib.request.Request(target, headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml",
+            })
+            try:
+                anon = urllib.request.build_opener(NoRedirect())
+                try:
+                    response = anon.open(req, timeout=5)
+                except urllib.error.HTTPError as exc:
+                    response = exc
+                with response:
+                    status = response.code
+                    content = response.read(120000).decode("utf-8", "replace") if status == 200 else ""
+                    return status, content
+            except (OSError, ValueError, TimeoutError):
+                return None, ""
+        def _normalized_markup(value):
+            import re
+            value = re.sub(r"<script\b[^>]*>.*?</script>", "", value, flags=re.I | re.S)
+            value = re.sub(r"\s+", " ", value)
+            return value.strip()
         for name, url in (("Компанія", COMPANY_REVIEWS_URL), ("Товари", PRODUCT_REVIEWS_URL)):
             request_obj = urllib.request.Request(url, headers={
                 "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
@@ -814,6 +838,19 @@ def negative_http_reviews_probe():
                     body = response.read(120000).decode("utf-8", "replace").lower() if code == 200 else ""
                     location = response.headers.get("Location", "")
                     redirect_host = urllib.parse.urlsplit(urllib.parse.urljoin(url, location)).hostname if location else None
+                    anon_status, anon_body = _anonymous_snapshot(url)
+                    import difflib as _difflib
+                    normalized_auth = _normalized_markup(body)
+                    normalized_anon = _normalized_markup(anon_body.lower())
+                    similarity = (_difflib.SequenceMatcher(
+                        None, normalized_auth[:20000], normalized_anon[:20000],
+                        autojunk=True).ratio() if code == 200 and anon_status == 200 else None)
+                    cookie_comparison = {
+                        "anonymous_http": anon_status,
+                        "same_markup": normalized_auth == normalized_anon if similarity is not None else None,
+                        "similarity_percent": round(similarity * 100) if similarity is not None else None,
+                        "comparison_limit": "first 120 KB, normalized, scripts removed",
+                    }
                     review_markup = any(x in body for x in ('statistics_block', 'opinion_stats_block', 'data-qaid="opinion', 'data-qaid="review'))
                     login_markup = ("пароль" in body or "password" in body) and ("увійти" in body or "войти" in body or "login" in body)
                     import re as _re
@@ -923,7 +960,7 @@ def negative_http_reviews_probe():
                                     "review_markup": review_markup, "login_markup": login_markup,
                                     "redirect": "prom" if redirect_host in ("my.prom.ua", "prom.ua") else ("other" if redirect_host else "none"),
                                     "body_checked_bytes": min(len(body.encode("utf-8")), 120000),
-                                    "html_structure": structure})
+                                    "html_structure": structure, "cookie_comparison": cookie_comparison})
             except (OSError, TimeoutError, ValueError) as exc:
                 results.append({"type": name, "error": type(exc).__name__})
         return jsonify({"status": "ok", "results": results,
