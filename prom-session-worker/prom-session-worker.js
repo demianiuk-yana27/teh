@@ -21,7 +21,7 @@ export default {
     const raw=await request.text();if(raw.length>150000)return reply({error:"payload too large"},413);
     const data=JSON.parse(raw);
     if(!Array.isArray(data.cookies)||!data.cookies.length||data.cookies.length>250||
-       !data.cookies.every(c=>c&&typeof c.name==="string"&&typeof c.value==="string"&&typeof c.domain==="string"&&/(^|\\.)prom\\.ua$/i.test(c.domain.replace(/^\\./,"")))||
+       !data.cookies.every(c=>c&&typeof c.name==="string"&&typeof c.value==="string"&&typeof c.domain==="string"&&/(^|\.)prom\.ua$/i.test(c.domain.replace(/^\./,"")))||
        typeof data.machineToken!=="string"||data.machineToken.length<24)return reply({error:"invalid payload"},400);
     const cryptoKey=await key(env),nonce=crypto.getRandomValues(new Uint8Array(12));
     const cipher=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv:nonce},cryptoKey,enc.encode(JSON.stringify(data.cookies))));
@@ -32,7 +32,7 @@ export default {
    }catch(e){console.error("Migration failed:",e?.name||"Error");return reply({error:"migration unavailable"},503);}
   }
   if(request.method!=="GET"||url.pathname!=="/prom-session"||url.search)return reply({error:"not found"},404);
-  const match=(request.headers.get("Authorization")||"").match(/^Bearer ([^\\s]+)$/i);
+  const match=(request.headers.get("Authorization")||"").match(/^Bearer ([^\s]+)$/i);
   if(!match)return reply({error:"unauthorized"},401);
   try{
    await init(env.TASKS_DB);
