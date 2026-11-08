@@ -180,6 +180,14 @@ async function checkPromReviewsHttp(button){
   out.textContent=[
    "🌐 HTTP-перевірка завершена",
    ...(d.results||[]).map(x=>x.type+": "+(x.error||("HTTP "+x.http+", "+x.content_type+", HTML-маркери відгуків: "+(x.review_markup?"так":"ні")+", форма входу: "+(x.login_markup?"так":"ні")+", redirect: "+x.redirect))),
+   ...(d.results||[]).map(x=>{
+     const h=x.html_structure;
+     if(!h)return x.type+": структура недоступна";
+     return x.type+" — структура HTML: скриптів "+h.scripts_total+" (зовнішніх "+h.scripts_external+"), JSON-скриптів "+h.json_scripts+
+       "; Next/Nuxt/State: "+[h.next_state,h.nuxt_state,h.initial_state].map(v=>v?"так":"ні").join("/")+
+       "; згадки відгуків/API/магазину/кабінету: "+[h.review_terms,h.api_terms,h.shop_terms,h.cabinet_terms].map(v=>v?"так":"ні").join("/")+
+       (h.html_truncated?"; перевірено лише перші 120 КБ":"");
+   }),
    "⚠️ "+d.note
   ].join("\\n");
  }catch(e){out.textContent="❌ "+e.message}
