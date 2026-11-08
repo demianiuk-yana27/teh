@@ -795,6 +795,8 @@ def negative_http_reviews_probe():
                 return None
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect())
         results = []
+        asset_cache = {}
+        html_fingerprints = []
         for name, url in (("Компанія", COMPANY_REVIEWS_URL), ("Товари", PRODUCT_REVIEWS_URL)):
             request_obj = urllib.request.Request(url, headers={
                 "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
@@ -832,7 +834,9 @@ def negative_http_reviews_probe():
                         "cabinet_terms": any(term in body for term in ("cabinet", "кабінет", "кабинет")),
                         "html_truncated": len(body.encode("utf-8")) >= 120000,
                     }
-                    # Scan at most three same-origin JS assets, with no cookies.
+                    import hashlib as _hashlib
+                    html_fingerprints.append(_hashlib.sha256(body.encode("utf-8")).hexdigest())
+                    # Scan up to nine same-origin JS assets without cookies; reuse results.
                     # Do not expose asset URLs, API paths, query strings or JS contents.
                     js_scan = {"checked": 0, "review_assets": 0, "api_assets": 0,
                                "fetch_assets": 0, "review_api_assets": 0, "errors": 0}
@@ -849,7 +853,16 @@ def negative_http_reviews_probe():
                             continue
                         asset_urls.append(candidate)
                     anonymous = urllib.request.build_opener(NoRedirect())
-                    for asset_url in asset_urls[:3]:
+                    js_scan["eligible_assets"] = len(asset_urls)
+                    js_scan["skipped_assets"] = max(0, len(asset_urls) - 9)
+                    for asset_url in asset_urls[:9]:
+                        if asset_url in asset_cache:
+                            cached = asset_cache[asset_url]
+                            for key, value in cached.items():
+                                js_scan[key] += value
+                            continue
+                        asset_result = {"checked": 0, "review_assets": 0, "api_assets": 0,
+                                        "fetch_assets": 0, "review_api_assets": 0, "errors": 0}
                         try:
                             req = urllib.request.Request(asset_url, headers={
                                 "User-Agent": "Mozilla/5.0",
@@ -857,23 +870,27 @@ def negative_http_reviews_probe():
                             })
                             with anonymous.open(req, timeout=3) as js_response:
                                 if js_response.status != 200:
-                                    js_scan["errors"] += 1
+                                    asset_result["errors"] += 1
                                     continue
                                 js_type = (js_response.headers.get("Content-Type") or "").lower()
                                 if not any(x in js_type for x in ("javascript", "text/plain", "application/octet-stream")):
                                     js_scan["errors"] += 1
                                     continue
-                                js_body = js_response.read(150001)[:150000].decode("utf-8", "replace").lower()
-                            js_scan["checked"] += 1
+                                js_body = js_response.read(250001)[:250000].decode("utf-8", "replace").lower()
+                            asset_result["checked"] += 1
                             has_review = any(x in js_body for x in ("review", "opinion", "відгук", "отзыв"))
                             has_api = any(x in js_body for x in ("/api/", "graphql", "api/v"))
                             has_fetch = any(x in js_body for x in ("fetch(", "axios", "xmlhttprequest"))
-                            js_scan["review_assets"] += int(has_review)
-                            js_scan["api_assets"] += int(has_api)
-                            js_scan["fetch_assets"] += int(has_fetch)
-                            js_scan["review_api_assets"] += int(has_review and has_api)
+                            asset_result["review_assets"] += int(has_review)
+                            asset_result["api_assets"] += int(has_api)
+                            asset_result["fetch_assets"] += int(has_fetch)
+                            asset_result["review_api_assets"] += int(has_review and has_api)
                         except (OSError, ValueError, TimeoutError, urllib.error.HTTPError):
-                            js_scan["errors"] += 1
+                            asset_result["errors"] += 1
+                        finally:
+                            asset_cache[asset_url] = asset_result
+                            for key, value in asset_result.items():
+                                js_scan[key] += value
                     structure["js_scan"] = js_scan
                     results.append({"type": name, "http": code, "content_type": mime,
                                     "review_markup": review_markup, "login_markup": login_markup,
@@ -883,6 +900,7 @@ def negative_http_reviews_probe():
             except (OSError, TimeoutError, ValueError) as exc:
                 results.append({"type": name, "error": type(exc).__name__})
         return jsonify({"status": "ok", "results": results,
+                        "html_identical": len(html_fingerprints) == 2 and html_fingerprints[0] == html_fingerprints[1],
                         "note": "HTTP-тест не перемикає магазин. Дані можуть належати поточному магазину сесії, а не Ладно. HTTP 200 не доводить авторизацію або читання відгуків."})
     except Exception:
         return jsonify({"status": "error", "message": "Не вдалося отримати або перевірити HTTP-сесію Prom. Секретні дані не показуються."})
