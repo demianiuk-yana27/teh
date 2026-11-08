@@ -40,7 +40,7 @@ def main():
         if shop is None:
             raise RuntimeError('Тестовий магазин Ладно не знайдено серед активних магазинів у Списку магазинів')
         write(status="running", stage="Відкриваємо Prom", shop=shop.name)
-        browser = PromBrowser()
+        browser = PromBrowser(lightweight=True)
         browser.driver.set_page_load_timeout(12)
         write(status="running", stage="Завантажуємо cookies та відкриваємо кабінет", shop=shop.name)
         browser.open_cms()
