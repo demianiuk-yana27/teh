@@ -205,31 +205,52 @@ class PromBrowser:
             pass
 
     def open_cms(self):
-        authorized, message = check_prom_http_session()
-        if not authorized and (os.environ.get("PROM_SESSION_VAULT_URL") or os.path.isfile(_secret_path("prom_cookies.json"))):
-            raise RuntimeError(message)
-        self.driver.set_page_load_timeout(15)
-        self.driver.get(CMS_URL)
+        # HTTP preflight can be redirected by Prom anti-bot protections even when
+        # a browser session works. Browser navigation is the authoritative test.
+        cookies = _prom_session_cookies()
+        if not cookies and not os.environ.get("PROM_PROFILE_PATH"):
+            raise RuntimeError("На сервері немає cookies або профілю Prom.")
+        self.driver.set_page_load_timeout(25)
+        try:
+            self.driver.get("https://prom.ua/")
+        except Exception:
+            # A page-load timeout may leave a usable document and cookie domain.
+            try:
+                self.driver.execute_script("window.stop()")
+            except Exception:
+                pass
+        self._load_cookies_if_available(cookies)
+        try:
+            self.driver.get(CMS_URL)
+        except Exception:
+            try:
+                self.driver.execute_script("window.stop()")
+            except Exception:
+                pass
         time.sleep(2)
-        self._load_cookies_if_available()
-        if "my.prom.ua" not in self.driver.current_url:
-            raise RuntimeError("Сесія Prom не авторизована. Додайте профіль або cookies Prom у тестовий Render.")
+        url = self.driver.current_url
+        if "my.prom.ua/cms/" not in url:
+            raise RuntimeError("Prom не підтвердив вхід через Chromium; поточна сторінка не є кабінетом.")
+        # URL alone does not prove authenticated access: check for login redirects.
+        body = (self.driver.execute_script("return document.body ? document.body.innerText.slice(0,3000) : ''") or "").lower()
+        if ("увійти" in body or "войти" in body) and ("пароль" in body or "password" in body):
+            raise RuntimeError("Prom показує форму входу замість кабінету.")
         self.dismiss_dialogs()
 
-    def _load_cookies_if_available(self):
-        cookies = _prom_session_cookies()
+    def _load_cookies_if_available(self, cookies=None):
+        cookies = _prom_session_cookies() if cookies is None else cookies
         if not cookies:
             return
         added = 0
         for cookie in cookies:
-            clean = dict(cookie)
-            for key in ("sameSite", "storeId", "hostOnly", "session", "expirationDate", "partitionKey"):
-                clean.pop(key, None)
+            clean = {k: cookie[k] for k in ("name", "value", "domain", "path", "secure", "httpOnly", "sameSite", "expiry") if k in cookie}
             if "expirationDate" in cookie and "expiry" not in clean:
                 try:
                     clean["expiry"] = int(cookie["expirationDate"])
                 except (ValueError, TypeError):
                     pass
+            if clean.get("sameSite") not in ("Strict", "Lax", "None"):
+                clean.pop("sameSite", None)
             try:
                 self.driver.add_cookie(clean)
                 added += 1
@@ -237,8 +258,6 @@ class PromBrowser:
                 continue
         if not added:
             raise RuntimeError("Не вдалося встановити cookies Prom у Chromium.")
-        self.driver.refresh()
-        time.sleep(2)
 
     def dismiss_dialogs(self):
         for text in ("Закрити", "Зрозуміло", "Пізніше", "Не зараз", "Пропустити"):
