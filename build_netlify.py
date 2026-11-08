@@ -188,6 +188,15 @@ async function checkPromReviewsHttp(button){
        "; згадки відгуків/API/магазину/кабінету: "+[h.review_terms,h.api_terms,h.shop_terms,h.cabinet_terms].map(v=>v?"так":"ні").join("/")+
        (h.html_truncated?"; перевірено лише перші 120 КБ":"");
    }),
+   ...(d.results||[]).map(x=>{
+     const j=x.html_structure?.js_scan;
+     return j ? x.type+" — JS-файли: перевірено "+j.checked+
+       ", зі згадками відгуків "+j.review_assets+
+       ", API "+j.api_assets+
+       ", fetch/axios "+j.fetch_assets+
+       ", відгуки+API "+j.review_api_assets+
+       ", помилок "+j.errors : x.type+" — JS-перевірка недоступна";
+   }),
    "⚠️ "+d.note
   ].join("\\n");
  }catch(e){out.textContent="❌ "+e.message}
