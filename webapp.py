@@ -756,3 +756,71 @@ def negative_system_health():
         "probe_metrics": metrics[-100:],
         "probe": {k: probe.get(k) for k in ("status", "stage", "updated_at", "message", "shop") if k in probe},
     })
+
+@app.route("/negative/http-reviews-probe", methods=["GET"])
+def negative_http_reviews_probe():
+    """Read-only HTTP capability test; never switches the active Prom shop."""
+    import http.cookiejar
+    import urllib.request
+    import urllib.error
+    import urllib.parse
+    from negative_reviews import _prom_session_cookies, COMPANY_REVIEWS_URL, PRODUCT_REVIEWS_URL
+    try:
+        cookies = _prom_session_cookies()
+        jar = http.cookiejar.CookieJar()
+        for item in cookies:
+            if not isinstance(item, dict):
+                continue
+            domain = str(item.get("domain", "")).lower()
+            if domain.lstrip(".") != "prom.ua" and not domain.lstrip(".").endswith(".prom.ua"):
+                continue
+            if not isinstance(item.get("name"), str) or not isinstance(item.get("value"), str):
+                continue
+            expiry = item.get("expirationDate", item.get("expiry"))
+            try:
+                expiry = int(expiry) if expiry is not None else None
+            except (TypeError, ValueError):
+                expiry = None
+            jar.set_cookie(http.cookiejar.Cookie(
+                version=0, name=item["name"], value=item["value"], port=None,
+                port_specified=False, domain=domain, domain_specified=True,
+                domain_initial_dot=domain.startswith("."), path=str(item.get("path", "/")),
+                path_specified=True, secure=bool(item.get("secure", False)),
+                expires=expiry, discard=expiry is None, comment=None,
+                comment_url=None, rest={}, rfc2109=False))
+        if not list(jar):
+            return jsonify({"status": "error", "message": "Cookies Prom не знайдено"}), 200
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect())
+        results = []
+        for name, url in (("Компанія", COMPANY_REVIEWS_URL), ("Товари", PRODUCT_REVIEWS_URL)):
+            request_obj = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml",
+            })
+            try:
+                try:
+                    response = opener.open(request_obj, timeout=8)
+                except urllib.error.HTTPError as exc:
+                    response = exc
+                with response:
+                    code = response.code
+                    mime = (response.headers.get("Content-Type") or "").split(";")[0].lower()
+                    # Only inspect a bounded response body in memory; never return HTML or tokens.
+                    body = response.read(120000).decode("utf-8", "replace").lower() if code == 200 else ""
+                    location = response.headers.get("Location", "")
+                    redirect_host = urllib.parse.urlsplit(urllib.parse.urljoin(url, location)).hostname if location else None
+                    review_markup = any(x in body for x in ('statistics_block', 'opinion_stats_block', 'data-qaid="opinion', 'data-qaid="review'))
+                    login_markup = ("пароль" in body or "password" in body) and ("увійти" in body or "войти" in body or "login" in body)
+                    results.append({"type": name, "http": code, "content_type": mime,
+                                    "review_markup": review_markup, "login_markup": login_markup,
+                                    "redirect": "prom" if redirect_host in ("my.prom.ua", "prom.ua") else ("other" if redirect_host else "none"),
+                                    "body_checked_bytes": min(len(body.encode("utf-8")), 120000)})
+            except (OSError, TimeoutError, ValueError) as exc:
+                results.append({"type": name, "error": type(exc).__name__})
+        return jsonify({"status": "ok", "results": results,
+                        "note": "HTTP-тест не перемикає магазин. Дані можуть належати поточному магазину сесії, а не Ладно. HTTP 200 не доводить авторизацію або читання відгуків."})
+    except Exception:
+        return jsonify({"status": "error", "message": "Не вдалося отримати або перевірити HTTP-сесію Prom. Секретні дані не показуються."})
