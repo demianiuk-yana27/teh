@@ -563,12 +563,48 @@ def start_review_probe():
             _probe_json.dump(state, f)
         probe_env = _diag_os.environ.copy()
         probe_env["REVIEW_PROBE_SHEET_ID"] = _sheet_id()
+        try:
+            _diag_os.unlink("/tmp/asteril_review_probe_metrics.json")
+        except FileNotFoundError:
+            pass
         probe_process = _probe_subprocess.Popen(
             [_probe_sys.executable, "-m", "review_read_probe"],
             stdin=_probe_subprocess.DEVNULL, stdout=_probe_subprocess.DEVNULL,
             stderr=_probe_subprocess.DEVNULL, close_fds=True, start_new_session=True,
             cwd=_diag_os.path.dirname(__file__) or ".", env=probe_env,
         )
+        def _probe_sample(process):
+            import json as _sample_json
+            import time as _sample_time
+            from pathlib import Path as _sample_path
+            samples = []
+            while process.poll() is None and len(samples) < 100:
+                try:
+                    cg = _sample_path("/sys/fs/cgroup/memory.current")
+                    mem = int(cg.read_text().strip()) if cg.exists() else None
+                    events_path = _sample_path("/sys/fs/cgroup/memory.events")
+                    events = events_path.read_text().strip() if events_path.exists() else ""
+                    chromium = 0
+                    for proc in _sample_path("/proc").iterdir():
+                        if proc.name.isdigit():
+                            try:
+                                cmd = (proc / "cmdline").read_bytes().lower()
+                                if b"chromium" in cmd or b"chromedriver" in cmd:
+                                    chromium += 1
+                            except OSError:
+                                pass
+                    samples.append({"seconds": round(_sample_time.time() - state["started_at"], 1),
+                                    "memory_mb": round(mem / 1048576, 1) if mem is not None else None,
+                                    "chromium": chromium,
+                                    "oom_kill": next((int(x.split()[1]) for x in events.splitlines() if x.startswith("oom_kill ")), None)})
+                    tmp = "/tmp/asteril_review_probe_metrics.tmp"
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        _sample_json.dump(samples, f)
+                    _diag_os.replace(tmp, "/tmp/asteril_review_probe_metrics.json")
+                except (OSError, ValueError):
+                    pass
+                _sample_time.sleep(2)
+        threading.Thread(target=_probe_sample, args=(probe_process,), daemon=True).start()
         def _probe_watchdog(process):
             import signal as _probe_signal
             try:
@@ -683,11 +719,18 @@ def negative_system_health():
     except (OSError, ValueError, IndexError):
         uptime = None
 
+    metrics = []
+    try:
+        metrics = _json.loads(_Path("/tmp/asteril_review_probe_metrics.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
+
     return jsonify({
         "status": "ok", "instance_boot_id": _Path("/proc/sys/kernel/random/boot_id").read_text().strip()[:12] if _Path("/proc/sys/kernel/random/boot_id").exists() else None,
         "system_uptime_seconds": uptime, "worker_pid": _os.getpid(),
         "worker_rss_mb": round(_proc_rss_kb(_os.getpid()) / 1024, 1),
         "chromium_count": len(processes), "chromium_rss_mb": round(sum(p["rss_mb"] for p in processes), 1),
         "memory_host_mb": memory, "memory_cgroup": cgroup,
+        "probe_metrics": metrics[-100:],
         "probe": {k: probe.get(k) for k in ("status", "stage", "updated_at", "message", "shop") if k in probe},
     })
