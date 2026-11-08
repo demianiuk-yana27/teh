@@ -1038,6 +1038,17 @@ def negative_http_context_probe():
                                     opinions = context.get("opinions") if isinstance(context, dict) else None
                                     pagination = context.get("pagination") if isinstance(context, dict) else None
                                     entry["json_ok"] = payload.get("status") == "ok"
+                                    # Expose only structural metadata; never return raw JSON, cookies or buyer details.
+                                    entry["top_level_keys"] = sorted(str(k) for k in payload.keys())[:25]
+                                    entry["status_value"] = str(payload.get("status"))[:50]
+                                    entry["context_type"] = type(payload.get("context")).__name__
+                                    entry["context_keys"] = sorted(str(k) for k in context.keys())[:35] if isinstance(context, dict) else []
+                                    entry["opinions_type"] = type(opinions).__name__
+                                    entry["pagination_type"] = type(pagination).__name__
+                                    entry["context_empty"] = isinstance(context, dict) and not bool(context)
+                                    entry["error_code"] = str(payload.get("code"))[:60] if payload.get("code") is not None else None
+                                    entry["response_bytes"] = len(raw)
+
                                     entry["opinions_count"] = len(opinions) if isinstance(opinions, list) else None
                                     entry["negative_count"] = sum(
                                         1 for x in opinions if isinstance(x, dict) and isinstance(x.get("rating"), int) and 1 <= x["rating"] <= 3
