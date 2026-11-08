@@ -27,7 +27,13 @@ def main():
         shops = load_active_shops(sheet_id)
         if not shops:
             raise RuntimeError("Активних магазинів не знайдено")
-        shop = shops[0]
+        # Use the smaller test shop, never silently fall back to GoodChoise.
+        import unicodedata
+        def normalized_name(value):
+            return ' '.join(unicodedata.normalize('NFKC', str(value)).casefold().split())
+        shop = next((item for item in shops if normalized_name(item.name) == 'ладно'), None)
+        if shop is None:
+            raise RuntimeError('Тестовий магазин Ладно не знайдено серед активних магазинів у Списку магазинів')
         write(status="running", stage="Відкриваємо Prom", shop=shop.name)
         browser = PromBrowser()
         browser.driver.set_page_load_timeout(12)
