@@ -108,24 +108,24 @@ def _prom_session_cookies():
             with urllib.request.urlopen(req, timeout=12) as response:
                 data = json.load(response)
         except urllib.error.HTTPError as exc:
-            # Never log response bodies or authorization headers.
+            # Safe diagnostics: status and coarse response-header classification only.
+            # Do not expose response bodies, request headers, or token values.
             content_type = (exc.headers.get("Content-Type", "") or "").lower()
-            if exc.code == 403:
-                # These response-header flags are safe to expose; never show bodies, cookies, or tokens.
-                cf_ray = bool(exc.headers.get("CF-Ray"))
-                cf_mitigated = (exc.headers.get("cf-mitigated", "") or "").lower() == "challenge"
-                app_json = "application/json" in content_type
-                reason = ("Cloudflare challenge" if cf_mitigated else
-                          "JSON-відповідь застосунку" if app_json else
-                          "відповідь не у форматі JSON")
-                raise RuntimeError(f"HTTP 403: {reason}; CF-Ray={cf_ray}.") from None
-            raise RuntimeError(f"Cloudflare повернув HTTP {exc.code} під час отримання сесії (без розкриття токена).") from None
+            cf_ray = bool(exc.headers.get("CF-Ray"))
+            cf_mitigated = (exc.headers.get("cf-mitigated", "") or "").lower() == "challenge"
+            app_json = "application/json" in content_type
+            reason = ("Cloudflare challenge" if cf_mitigated else
+                      "JSON-відповідь Worker" if app_json else
+                      "не-JSON відповідь Cloudflare")
+            raise RuntimeError(f"Worker HTTP {exc.code}: {reason}; CF-Ray={cf_ray}.") from None
         except urllib.error.URLError:
-            raise RuntimeError("Не вдалося з’єднатися з Cloudflare (мережа або TLS).") from None
+            raise RuntimeError("Worker: мережева помилка або TLS.") from None
         except TimeoutError:
-            raise RuntimeError("Час очікування відповіді Cloudflare вичерпано.") from None
+            raise RuntimeError("Worker: таймаут відповіді.") from None
+        except (ValueError, TypeError, json.JSONDecodeError):
+            raise RuntimeError("Worker: відповідь не є коректним JSON.") from None
         except Exception:
-            raise RuntimeError("Не вдалося прочитати відповідь сховища Cloudflare.") from None
+            raise RuntimeError("Worker: не вдалося прочитати відповідь.") from None
         cookies = data.get("cookies")
         if not isinstance(cookies, list):
             raise RuntimeError("Cloudflare не повернув коректну сесію Prom.")
@@ -181,8 +181,9 @@ def check_prom_http_session(timeout=10):
     try:
         try:
             items = _prom_session_cookies()
-        except RuntimeError:
-            return False, "Етап отримання cookies із Worker: помилка. Перевірте доступ Render до сховища; деталі приховано."
+        except RuntimeError as exc:
+            # _prom_session_cookies only returns safe, redacted error descriptions.
+            return False, "Етап отримання cookies із Worker: " + str(exc)
         if not items:
             return False, "На сервері немає сесії Prom."
         jar = http.cookiejar.CookieJar()
