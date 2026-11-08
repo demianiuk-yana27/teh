@@ -479,7 +479,30 @@ def _negative_diagnostic_checks(sheet_id,run_id):
             # The older diagnostic used a 10-second WebDriver call that often timed out
             # before it could inspect the browser.
             browser.open_cms()
-            checks.append({"name":"Prom / навігація після cookies","ok":True,"message":"Chromium відкрив кабінет; доступ до відгуків ще не перевірено"})
+            checks.append({"name":"Prom / навігація після cookies","ok":True,"message":"Chromium відкрив кабінет; доступ до відгуків перевіряємо окремо"})
+            progress("Перевіряємо читання відгуків одного магазину",checks)
+            try:
+                if not shops:
+                    raise RuntimeError("Немає активних магазинів для тесту.")
+                browser.switch_shop(shops[0])
+                from negative_reviews import COMPANY_REVIEWS_URL
+                browser.driver.get(COMPANY_REVIEWS_URL)
+                from selenium.webdriver.support.ui import WebDriverWait as _ReviewWait
+                _ReviewWait(browser.driver, 12).until(
+                    lambda d: d.execute_script("return document.readyState") in ("interactive", "complete")
+                )
+                _review_url = browser.driver.current_url
+                _review_host = __import__("urllib.parse", fromlist=["urlsplit"]).urlsplit(_review_url).hostname or ""
+                _review_body = (browser.driver.execute_script("return document.body ? document.body.innerText.slice(0,1500) : ''") or "").lower()
+                if _review_host != "my.prom.ua" or "sign-in" in _review_url or ("пароль" in _review_body and ("увійти" in _review_body or "войти" in _review_body)):
+                    raise RuntimeError("Prom не підтвердив доступ до сторінки відгуків.")
+                _review_elements = browser.driver.find_elements("css selector", '[data-qaid="statistics_block"], [data-qaid="opinion_stats_block"]')
+                if not _review_elements:
+                    raise RuntimeError("Сторінка відкрилася, але блоки відгуків не знайдено.")
+                checks.append({"name":"Prom / читання відгуків 1 магазину","ok":True,"message":"Сторінка відгуків відкрита; блоки статистики знайдено. Записів у таблицю немає."})
+            except Exception as _review_exc:
+                checks.append({"name":"Prom / читання відгуків 1 магазину","ok":False,"message":"Не підтверджено: "+type(_review_exc).__name__+"; "+(str(_review_exc) if isinstance(_review_exc, RuntimeError) else "сторінка або елементи недоступні")[:130]})
+
         except Exception as exc:
             _prom_error = str(exc).split("Stacktrace:")[0].strip()[:180]
             checks.append({"name":"Prom / навігація після cookies","ok":False,"message":_prom_error or type(exc).__name__})
