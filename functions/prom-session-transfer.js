@@ -3,7 +3,7 @@ const bytes=new TextEncoder();
 const hex=a=>Array.from(a,b=>b.toString(16).padStart(2,'0')).join('');
 async function hash(s){return hex(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes.encode(s))));}
 const b64=a=>btoa(String.fromCharCode(...a));
-function cookiesValid(c){return Array.isArray(c)&&c.length>0&&c.length<=250&&c.every(x=>x&&typeof x.name==='string'&&x.name.length>0&&typeof x.value==='string'&&typeof x.domain==='string'&&(/^\\.?prom\\.ua$/i.test(x.domain)||/^\\.?[a-z0-9.-]+\\.prom\\.ua$/i.test(x.domain)));}
+function cookiesValid(c){return Array.isArray(c)&&c.length>0&&c.length<=250&&c.every(x=>x&&typeof x.name==='string'&&x.name.length>0&&typeof x.value==='string'&&typeof x.domain==='string'&&(/^\.?prom\.ua$/i.test(x.domain)||/^\.?[a-z0-9.-]+\.prom\.ua$/i.test(x.domain)));}
 async function key(env){const raw=Uint8Array.from(atob(env.PROM_SESSION_ENCRYPTION_KEY||''),c=>c.charCodeAt(0));if(raw.length!==32)throw Error('key');return crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt']);}
 export async function onRequest({request,env,data}){
  const method=request.method;
