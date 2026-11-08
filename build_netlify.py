@@ -188,9 +188,10 @@ async function checkPromReviewsHttp(button){
        "; згадки відгуків/API/магазину/кабінету: "+[h.review_terms,h.api_terms,h.shop_terms,h.cabinet_terms].map(v=>v?"так":"ні").join("/")+
        (h.html_truncated?"; перевірено лише перші 120 КБ":"");
    }),
+   "HTML сторінок компанії та товарів: "+(d.html_identical?"однаковий":"відрізняється або порівняння недоступне"),
    ...(d.results||[]).map(x=>{
      const j=x.html_structure?.js_scan;
-     return j ? x.type+" — JS-файли: перевірено "+j.checked+
+     return j ? x.type+" — JS-файли: доступних "+j.eligible_assets+", перевірено "+j.checked+
        ", зі згадками відгуків "+j.review_assets+
        ", API "+j.api_assets+
        ", fetch/axios "+j.fetch_assets+
