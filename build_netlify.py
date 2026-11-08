@@ -160,7 +160,7 @@ s = s.replace("setStatus(id,d.status==='started'?'running':'busy','⏳ '+d.messa
 """setStatus(id,d.status==='started'?'running':'busy','⏳ '+d.message);if(d.status==='started'){clearInterval(timers[id]);timers[id]=setInterval(async()=>{try{const state=await jf(API+'/negative/status');if(state.status==='running')setStatus(id,'running','⏳ '+state.message);else if(state.status==='success'||state.status==='error'){clearInterval(timers[id]);setStatus(id,state.status,(state.status==='success'?'✅ ':'❌ ')+state.message)}}catch(e){clearInterval(timers[id]);setStatus(id,'error','❌ '+e.message)}},2000)}}catch(e){setStatus(id,'error','❌ '+e.message)}}async function runOrderCount()""",1)
 
 # Read-only diagnostics for the negative reviews integrations.
-negative_diagnostic_controls = '''<div class="card" style="margin-top:16px"><h3>Перевірка підключень</h3><p>Google-таблиця, аркуші, активні магазини та авторизація Prom. Без запису даних.</p><button class="run" onclick="checkNegativeConnections(this)">🔎 Перевірити підключення</button> <button class="run" type="button" onclick="showPromConnectionGuide(this)">🔐 Підключити Prom</button><div class="status promConnectionGuide" style="display:none;white-space:normal;margin-top:12px"><strong>Підключення головного акаунта Prom</strong><p>1. Відкрийте офіційний кабінет Prom і увійдіть у головний акаунт.</p><p>2. Офіційний публічний API Prom не документує отримання відгуків про компанію та товари, потрібних цим вигрузкам. Створення API-токена поки не допоможе.</p><p>3. Вхід у браузері не передає сесію Chromium на Render. Сервер має отримати окрему захищену авторизацію; автоматичне підключення ще не реалізоване. Не надсилайте логін, пароль, токен або cookies у чат.</p><a href="https://my.prom.ua/cms/" target="_blank" rel="noopener noreferrer">Відкрити офіційний кабінет Prom ↗</a><p><strong>Статус:</strong> серверну авторизацію ще не підтверджено.</p></div><div class="status negativeDiagnosticResult" style="white-space:pre-wrap">Перевірка ще не запускалася.</div></div>'''
+negative_diagnostic_controls = '''<div class="card" style="margin-top:16px"><h3>Перевірка підключень</h3><p>Google-таблиця, аркуші, активні магазини та авторизація Prom. Без запису даних.</p><button class="run" onclick="checkNegativeConnections(this)">🔎 Перевірити підключення</button> <button class="run" type="button" onclick="checkReviewReadProbe(this)">📖 Перевірити читання відгуків</button> <button class="run" type="button" onclick="showPromConnectionGuide(this)">🔐 Підключити Prom</button><div class="status promConnectionGuide" style="display:none;white-space:normal;margin-top:12px"><strong>Підключення головного акаунта Prom</strong><p>1. Відкрийте офіційний кабінет Prom і увійдіть у головний акаунт.</p><p>2. Офіційний публічний API Prom не документує отримання відгуків про компанію та товари, потрібних цим вигрузкам. Створення API-токена поки не допоможе.</p><p>3. Вхід у браузері не передає сесію Chromium на Render. Сервер має отримати окрему захищену авторизацію; автоматичне підключення ще не реалізоване. Не надсилайте логін, пароль, токен або cookies у чат.</p><a href="https://my.prom.ua/cms/" target="_blank" rel="noopener noreferrer">Відкрити офіційний кабінет Prom ↗</a><p><strong>Статус:</strong> серверну авторизацію ще не підтверджено.</p></div><div class="status negativeDiagnosticResult" style="white-space:pre-wrap">Перевірка ще не запускалася.</div><div class="status reviewReadProbeResult" style="white-space:pre-wrap">Читання відгуків ще не перевірялося.</div></div>'''
 for view_id in ('negative-reviews', 'negative-analytics'):
     start = s.find('<section class="view" id="' + view_id + '">')
     if start >= 0:
@@ -169,6 +169,29 @@ for view_id in ('negative-reviews', 'negative-analytics'):
             s = s[:end] + negative_diagnostic_controls + s[end:]
 
 negative_diagnostic_script = '''<script>
+async function checkReviewReadProbe(button){
+ const out=button.closest(".card").querySelector(".reviewReadProbeResult");
+ button.disabled=true;
+ out.textContent="⏳ Запускаємо окрему перевірку читання одного магазину…";
+ try{
+  let response=await fetch("/api/negative/review-probe",{method:"POST"});
+  let data=await response.json();
+  if(!response.ok)throw Error(data.message||"HTTP "+response.status);
+  for(let i=0;i<45;i++){
+   await new Promise(resolve=>setTimeout(resolve,5000));
+   response=await fetch("/api/negative/review-probe/status",{cache:"no-store"});
+   if(!response.ok)throw Error("Сервер тимчасово недоступний (HTTP "+response.status+"). Не запускайте тест повторно.");
+   data=await response.json();
+   if(data.status!=="running")break;
+   out.textContent="⏳ "+(data.stage||"Перевірка триває")+"\n"+(data.shop||"")+"\nДані не змінюються.";
+  }
+  if(data.status==="running"){out.textContent="⚠️ Тест ще триває. Не запускайте його повторно.";return}
+  if(data.status==="error"){out.textContent="❌ "+(data.message||"Не вдалося перевірити читання");return}
+  if(data.status==="success"){out.textContent=(data.ok?"✅ Читання підтверджено":"⚠️ Читання підтверджено не повністю")+"\nМагазин: "+(data.shop||"")+"\n"+(data.results||[]).map(x=>(x.ok?"✅ ":"❌ ")+x.type+": "+x.message).join("\n");return}
+  out.textContent="⚠️ Статус тесту невідомий. Не запускайте його повторно.";
+ }catch(error){out.textContent="❌ "+error.message}
+ finally{button.disabled=false}
+}
 function showPromConnectionGuide(button){const guide=button.closest(".card").querySelector(".promConnectionGuide");guide.style.display=guide.style.display==="none"?"block":"none";}
 async function checkNegativeConnections(button){
  const panel=button.closest(".card"),out=panel.querySelector(".negativeDiagnosticResult");
