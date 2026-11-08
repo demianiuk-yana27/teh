@@ -108,6 +108,11 @@ def _prom_session_cookies():
             with urllib.request.urlopen(req, timeout=12) as response:
                 data = json.load(response)
         except urllib.error.HTTPError as exc:
+            # Never log response bodies or authorization headers.
+            content_type = (exc.headers.get("Content-Type", "") or "").lower()
+            if exc.code == 403:
+                reason = ("HTML-блокування (можливо, захист Cloudflare)" if "text/html" in content_type else "відмова API або захисного правила")
+                raise RuntimeError(f"Cloudflare повернув HTTP 403: {reason}.") from None
             raise RuntimeError(f"Cloudflare повернув HTTP {exc.code} під час отримання сесії (без розкриття токена).") from None
         except urllib.error.URLError:
             raise RuntimeError("Не вдалося з’єднатися з Cloudflare (мережа або TLS).") from None
