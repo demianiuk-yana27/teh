@@ -385,6 +385,16 @@ class PromBrowser:
         self.driver.execute_script("arguments[0].click();", target)
         time.sleep(1.5)
         self.dismiss_dialogs()
+        # Verify the visible active shop ID before exporting any reviews.
+        # Never rely on the clicked dropdown item alone as proof of switching.
+        header_ids = []
+        for selector in ('[data-qaid="company_info"]', '[data-testid="shop-selector-toggle"]'):
+            for element in self.driver.find_elements(By.CSS_SELECTOR, selector):
+                if element.is_displayed():
+                    header_ids.extend(re.findall(r"ID\\s*[:№]?\\s*(\\d+)", element.text, re.I))
+        if header_ids and shop.id not in header_ids:
+            raise RuntimeError("Prom показує інший активний магазин після перемикання; вигрузку зупинено.")
+
 
     def review_order_ids(self, since, until=None, wanted=None):
         found = set()
