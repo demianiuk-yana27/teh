@@ -12,7 +12,8 @@
     "/dashboard",
     "/export-completed",
     "/prom-session",
-    "/prom-session-transfer"
+    "/prom-session-transfer",
+    "/prom-session-migrate"
   ],
   "exclude": []
 }
