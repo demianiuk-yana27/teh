@@ -183,11 +183,11 @@ async function checkReviewReadProbe(button){
    if(!response.ok)throw Error("Сервер тимчасово недоступний (HTTP "+response.status+"). Не запускайте тест повторно.");
    data=await response.json();
    if(data.status!=="running")break;
-   out.textContent="⏳ "+(data.stage||"Перевірка триває")+"\\n"+(data.shop||"")+"\\\nДані не змінюються.";
+   out.textContent="⏳ "+(data.stage||"Перевірка триває")+"\\n"+(data.shop||"")+"\\nДані не змінюються.";
   }
   if(data.status==="running"){out.textContent="⚠️ Тест ще триває. Не запускайте його повторно.";return}
   if(data.status==="error"){out.textContent="❌ "+(data.message||"Не вдалося перевірити читання");return}
-  if(data.status==="success"){out.textContent=(data.ok?"✅ Читання підтверджено":"⚠️ Читання підтверджено не повністю")+"\\\nМагазин: "+(data.shop||"")+"\\n"+(data.results||[]).map(x=>(x.ok?"✅ ":"❌ ")+x.type+": "+x.message).join("\\n");return}
+  if(data.status==="success"){out.textContent=(data.ok?"✅ Читання підтверджено":"⚠️ Читання підтверджено не повністю")+"\\nМагазин: "+(data.shop||"")+"\\n"+(data.results||[]).map(x=>(x.ok?"✅ ":"❌ ")+x.type+": "+x.message).join("\\n");return}
   out.textContent="⚠️ Статус тесту невідомий. Не запускайте його повторно.";
  }catch(error){out.textContent="❌ "+error.message}
  finally{button.disabled=false}
