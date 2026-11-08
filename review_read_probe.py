@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import traceback
+import signal
 from urllib.parse import urlsplit
 
 STATE = "/tmp/asteril_review_probe.json"
@@ -17,6 +18,10 @@ def write(**values):
     os.replace(path, STATE)
 
 def main():
+    def deadline(_signum, _frame):
+        raise TimeoutError("Перевірка перевищила 75 секунд")
+    signal.signal(signal.SIGALRM, deadline)
+    signal.alarm(75)
     browser = None
     try:
         from negative_reviews import PromBrowser, load_active_shops, COMPANY_REVIEWS_URL, PRODUCT_REVIEWS_URL
@@ -37,7 +42,10 @@ def main():
         write(status="running", stage="Відкриваємо Prom", shop=shop.name)
         browser = PromBrowser()
         browser.driver.set_page_load_timeout(12)
+        write(status="running", stage="Завантажуємо cookies та відкриваємо кабінет", shop=shop.name)
         browser.open_cms()
+        browser.driver.set_page_load_timeout(12)
+        write(status="running", stage="Перемикаємо магазин Prom", shop=shop.name)
         # Only one shop; avoid switch_shop's internal three-retry cycle.
         browser._switch_shop_once(shop)
         results = []
@@ -78,6 +86,7 @@ def main():
     except Exception as exc:
         write(status="error", message=type(exc).__name__ + ": " + str(exc).split("Stacktrace:")[0][:180])
     finally:
+        signal.alarm(0)
         if browser:
             try:
                 browser.close()
