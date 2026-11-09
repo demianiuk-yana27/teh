@@ -1663,8 +1663,30 @@ def positive_publish_one():
                             "pageType": "portal", "perPage": 20,
                             "searchQuery": "", "sortingQuery": "default"}).encode(),
                         headers=common_headers, method="POST")
-                    with opener.open(req, timeout=15) as response:
-                        payload = json.loads(response.read(800001))
+                    # Only retry the READ operation. Never retry comment creation.
+                    import time
+                    payload = None
+                    for read_attempt in range(3):
+                        try:
+                            with opener.open(req, timeout=15) as response:
+                                payload = json.loads(response.read(800001))
+                            break
+                        except urllib.error.HTTPError as read_error:
+                            if read_error.code not in (429, 500, 502, 503, 504):
+                                raise
+                            if read_attempt == 2:
+                                return jsonify({"status": "error", "stage": "preflight_read",
+                                    "safe_to_retry": True, "post_attempted": False,
+                                    "message": "Prom не дозволив прочитати відгук (HTTP " +
+                                    str(read_error.code) + "). Публікацію не розпочато; повторіть пізніше."}), 503
+                        except (urllib.error.URLError, TimeoutError) as read_error:
+                            if read_attempt == 2:
+                                return jsonify({"status": "error", "stage": "preflight_read",
+                                    "safe_to_retry": True, "post_attempted": False,
+                                    "message": "Не вдалося прочитати відгук у Prom (" +
+                                    type(read_error).__name__ + "). Публікацію не розпочато."}), 503
+                        if read_attempt < 2:
+                            time.sleep(2 * (read_attempt + 1))
                     opinions = payload.get("opinions") if isinstance(payload, dict) else None
                     if not isinstance(opinions, list):
                         raise ValueError("Неправильний формат списку відгуків.")
