@@ -1338,6 +1338,191 @@ def positive_shop_switch_probe():
         return jsonify({"status": "error", "message": "Не вдалося виконати тест перемикання."}), 500
 
 
+# Snapshot of menuCompanyLogins supplied by the operator (2026-11-09).
+# company_id is the canonical key; duplicate sign-to logins are fallbacks.
+_POSITIVE_SIGN_TO_PAIRS = """4252028:46930827,4252026:46930645,4252023:46930552,4252017:46930311,4252006:46929943,4246536:46775664,4244876:46714550,4243867:46676765,4243217:46666855,4242092:46653005,4239331:46560469,4238942:46550434,4237296:46496231,4230211:46271331,3835990:46067576,4208944:45771423,4203866:45633654,4203258:45618423,4196076:45450788,4195583:45444095,4191142:45329012,4183448:45140983,4172437:44800846,4153307:44130428,4005666:44078168,4117345:44078163,4104969:44063667,4034955:44055883,4045208:44052895,3982944:44052894,3926531:44052893,3835990:44052892,3780635:44052890,3332249:44050918,4105388:42673090,4105388:42651908,4104969:42640222,4104594:42632479,4103666:42621258,4098130:42590994,2920918:42444203,4093192:42325352,4088803:42322504,4088031:42210381,4078314:41995863,4071761:41904156,4069756:41799451,4061739:41694605,4053509:41433057,4051094:41360255,4048463:41323098,3967023:41297216,3987547:41283409,4025330:41275978,4044264:41266254,3665207:41196471,3394094:33914579,3348485:33914577,2369215:33914576,3332636:33914575,3595592:33914574,3163449:33914573,3332249:33914572,2637407:33914497"""
+
+def _positive_login_map():
+    mapping = {}
+    for pair in _POSITIVE_SIGN_TO_PAIRS.split(","):
+        company, account = pair.split(":")
+        mapping.setdefault(company, [])
+        if account not in mapping[company]:
+            mapping[company].append(account)
+    return mapping
+
+
+@app.route("/positive/shops-batch", methods=["POST"])
+def positive_shops_batch():
+    """Read-only bounded batch of active shops. No publication or cookie persistence."""
+    import http.cookiejar
+    import urllib.request
+    import urllib.error
+    import urllib.parse
+    import json
+    from negative_reviews import _prom_session_cookies, load_active_shops, parse_date
+
+    payload = request.get_json(silent=True) or {}
+    chosen = parse_date(str(payload.get("date") or ""))
+    if not chosen:
+        return jsonify({"status": "error", "message": "Некоректна дата."}), 400
+    try:
+        offset = int(payload.get("offset", 0))
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "Некоректний offset."}), 400
+    if offset < 0 or offset > 1000:
+        return jsonify({"status": "error", "message": "Некоректний offset."}), 400
+    try:
+        # Re-read TRUE/FALSE for every batch, so disabled shops are never collected.
+        active = load_active_shops(_sheet_id())
+        unique = {}
+        for shop in active:
+            unique.setdefault(str(shop.id), shop)
+        shops = list(unique.values())
+        mapping = _positive_login_map()
+        originals = _prom_session_cookies()
+        output = []
+        for shop in shops[offset:offset + 3]:
+            item = {"company_id": str(shop.id), "shop_name": shop.name,
+                    "reviews": [], "pages_checked": 0, "complete": False}
+            accounts = mapping.get(str(shop.id), [])
+            if not accounts:
+                item["error"] = "Немає sign-to ID у збереженому списку."
+                output.append(item)
+                continue
+            for account in accounts:
+                jar = http.cookiejar.CookieJar()
+                for cookie in originals:
+                    if not isinstance(cookie, dict):
+                        continue
+                    domain = str(cookie.get("domain") or "").lower()
+                    if domain.lstrip(".") != "prom.ua" and not domain.lstrip(".").endswith(".prom.ua"):
+                        continue
+                    if not isinstance(cookie.get("name"), str) or not isinstance(cookie.get("value"), str):
+                        continue
+                    expiry = cookie.get("expirationDate", cookie.get("expiry"))
+                    try:
+                        expiry = int(expiry) if expiry is not None else None
+                    except (ValueError, TypeError):
+                        expiry = None
+                    jar.set_cookie(http.cookiejar.Cookie(
+                        version=0, name=cookie["name"], value=cookie["value"], port=None,
+                        port_specified=False, domain=domain, domain_specified=True,
+                        domain_initial_dot=domain.startswith("."),
+                        path=str(cookie.get("path") or "/"), path_specified=True,
+                        secure=bool(cookie.get("secure", False)), expires=expiry,
+                        discard=expiry is None, comment=None, comment_url=None,
+                        rest={}, rfc2109=False))
+                class NoRedirect(urllib.request.HTTPRedirectHandler):
+                    def redirect_request(self, req, fp, code, msg, headers, newurl):
+                        return None
+                opener = urllib.request.build_opener(
+                    urllib.request.HTTPCookieProcessor(jar), NoRedirect())
+                try:
+                    try:
+                        response = opener.open(urllib.request.Request(
+                            "https://my.prom.ua/remote/auth/sign-to/" + account,
+                            headers={"User-Agent": "Mozilla/5.0"}), timeout=12)
+                    except urllib.error.HTTPError as exc:
+                        response = exc
+                    with response:
+                        location = response.headers.get("Location", "")
+                        switched = response.status in (301, 302, 303) and (
+                            location.startswith("/cms") or
+                            location.startswith("https://my.prom.ua/cms"))
+                    if not switched:
+                        raise ValueError("Перемикання не підтверджено.")
+                    csrf = next((c for c in jar if c.name.lower() in (
+                        "csrftoken", "csrf_token", "xsrf-token", "xsrf_token")), None)
+                    if csrf is None:
+                        raise ValueError("CSRF-cookie відсутня.")
+                    header = "X-XSRF-TOKEN" if "xsrf" in csrf.name.lower() else "X-CSRFToken"
+                    seen = set()
+                    previous_date = None
+                    ordered = True
+                    total_pages = 1
+                    for page in range(1, 151):
+                        body = json.dumps({"filters": [], "page": page,
+                            "pageType": "portal", "perPage": 20,
+                            "searchQuery": "", "sortingQuery": "default"}).encode()
+                        req = urllib.request.Request(
+                            "https://my.prom.ua/cms/opinions/company/list",
+                            data=body, method="POST", headers={
+                                "Accept": "application/json, text/plain, */*",
+                                "Content-Type": "application/json",
+                                "User-Agent": "Mozilla/5.0",
+                                "Origin": "https://my.prom.ua",
+                                "Referer": "https://my.prom.ua/cms/opinions/company",
+                                "X-Requested-With": "XMLHttpRequest",
+                                header: urllib.parse.unquote(csrf.value)})
+                        with opener.open(req, timeout=15) as response:
+                            raw = response.read(800001)
+                            if len(raw) > 800000:
+                                raise ValueError("Завелика відповідь Prom.")
+                            data = json.loads(raw)
+                        opinions = data.get("opinions") if isinstance(data, dict) else None
+                        if not isinstance(opinions, list):
+                            raise ValueError("Неочікувана відповідь Prom.")
+                        item["pages_checked"] += 1
+                        pagination = data.get("pagination") or {}
+                        if isinstance(pagination, dict):
+                            try:
+                                total_pages = max(1, int(pagination.get("num_pages") or 1))
+                            except (TypeError, ValueError):
+                                pass
+                        dates = []
+                        for opinion in opinions:
+                            if not isinstance(opinion, dict):
+                                continue
+                            actual_id = opinion.get("company_id")
+                            if actual_id is None or str(actual_id) != str(shop.id):
+                                raise ValueError("company_id не збігається з Google Sheets.")
+                            oid = opinion.get("id")
+                            if oid is None or str(oid) in seen:
+                                continue
+                            seen.add(str(oid))
+                            raw_date = str(opinion.get("date_created") or "")
+                            dt = parse_date(raw_date[:10]) or parse_date(raw_date)
+                            if dt:
+                                dates.append(dt)
+                                if previous_date and dt > previous_date:
+                                    ordered = False
+                                previous_date = dt
+                            else:
+                                ordered = False
+                            if dt != chosen or opinion.get("rating") not in (4, 5):
+                                continue
+                            count = opinion.get("comments_count")
+                            comments = opinion.get("comments")
+                            status = ("answered" if isinstance(count, int) and count > 0
+                                else "unanswered" if count == 0 and comments == []
+                                else "needs_check")
+                            own = opinion.get("comment_work")
+                            item["reviews"].append({
+                                "id": str(oid), "company_id": str(shop.id),
+                                "shop_name": shop.name, "rating": opinion.get("rating"),
+                                "text": own.strip()[:2000] if isinstance(own, str) else "",
+                                "date_raw": raw_date[:80], "reply_status": status})
+                        if page >= total_pages or not opinions or (
+                                ordered and dates and max(dates) < chosen):
+                            item["complete"] = True
+                            break
+                    if not item["complete"]:
+                        item["error"] = "Досягнуто ліміт сторінок."
+                    break
+                except (urllib.error.URLError, ValueError, TimeoutError) as exc:
+                    item["reviews"] = []
+                    item["pages_checked"] = 0
+                    item["error"] = type(exc).__name__ + ": " + str(exc)[:110]
+            output.append(item)
+        return jsonify({"status": "ok", "shops": output, "offset": offset,
+                        "total_shops": len(shops), "next_offset": offset + len(output),
+                        "note": "Тільки читання. Жодних відповідей не надсилається."})
+    except Exception as exc:
+        return jsonify({"status": "error",
+                        "message": type(exc).__name__ + ": " + str(exc)[:140]}), 500
+
+
 @app.route("/positive/reviews-preview", methods=["POST"])
 def positive_reviews_preview():
     """Read-only current-session company review preview; never publishes replies."""
