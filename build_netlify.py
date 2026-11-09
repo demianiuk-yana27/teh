@@ -442,6 +442,47 @@ else positiveRestoreTemplates();
 </script>"""
 s = s.replace('</body>', positive_script + '</body>', 1)
 
+# Independent recovery runs even when the main positive-reviews script fails.
+# Never overwrite or remove stored templates, review data, or attempt journal.
+positive_recovery_script = """<script>
+(function(){
+ function restorePositiveSavedData(){
+  const dayInput=document.getElementById('positiveDay');
+  const templatesInput=document.getElementById('positiveTemplates');
+  if(!dayInput||!templatesInput)return;
+  try{
+   const raw=localStorage.getItem('teh-positive-templates-v1');
+   if(raw&&!templatesInput.value){
+    const templates=JSON.parse(raw);
+    if(Array.isArray(templates))templatesInput.value=templates.join('\\n');
+   }
+  }catch(e){}
+  try{
+   const dates=[];
+   for(let i=0;i<localStorage.length;i++){
+    const key=localStorage.key(i)||'';
+    const match=/^teh-positive-v2:(\\d{4}-\\d{2}-\\d{2})$/.exec(key);
+    if(match)dates.push(match[1]);
+   }
+   dates.sort();
+   if(!dayInput.value&&dates.length)dayInput.value=dates[dates.length-1];
+   if(dayInput.value&&typeof positiveRender==='function'){
+    positiveRender(dayInput.value);
+   }else if(dayInput.value){
+    const status=document.getElementById('positiveStatus');
+    if(status)status.textContent='⚠️ Збережені відгуки знайдено, але інтерфейс не завантажився. Не очищуйте дані браузера.';
+   }
+  }catch(e){
+   const status=document.getElementById('positiveStatus');
+   if(status)status.textContent='⚠️ Не вдалося відобразити збережені відгуки: '+String(e.message||e);
+  }
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',restorePositiveSavedData);
+ else restorePositiveSavedData();
+})();
+</script>"""
+s = s.replace('</body>', positive_recovery_script + '</body>', 1)
+
 # Database navigation: correspondence scripts, call scripts and refusal handling.
 s = s.replace('data-view="scripts">💬 Скрипти</div>', 'data-view="scripts">💬 Скрипти для переписок</div><div class="sub" data-view="call-scripts">☎️ Скрипти для дзвінка</div><div class="sub" data-view="refusal-work">🚫 Робота з відмовою</div>', 1)
 # Training materials subsections.
