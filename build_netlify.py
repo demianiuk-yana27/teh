@@ -1,3 +1,4 @@
+# Cloudflare deployment refresh: manual absent-reply journal status (2026-11-09).
 # Deployment refresh: positive reply queue UI (2026-11-09).
 from pathlib import Path
 
