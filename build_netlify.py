@@ -137,10 +137,11 @@ function positiveRender(day){
  list.replaceChildren();
   const toolbar=document.createElement('div');toolbar.style.cssText='padding:14px 4px;font-weight:700;color:#334155';list.append(toolbar);
   const eligible=data.reviews.filter(r=>r.reply_status==='unanswered');
+  // Display only reviews that still need replies; retain all collected reviews in cache and counts.
   const exclusions=new Set(state.flags||[]);
   const suspicious=/але|проте|однак|хоча|жах|поган|обман|шахра|хам|груб|брак|поламан|зламан|не рекоменд|не працю|не відповіда|повернен|розчар|скарг|проблем|дефект|хірн|фігн|твар|лайно|говн|ужас|плох|затрим|довго чека/iu;
   function update(){toolbar.textContent='До відповіді: '+(eligible.length-exclusions.size)+' · Виключено: '+exclusions.size+' · Публікація вимкнена';}
-  for(const review of data.reviews){
+  for(const review of eligible){
    const row=document.createElement('article');row.style.cssText='display:flex;gap:16px;justify-content:space-between;align-items:flex-start;border:1px solid #e2e8f0;border-radius:14px;padding:18px;margin:10px 0;background:#fff';
    const main=document.createElement('div');main.style.cssText='min-width:0;flex:1';
    const title=document.createElement('div');title.style.cssText='font-size:13px;color:#64748b';
