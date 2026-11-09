@@ -1,3 +1,4 @@
+# Cloudflare rebuild trigger: verified five-reply test queue (2026-11-09).
 # Restore full positive reviews UI after overlapping deployment (2026-11-09).
 # Cloudflare refresh: guarded 3-reply queue (2026-11-09).
 # Cloudflare deployment refresh: manual absent-reply journal status (2026-11-09).
