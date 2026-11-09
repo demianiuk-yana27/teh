@@ -181,6 +181,9 @@ async function checkPromContextJson(button){
    "JSON-відгуки Prom (без Chromium):",
    ...(d.results||[]).map(x=>x.type+" сторінка "+x.page+": "+(x.error||("HTTP "+x.http+", JSON "+(x.json_ok?"OK":"не підтверджено")+", відгуків "+(x.opinions_count??"—")+", негативних "+(x.negative_count??"—")+", магазин ID "+(x.company_ids||[]).join(", ")+", сторінок "+(x.pagination?.num_pages??"—")))),
    ...(d.results||[]).map(x=>x.type+" стор. "+x.page+" — структура: status="+(x.status_value??"—")+", ключі "+(x.top_level_keys||[]).join("/")+", context "+x.context_type+" ["+(x.context_keys||[]).join(", ")+"]"+", opinions="+x.opinions_type+", pagination="+x.pagination_type+", bytes="+(x.response_bytes??"—")+", code="+(x.error_code??"—")),
+   ...(d.results||[]).map(x=>x.type+" стор. "+x.page+" — pagination.current_page="+(x.pagination?.current_page??"—")+", first_opinion_id="+(x.first_opinion_id??"—")+", fingerprint="+(x.response_sha256_short??"—")),
+   "Однакова відповідь company 1/2: "+(d.company_response_same?"так":"ні"),
+   "Однакова відповідь product 1/2: "+(d.product_response_same?"так":"ні"),
    "Пагінація сторінок 1 і 2: "+(d.pagination_verified?"✅ підтверджена":"⚠️ не підтверджена"),
    d.note||""
   ].join("\\n");
