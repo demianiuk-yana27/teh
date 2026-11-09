@@ -73,7 +73,7 @@ s = s.replace('data-view="dorobky">• Доробки</div>',
 s = s.replace('data-target-view="dorobky"><span',
               'data-target-view="dorobky"><span', 1)
 positive_html = """<section class="view" id="positive-reviews"><div class="pagehead"><div class="pageicon">⭐</div><div><h2>Позитивні відгуки</h2><p>Попередній перегляд і виключення перед автоматичними відповідями</p></div></div>
-<div class="card"><h3>Збір відгуків</h3><p>Наразі доступний безпечний тест читання відгуків про компанію для активного магазину Prom. Відправлення відповідей вимкнене до перевірки полів дати, наявності відповіді та перемикання магазинів.</p>
+<div class="card"><h3>Збір відгуків</h3><p>Перегляньте текст покупця та позначте прапорцем відгуки, які потребують індивідуальної відповіді. Зараз доступний активний магазин Prom; автоматичне надсилання вимкнено.</p>
 <label for="positiveDay">Дата відгуків</label> <input type="date" id="positiveDay"/>
 <button class="run" type="button" onclick="loadPositivePreview(this)">🔎 Зібрати для перевірки</button>
 <div class="status" id="positiveStatus" style="white-space:pre-wrap"></div><div id="positiveList"></div></div></section>"""
@@ -91,31 +91,42 @@ async function loadPositivePreview(button){
   const counts={unanswered:0,answered:0,needs_check:0};
   for(const review of data.reviews){counts[review.reply_status]=(counts[review.reply_status]||0)+1}
   out.textContent='За '+date+': '+data.reviews.length+' позитивних відгуків; без відповіді: '+counts.unanswered+'; уже з коментарем: '+counts.answered+'; невизначених: '+counts.needs_check+'. Переглянуто '+data.pages_checked+' із '+data.total_pages+' сторінок. '+(data.complete?'Обхід завершено.':'Увага: обхід НЕ завершено.')+' Відповіді не надсилаються.';
-  const toolbar=document.createElement('div');toolbar.style.cssText='padding:12px 0;font-weight:600';
-  list.append(toolbar);
+  const toolbar=document.createElement('div');toolbar.style.cssText='padding:14px 4px;font-weight:700;color:#334155';list.append(toolbar);
   const eligible=data.reviews.filter(r=>r.reply_status==='unanswered');
   const exclusions=new Set();
-  function update(){toolbar.textContent='До майбутньої відповіді: '+(eligible.length-exclusions.size)+' · Виключено вручну: '+exclusions.size+' · Публікація вимкнена';}
+  const suspicious=/але|проте|однак|хоча|жах|поган|обман|шахра|хам|груб|брак|поламан|зламан|не рекоменд|не працю|не відповіда|повернен|розчар|скарг|проблем|дефект|хірн|фігн|твар|лайно|говн|ужас|плох|затрим|довго чека/iu;
+  function update(){toolbar.textContent='До відповіді: '+(eligible.length-exclusions.size)+' · Виключено: '+exclusions.size+' · Публікація вимкнена';}
   for(const review of data.reviews){
-   const row=document.createElement('div');row.style.cssText='border-bottom:1px solid #ddd;padding:12px 0';
-   const title=document.createElement('strong');title.textContent=review.rating+'★ · ID '+review.id+' · '+(review.date_raw||'Дата не визначена');
-   const status=document.createElement('p');status.textContent=review.reply_status==='unanswered'?'Без відповіді':review.reply_status==='answered'?'Пропущено: уже є коментар':'Пропущено: статус коментаря невизначений';
-   row.append(title,status);
-   if(review.text){const body=document.createElement('p');body.textContent=review.text;row.append(body);}
-   if(!review.text){const empty=document.createElement('p');empty.textContent='Без тексту покупця';row.append(empty);}
-   if(review.reply_status==='unanswered'){
-    const label=document.createElement('label');label.style.cssText='display:flex;align-items:center;gap:8px;margin:8px 0';
-    const check=document.createElement('input');check.type='checkbox';
-    check.addEventListener('change',()=>{if(check.checked)exclusions.add(review.id);else exclusions.delete(review.id);update()});
-    label.append(check,document.createTextNode('Виключити з автоматичних відповідей'));row.append(label);
+   const row=document.createElement('article');row.style.cssText='display:flex;gap:16px;justify-content:space-between;align-items:flex-start;border:1px solid #e2e8f0;border-radius:14px;padding:18px;margin:10px 0;background:#fff';
+   const main=document.createElement('div');main.style.cssText='min-width:0;flex:1';
+   const title=document.createElement('div');title.style.cssText='font-size:13px;color:#64748b';
+   const stars=document.createElement('span');stars.style.cssText='color:#8b5cf6;font-size:17px;letter-spacing:2px;margin-right:12px';stars.textContent='★'.repeat(review.rating);
+   title.append(stars,document.createTextNode('№ '+review.id+' · '+(review.date_raw||'Дата невідома').slice(0,10)));main.append(title);
+   const body=document.createElement('p');body.style.cssText='font-size:15px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;margin:12px 0 0';body.textContent=review.text||'Без тексту';main.append(body);
+   if(review.reply_status==='unanswered'&&review.text&&suspicious.test(review.text)){
+    row.style.borderColor='#fbbf24';row.style.background='#fffbeb';
+    const warning=document.createElement('div');warning.style.cssText='color:#92400e;font-size:12px;font-weight:700;margin-top:10px';
+    warning.textContent='⚠️ Перевірте зміст — можливе невдоволення';main.append(warning);
    }
-   const info=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');
-   summary.textContent='Технічна діагностика тексту';
-   pre.textContent=JSON.stringify(review.content_diagnostic||{},null,2);pre.style.whiteSpace='pre-wrap';
-   info.append(summary,pre);row.append(info);list.append(row);
+   if(review.reply_status!=='unanswered'){
+    row.style.background='#f8fafc';row.style.opacity='.7';
+    const status=document.createElement('div');status.style.cssText='font-size:12px;color:#64748b;margin-top:9px';
+    status.textContent=review.reply_status==='answered'?'Вже є коментар — пропущено':'Статус невизначений — пропущено';main.append(status);
+   }
+   row.append(main);
+   if(review.reply_status==='unanswered'){
+    const label=document.createElement('label');label.title='Виключити з автоматичних відповідей';
+    label.style.cssText='position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;width:46px;height:46px;border-radius:12px;background:#f1f5f9;border:1px solid #e2e8f0';
+    const check=document.createElement('input');check.type='checkbox';check.setAttribute('aria-label','Виключити відгук № '+review.id);
+    check.style.cssText='position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer';
+    const emoji=document.createElement('span');emoji.textContent='🚩';emoji.style.cssText='font-size:23px;filter:grayscale(1);opacity:.55;pointer-events:none';
+    check.addEventListener('change',()=>{if(check.checked){exclusions.add(review.id);row.style.background='#fff1f2';row.style.borderColor='#fda4af';label.style.background='#ffe4e6';emoji.style.filter='none';emoji.style.opacity='1';}else{exclusions.delete(review.id);row.style.background=suspicious.test(review.text||'')?'#fffbeb':'#fff';row.style.borderColor=suspicious.test(review.text||'')?'#fbbf24':'#e2e8f0';label.style.background='#f1f5f9';emoji.style.filter='grayscale(1)';emoji.style.opacity='.55';}update()});
+    label.append(check,emoji);row.append(label);
+   }
+   list.append(row);
   }
   update();
-  const note=document.createElement('p');note.textContent='Виключення наразі діють лише для поточного перегляду. Не закривайте сторінку, якщо хочете зберегти поточні позначки для огляду. Автоматична відправка ще не реалізована.';list.append(note);
+  const note=document.createElement('p');note.style.cssText='font-size:12px;color:#64748b;margin-top:14px';note.textContent='🚩 — виключити відгук. Позначки діють лише до наступного збору або оновлення сторінки. Відправлення відповідей вимкнено.';list.append(note);
  }catch(e){out.textContent='❌ '+e.message}
  finally{button.disabled=false}
 }
