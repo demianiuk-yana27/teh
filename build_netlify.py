@@ -73,9 +73,9 @@ s = s.replace('data-view="dorobky">• Доробки</div>',
 s = s.replace('data-target-view="dorobky"><span',
               'data-target-view="dorobky"><span', 1)
 positive_html = """<section class="view" id="positive-reviews"><div class="pagehead"><div class="pageicon">⭐</div><div><h2>Позитивні відгуки</h2><p>Попередній перегляд і виключення перед автоматичними відповідями</p></div></div>
-<div class="card"><h3>Збір відгуків</h3><p>Перегляньте текст покупця та позначте прапорцем відгуки, які потребують індивідуальної відповіді. Зараз доступний активний магазин Prom; автоматичне надсилання вимкнено.</p>
+<div class="card"><h3>Збір відгуків</h3><p>Перегляньте текст покупця та позначте прапорцем відгуки, які потребують індивідуальної відповіді. Збираємо з усіх активних магазинів (TRUE) у Google Sheets. Автоматичне надсилання вимкнено.</p>
 <label for="positiveDay">Дата відгуків</label> <input type="date" id="positiveDay"/>
-<button class="run" type="button" onclick="loadPositivePreview(this)">🔎 Зібрати для перевірки</button>
+<button class="run" type="button" onclick="loadPositivePreview(this)">🔎 Зібрати з усіх магазинів</button>
 <button class="run" type="button" onclick="probePositiveShopSwitch(this)" style="background:#475569">🧪 Перевірити 2 магазини</button>
 <div class="status" id="positiveShopProbeStatus" style="white-space:pre-wrap"></div>
 <div class="status" id="positiveStatus" style="white-space:pre-wrap"></div><div id="positiveList"></div></div></section>"""
@@ -97,13 +97,29 @@ async function loadPositivePreview(button){
  const out=document.getElementById('positiveStatus'), list=document.getElementById('positiveList');
  const date=document.getElementById('positiveDay').value;
  if(!date){out.textContent='❌ Оберіть дату.';return}
- button.disabled=true;out.textContent='⏳ Читаємо відгуки поточного магазину…';list.replaceChildren();
+ button.disabled=true;out.textContent='⏳ Збираємо з активних магазинів…';list.replaceChildren();
  try{
-  const res=await fetch('/api/positive/reviews-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date})});
-  const data=await res.json();if(!res.ok||data.status!=='ok')throw Error(data.message||'Помилка читання');
+  const data={reviews:[],shops:[],pages_checked:0,total_pages:0,complete:true};
+  let offset=0,total=1;
+  while(offset<total){
+   const res=await fetch('/api/positive/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date,offset})});
+   const batch=await res.json();if(!res.ok||batch.status!=='ok')throw Error(batch.message||'Помилка читання');
+   total=batch.total_shops;
+   if(!batch.shops.length&&offset<total)throw Error('Порожня порція магазинів');
+   for(const shop of batch.shops){
+    data.shops.push(shop);data.pages_checked+=shop.pages_checked||0;
+    data.reviews.push(...(shop.reviews||[]));
+    if(!shop.complete||shop.error)data.complete=false;
+   }
+   offset=batch.next_offset;
+   out.textContent='⏳ Перевірено магазинів: '+Math.min(offset,total)+' / '+total+' · Знайдено відгуків: '+data.reviews.length;
+  }
+  const seen=new Set();
+  data.reviews=data.reviews.filter(r=>{const key=r.company_id+':'+r.id;if(seen.has(key))return false;seen.add(key);return true});
+  const errors=data.shops.filter(x=>x.error);
   const counts={unanswered:0,answered:0,needs_check:0};
   for(const review of data.reviews){counts[review.reply_status]=(counts[review.reply_status]||0)+1}
-  out.textContent='За '+date+': '+data.reviews.length+' позитивних відгуків; без відповіді: '+counts.unanswered+'; уже з коментарем: '+counts.answered+'; невизначених: '+counts.needs_check+'. Переглянуто '+data.pages_checked+' із '+data.total_pages+' сторінок. '+(data.complete?'Обхід завершено.':'Увага: обхід НЕ завершено.')+' Відповіді не надсилаються.';
+  out.textContent='За '+date+': магазинів '+data.shops.length+'; позитивних відгуків '+data.reviews.length+'; без відповіді '+counts.unanswered+'; уже з коментарем '+counts.answered+'; невизначених '+counts.needs_check+'. Сторінок перевірено '+data.pages_checked+'. '+(data.complete?'Усі магазини оброблені.':'⚠️ Є неповні або помилкові магазини: '+errors.map(x=>x.shop_name+' ('+x.error+')').join('; '))+'. Публікація вимкнена.';
   const toolbar=document.createElement('div');toolbar.style.cssText='padding:14px 4px;font-weight:700;color:#334155';list.append(toolbar);
   const eligible=data.reviews.filter(r=>r.reply_status==='unanswered');
   const exclusions=new Set();
@@ -114,7 +130,7 @@ async function loadPositivePreview(button){
    const main=document.createElement('div');main.style.cssText='min-width:0;flex:1';
    const title=document.createElement('div');title.style.cssText='font-size:13px;color:#64748b';
    const stars=document.createElement('span');stars.style.cssText='color:#8b5cf6;font-size:17px;letter-spacing:2px;margin-right:12px';stars.textContent='★'.repeat(review.rating);
-   title.append(stars,document.createTextNode('№ '+review.id+' · '+(review.date_raw||'Дата невідома').slice(0,10)));main.append(title);
+   title.append(stars,document.createTextNode((review.shop_name||'Магазин')+' · № '+review.id+' · '+(review.date_raw||'Дата невідома').slice(0,10)));main.append(title);
    const body=document.createElement('p');body.style.cssText='font-size:15px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;margin:12px 0 0';body.textContent=review.text||'Без тексту';main.append(body);
    if(review.reply_status==='unanswered'&&review.text&&suspicious.test(review.text)){
     row.style.borderColor='#fbbf24';row.style.background='#fffbeb';
@@ -133,7 +149,7 @@ async function loadPositivePreview(button){
     const check=document.createElement('input');check.type='checkbox';check.setAttribute('aria-label','Виключити відгук № '+review.id);
     check.style.cssText='position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer';
     const emoji=document.createElement('span');emoji.textContent='🚩';emoji.style.cssText='font-size:23px;filter:grayscale(1);opacity:.55;pointer-events:none';
-    check.addEventListener('change',()=>{if(check.checked){exclusions.add(review.id);row.style.background='#fff1f2';row.style.borderColor='#fda4af';label.style.background='#ffe4e6';emoji.style.filter='none';emoji.style.opacity='1';}else{exclusions.delete(review.id);row.style.background=suspicious.test(review.text||'')?'#fffbeb':'#fff';row.style.borderColor=suspicious.test(review.text||'')?'#fbbf24':'#e2e8f0';label.style.background='#f1f5f9';emoji.style.filter='grayscale(1)';emoji.style.opacity='.55';}update()});
+    check.addEventListener('change',()=>{if(check.checked){exclusions.add(review.company_id+':'+review.id);row.style.background='#fff1f2';row.style.borderColor='#fda4af';label.style.background='#ffe4e6';emoji.style.filter='none';emoji.style.opacity='1';}else{exclusions.delete(review.company_id+':'+review.id);row.style.background=suspicious.test(review.text||'')?'#fffbeb':'#fff';row.style.borderColor=suspicious.test(review.text||'')?'#fbbf24':'#e2e8f0';label.style.background='#f1f5f9';emoji.style.filter='grayscale(1)';emoji.style.opacity='.55';}update()});
     label.append(check,emoji);row.append(label);
    }
    list.append(row);
