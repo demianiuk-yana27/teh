@@ -66,6 +66,43 @@ s = s.replace('</main>', '<section class="view" id="boss-dashboard"><div class="
 s = s.replace('data-view="dorobky">• Доробки</div>', 'data-view="dorobky">• Доробки</div><div class="sub" data-view="ttn">• Зміни з ТТН</div>', 1)
 s = s.replace('</main>', '<section class="view" id="ttn"><div class="pagehead"><div class="pageicon">📦</div><div><h2>Зміни з ТТН</h2><p>Неопрацьовані запити, листи та передача Богдану.</p></div></div><div id="ttnApp"></div></section></main>', 1)
 
+
+# Positive reviews: isolated read-only preview under Operational Managers.
+s = s.replace('data-view="dorobky">• Доробки</div>',
+              'data-view="dorobky">• Доробки</div><div class="sub" data-view="positive-reviews">• Позитивні відгуки</div>', 1)
+s = s.replace('data-target-view="dorobky"><span',
+              'data-target-view="dorobky"><span', 1)
+positive_html = """<section class="view" id="positive-reviews"><div class="pagehead"><div class="pageicon">⭐</div><div><h2>Позитивні відгуки</h2><p>Попередній перегляд і виключення перед автоматичними відповідями</p></div></div>
+<div class="card"><h3>Збір відгуків</h3><p>Наразі доступний безпечний тест читання відгуків про компанію для активного магазину Prom. Відправлення відповідей вимкнене до перевірки полів дати, наявності відповіді та перемикання магазинів.</p>
+<label for="positiveDay">Дата відгуків</label> <input type="date" id="positiveDay"/>
+<button class="run" type="button" onclick="loadPositivePreview(this)">🔎 Зібрати для перевірки</button>
+<div class="status" id="positiveStatus" style="white-space:pre-wrap"></div><div id="positiveList"></div></div></section>"""
+s = s.replace('</main>', positive_html + '</main>', 1)
+s = s.replace('data-target-view="ordercount"><span', 'data-target-view="ordercount"><span', 1)
+positive_script = """<script>
+async function loadPositivePreview(button){
+ const out=document.getElementById('positiveStatus'), list=document.getElementById('positiveList');
+ const date=document.getElementById('positiveDay').value;
+ if(!date){out.textContent='❌ Оберіть дату.';return}
+ button.disabled=true;out.textContent='⏳ Читаємо відгуки поточного магазину…';list.replaceChildren();
+ try{
+  const res=await fetch('/api/positive/reviews-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date})});
+  const data=await res.json();if(!res.ok||data.status!=='ok')throw Error(data.message||'Помилка читання');
+  out.textContent='Отримано '+data.reviews.length+' відгуків 4–5★ на '+data.pages_checked+' сторінках із '+data.total_pages+'. Увага: фільтр дати та перевірка вже опублікованих відповідей ще не активовані. Це тестова вибірка, не список для публікації.';
+  for(const review of data.reviews){
+   const row=document.createElement('div');row.style.cssText='border-bottom:1px solid #ddd;padding:12px 0';
+   const check=document.createElement('input');check.type='checkbox';check.checked=true;check.setAttribute('aria-label','Виключити відгук '+review.id);
+   const title=document.createElement('strong');title.textContent=' '+review.rating+'★ · ID '+review.id+' · '+(review.date_raw||'Дата не визначена');
+   const body=document.createElement('p');body.textContent=review.text||'Без тексту (поля характеристик Prom ще не перевірено)';
+   const fields=document.createElement('small');fields.textContent='Поля JSON: '+review.fields.join(', ');
+   row.append(check,title,body,fields);list.append(row);
+  }
+ }catch(e){out.textContent='❌ '+e.message}
+ finally{button.disabled=false}
+}
+</script>"""
+s = s.replace('</body>', positive_script + '</body>', 1)
+
 # Database navigation: correspondence scripts, call scripts and refusal handling.
 s = s.replace('data-view="scripts">💬 Скрипти</div>', 'data-view="scripts">💬 Скрипти для переписок</div><div class="sub" data-view="call-scripts">☎️ Скрипти для дзвінка</div><div class="sub" data-view="refusal-work">🚫 Робота з відмовою</div>', 1)
 # Training materials subsections.
