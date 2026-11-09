@@ -90,7 +90,7 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <label for="positiveBatchLimit">Кількість</label> <input id="positiveBatchLimit" type="number" min="1" max="10" value="3" style="width:65px"/>
 <button class="run" type="button" onclick="positiveStartQueue()" disabled title="Тимчасово вимкнено до перевірки результатів публікації" style="background:#94a3b8;cursor:not-allowed">🚀 Запустити підтверджену чергу</button>
 <button class="run" type="button" onclick="positiveStopQueue()" style="background:#64748b">⏹ Зупинити після поточного</button>
-<div class="status" id="positiveQueueStatus"></div>
+<div class="status" id="positiveQueueStatus"></div><div style="margin-top:10px"><button class="run" type="button" onclick="positiveShowJournal(this)" style="background:#475569">📋 Показати журнал спроб</button><button class="run" type="button" onclick="positiveExportJournal()" style="background:#475569">⬇️ Експорт журналу JSON</button><div id="positiveJournalView" style="margin-top:8px"></div></div>
 </div><div class="status" id="positiveDraftStatus"></div><div id="positiveDraftList"></div>
 </div>
 <div class="status" id="positiveShopProbeStatus" style="white-space:pre-wrap"></div>
@@ -224,6 +224,24 @@ let positiveDraftPlan=[];
 function positiveJournalKey(){return 'teh-positive-journal-v1'}
 function positiveJournalRead(){
  try{const v=JSON.parse(localStorage.getItem(positiveJournalKey())||'{}');return v&&typeof v==='object'?v:{}}catch(e){return {}}
+}
+function positiveShowJournal(){
+ const target=document.getElementById('positiveJournalView');target.replaceChildren();
+ const journal=positiveJournalRead(),entries=Object.entries(journal).sort((a,b)=>String(b[1].at||'').localeCompare(String(a[1].at||'')));
+ if(!entries.length){target.textContent='Журнал поки порожній.';return}
+ const table=document.createElement('table');table.style.cssText='width:100%;font-size:12px;border-collapse:collapse';
+ const head=document.createElement('tr');
+ for(const title of ['Магазин','ID відгуку','Дата спроби','Статус']){const th=document.createElement('th');th.textContent=title;th.style.cssText='text-align:left;padding:7px;border-bottom:1px solid #cbd5e1';head.append(th)}table.append(head);
+ for(const [key,item] of entries){
+  const tr=document.createElement('tr'),parts=key.split(':');
+  for(const val of [item.shop||parts[0],parts[1]||key,item.at||'',item.status==='sent'?'API підтвердив (не перевірено в Prom)':item.status==='attempted'?'Невизначено / перевірити вручну':item.status||'Невідомо']){
+   const td=document.createElement('td');td.textContent=val;td.style.cssText='padding:7px;border-bottom:1px solid #e2e8f0';tr.append(td)
+  }table.append(tr)
+ }target.append(table)
+}
+function positiveExportJournal(){
+ const blob=new Blob([JSON.stringify(positiveJournalRead(),null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='positive-reply-journal.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function positiveJournalWrite(journal){
  try{localStorage.setItem(positiveJournalKey(),JSON.stringify(journal));return true}catch(e){return false}
