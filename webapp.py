@@ -1008,7 +1008,7 @@ def negative_http_context_probe():
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect())
         results = []
         for kind, base in (("company", COMPANY_REVIEWS_URL), ("product", PRODUCT_REVIEWS_URL)):
-            for page in (1, 2) if kind == "company" else (1,):
+            for page in (1, 2):
                 url = base + "/context?page=" + str(page) + "&per_page=20"
                 req = urllib.request.Request(url, headers={
                     "Accept": "application/json, text/plain, */*",
@@ -1048,6 +1048,7 @@ def negative_http_context_probe():
                                     entry["context_empty"] = isinstance(context, dict) and not bool(context)
                                     entry["error_code"] = str(payload.get("code"))[:60] if payload.get("code") is not None else None
                                     entry["response_bytes"] = len(raw)
+                                    entry["response_sha256_short"] = __import__("hashlib").sha256(raw).hexdigest()[:16]
 
                                     entry["opinions_count"] = len(opinions) if isinstance(opinions, list) else None
                                     entry["negative_count"] = sum(
@@ -1071,6 +1072,8 @@ def negative_http_context_probe():
                     entry["error"] = type(exc).__name__
                 results.append(entry)
         first, second = results[0], results[1]
+        company_response_same = first.get("response_sha256_short") == second.get("response_sha256_short")
+        product_response_same = results[2].get("response_sha256_short") == results[3].get("response_sha256_short")
         pagination_verified = bool(
             first.get("json_ok") and second.get("json_ok")
             and first.get("pagination", {}).get("current_page") == 1
@@ -1080,7 +1083,9 @@ def negative_http_context_probe():
         return jsonify({
             "status": "ok", "results": results,
             "pagination_verified": pagination_verified,
-            "note": "Лише читання; магазини не перемикаються, відгуки не записуються. Товари — непідтверджений endpoint.",
+            "company_response_same": company_response_same,
+            "product_response_same": product_response_same,
+            "note": "Лише читання; магазини не перемикаються, відгуки не записуються. Товари також перевіряються на двох сторінках.",
         })
     except Exception as exc:
         return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:180]})
