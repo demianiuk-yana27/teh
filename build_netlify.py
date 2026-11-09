@@ -227,17 +227,42 @@ function positiveJournalRead(){
 }
 function positiveShowJournal(){
  const target=document.getElementById('positiveJournalView');target.replaceChildren();
- const journal=positiveJournalRead(),entries=Object.entries(journal).sort((a,b)=>String(b[1].at||'').localeCompare(String(a[1].at||'')));
+ const journal=positiveJournalRead(),entries=Object.entries(journal).sort((a,b)=>String(a[1].at||'').localeCompare(String(b[1].at||'')));
  if(!entries.length){target.textContent='Журнал поки порожній.';return}
- const table=document.createElement('table');table.style.cssText='width:100%;font-size:12px;border-collapse:collapse';
- const head=document.createElement('tr');
- for(const title of ['Магазин','ID відгуку','Дата спроби','Статус']){const th=document.createElement('th');th.textContent=title;th.style.cssText='text-align:left;padding:7px;border-bottom:1px solid #cbd5e1';head.append(th)}table.append(head);
+ const intro=document.createElement('p');intro.style.cssText='font-size:13px;color:#475569;margin:8px 0';
+ intro.textContent='Перевіряйте кожен відгук у зазначеному магазині. Номер нижче — ID відгуку, а не замовлення. Ручне підтвердження не надсилає нічого в Prom.';
+ target.append(intro);
  for(const [key,item] of entries){
-  const tr=document.createElement('tr'),parts=key.split(':');
-  for(const val of [item.shop||parts[0],parts[1]||key,item.at||'',item.status==='sent'?'API підтвердив (не перевірено в Prom)':item.status==='attempted'?'Невизначено / перевірити вручну':item.status||'Невідомо']){
-   const td=document.createElement('td');td.textContent=val;td.style.cssText='padding:7px;border-bottom:1px solid #e2e8f0';tr.append(td)
-  }table.append(tr)
- }target.append(table)
+  const parts=key.split(':'),company=parts[0],opinion=parts[1]||key;
+  const card=document.createElement('div');card.style.cssText='border:1px solid #cbd5e1;border-radius:10px;padding:12px;margin:8px 0;background:#fff';
+  const name=document.createElement('div');name.style.cssText='font-weight:800;font-size:16px;color:#172554';
+  name.textContent='🏪 '+(item.shop||'Магазин '+company);
+  const id=document.createElement('div');id.style.cssText='font-size:14px;font-weight:700;margin-top:4px';
+  id.textContent='ID відгуку №'+opinion+' · company_id '+company;
+  const stamp=document.createElement('div');stamp.style.cssText='font-size:12px;color:#64748b;margin-top:4px';
+  stamp.textContent='Спроба: '+(item.at?new Date(item.at).toLocaleString('uk-UA'):'невідомо');
+  const state=document.createElement('div');state.style.cssText='font-size:13px;margin-top:6px;font-weight:700';
+  const statusLabel=()=>item.status==='manually_verified'?'✅ Підтверджено вручну в Prom':item.status==='sent'?'🟡 API підтвердив; у Prom не перевірено':item.status==='attempted'?'⚠️ Невизначено — перевірити в Prom':item.status==='verified'?'✅ Перевірено сервером у Prom':'⚠️ '+(item.status||'Невідомо');
+  state.textContent=statusLabel();
+  const reply=document.createElement('div');reply.style.cssText='font-size:12px;margin-top:6px;white-space:pre-wrap;color:#475569';
+  reply.textContent='Текст спроби: '+(item.comment||'не збережено');
+  card.append(name,id,stamp,state,reply);
+  if(item.status!=='manually_verified'){
+   const verify=document.createElement('button');verify.type='button';verify.className='run';
+   verify.style.cssText='background:#64748b;margin-top:8px';
+   verify.textContent='✅ Я перевірила коментар у Prom';
+   verify.addEventListener('click',()=>{
+    if(!confirm('Підтверджуєте, що саме цей текст опублікований у магазині '+(item.shop||company)+' під відгуком №'+opinion+'?'))return;
+    const latest=positiveJournalRead();
+    if(!latest[key])return;
+    latest[key]={...latest[key],status:'manually_verified',verified_at:new Date().toISOString()};
+    if(!positiveJournalWrite(latest)){alert('Не вдалося зберегти підтвердження.');return}
+    positiveShowJournal();
+   });
+   card.append(verify);
+  }
+  target.append(card);
+ }
 }
 function positiveExportJournal(){
  const blob=new Blob([JSON.stringify(positiveJournalRead(),null,2)],{type:'application/json'});
