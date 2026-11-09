@@ -344,7 +344,6 @@ async function positiveStartQueue(){
    out.textContent='⏳ Надсилаємо '+key+' ('+(sent+1)+'/'+candidates.length+')';
    try{
     const startedAt=performance.now();
-    const startedAt=performance.now();
     const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:item.company_id,opinion_id:item.id,comment:item.comment,retry_verified_absent:isRetry,retry_confirmation:isRetry?'ПЕРЕВІРЕНО НЕМАЄ':null,confirmation:'НАДІСЛАТИ'})});
     const result=await positiveParsePublishResponse(res,startedAt);
     const done=positiveJournalRead();done[key]={...done[key],status:'verified',verified_at:new Date().toISOString()};positiveJournalWrite(done);
@@ -411,6 +410,7 @@ function positiveBuildDrafts(button){
    const status=document.getElementById('positiveDraftStatus');
    status.textContent='⏳ Надсилаємо одну відповідь і перевіряємо її в Prom…';
    try{
+    const startedAt=performance.now();
     const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
      company_id:String(review.company_id),opinion_id:String(review.id),comment:message,retry_verified_absent:isRetry,retry_confirmation:isRetry?'ПЕРЕВІРЕНО НЕМАЄ':null,confirmation
     })});
