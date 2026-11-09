@@ -88,13 +88,13 @@ async function loadPositivePreview(button){
  try{
   const res=await fetch('/api/positive/reviews-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date})});
   const data=await res.json();if(!res.ok||data.status!=='ok')throw Error(data.message||'Помилка читання');
-  out.textContent='Отримано '+data.reviews.length+' відгуків 4–5★ на '+data.pages_checked+' сторінках із '+data.total_pages+'. Увага: фільтр дати та перевірка вже опублікованих відповідей ще не активовані. Це тестова вибірка, не список для публікації.';
+  out.textContent='Отримано '+data.reviews.length+' відгуків 4–5★ на '+data.pages_checked+' сторінках із '+data.total_pages+'. Фільтр дати застосовано. Перевірка вже опублікованих відповідей ще не активована. Це тестова вибірка, не список для публікації.';
   for(const review of data.reviews){
    const row=document.createElement('div');row.style.cssText='border-bottom:1px solid #ddd;padding:12px 0';
    const check=document.createElement('input');check.type='checkbox';check.checked=true;check.setAttribute('aria-label','Виключити відгук '+review.id);
    const title=document.createElement('strong');title.textContent=' '+review.rating+'★ · ID '+review.id+' · '+(review.date_raw||'Дата не визначена');
    const body=document.createElement('p');body.textContent=review.text||'Без тексту (поля характеристик Prom ще не перевірено)';
-   const fields=document.createElement('small');fields.textContent='Поля JSON: '+review.fields.join(', ');
+   const fields=document.createElement('small');fields.textContent='Коментарі: '+JSON.stringify(review.comments_info||{})+'; comments_count='+String(review.comments_count)+'; can_add_comment='+String(review.can_add_comment)+'; company_id='+String(review.company_id)+'; Поля JSON: '+review.fields.join(', ');
    row.append(check,title,body,fields);list.append(row);
   }
  }catch(e){out.textContent='❌ '+e.message}
