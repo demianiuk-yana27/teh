@@ -224,6 +224,10 @@ let positiveQueueStop=false;
 let positiveQueueRunning=false;
 let positiveDraftPlan=[];
 function positiveJournalKey(){return 'teh-positive-journal-v1'}
+function positiveMayPublish(key,journal){
+ const entry=journal[key];
+ return !entry||entry.status==='manually_absent';
+}
 function positiveJournalRead(){
  try{const v=JSON.parse(localStorage.getItem(positiveJournalKey())||'{}');return v&&typeof v==='object'?v:{}}catch(e){return {}}
 }
@@ -299,7 +303,7 @@ async function positiveStartQueue(){
  const candidates=positiveDraftPlan.filter(x=>{
   const key=x.company_id+':'+x.id,shop=state.shops[x.company_id];
   const fresh=shop&&(shop.reviews||[]).find(r=>String(r.id)===String(x.id));
-  return fresh&&fresh.reply_status==='unanswered'&&!flags.has(key)&&!journal[key];
+  return fresh&&fresh.reply_status==='unanswered'&&!flags.has(key)&&positiveMayPublish(key,journal);
  }).slice(0,limit);
  if(!candidates.length){out.textContent='Немає доступних чернеток для запуску. Перевірте журнал та сформуйте план.';return}
  const names=candidates.map(x=>x.shop_name+' №'+x.id).join('\\n');
@@ -313,13 +317,14 @@ async function positiveStartQueue(){
    const key=item.company_id+':'+item.id,now=positiveRead(day);
    const shop=now.shops[item.company_id],review=shop&&(shop.reviews||[]).find(r=>String(r.id)===String(item.id));
    if(!shop||!shop.complete||shop.error||!review||review.reply_status!=='unanswered'||(now.flags||[]).includes(key)){out.textContent='⏹ Статус змінився для '+key+'. Чергу зупинено.';break}
-   if(positiveJournalRead()[key]){out.textContent='⏹ Вже є запис у журналі для '+key+'. Чергу зупинено.';break}
+   if(!positiveMayPublish(key,positiveJournalRead())){out.textContent='⏹ Невизначена або успішна спроба для '+key+'. Чергу зупинено.';break}
    const currentJournal=positiveJournalRead();
-   currentJournal[key]={status:'attempted',day,shop:item.shop_name,comment:item.comment,at:new Date().toISOString()};
+   const isRetry=currentJournal[key]?.status==='manually_absent';
+   currentJournal[key]={status:'attempted',day,shop:item.shop_name,comment:item.comment,at:new Date().toISOString(),previous_attempt:currentJournal[key]||null};
    if(!positiveJournalWrite(currentJournal)){out.textContent='⏹ Неможливо записати журнал. Відправлення скасовано.';break}
    out.textContent='⏳ Надсилаємо '+key+' ('+(sent+1)+'/'+candidates.length+')';
    try{
-    const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:item.company_id,opinion_id:item.id,comment:item.comment,confirmation:'НАДІСЛАТИ'})});
+    const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:item.company_id,opinion_id:item.id,comment:item.comment,retry_verified_absent:isRetry,retry_confirmation:isRetry?'ПЕРЕВІРЕНО НЕМАЄ':null,confirmation:'НАДІСЛАТИ'})});
     if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув не JSON');
     const result=await res.json();
     if(!res.ok||result.status!=='ok'||result.verified!==true)throw Error(result.message||'Prom не підтвердив точний текст відповіді');
@@ -348,12 +353,12 @@ function positiveBuildDrafts(button){
   for(const review of shop.reviews||[]){
    const key=String(review.company_id)+':'+String(review.id);
    if(seen.has(key))continue;seen.add(key);
-   if(review.reply_status!=='unanswered'||flags.has(key)||journal[key])continue;
+   if(review.reply_status!=='unanswered'||flags.has(key)||!positiveMayPublish(key,journal))continue;
    eligible.push(review);
   }
  }
  eligible.sort((a,b)=>String(a.company_id).localeCompare(String(b.company_id))||String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
- status.textContent='🧪 Підготовлено '+eligible.length+' чернеток за '+day+' із '+templates.length+' шаблонів. Попередні спроби з журналу виключені. Перед публікацією сервер перевіряє актуальний стан у Prom.';
+ status.textContent='🧪 Підготовлено '+eligible.length+' чернеток за '+day+' із '+templates.length+' шаблонів. Успішні та невизначені спроби виключені; перевірені без відповіді доступні для повторної спроби. Перед публікацією сервер перевіряє актуальний стан у Prom.';
  positiveDraftPlan=eligible.map((review,i)=>({...review,comment:templates[i%templates.length]}));
  const fragment=document.createDocumentFragment();
  for(let i=0;i<eligible.length;i++){
@@ -368,7 +373,7 @@ function positiveBuildDrafts(button){
   send.textContent='🧪 Надіслати лише цю відповідь';
   send.addEventListener('click',async()=>{
    if(positiveRunBusy)return;
-   if(positiveJournalRead()[String(review.company_id)+':'+String(review.id)]){alert('Цей відгук уже є в журналі спроб. Повторне надсилання заборонено.');return}
+   if(!positiveMayPublish(String(review.company_id)+':'+String(review.id),positiveJournalRead())){alert('Відгук уже має спробу. Повтор дозволений лише зі статусом «Перевірено — відповіді немає».');return}
    const fresh=positiveRead(day),stored=fresh.shops[String(review.company_id)];
    const current=stored&&(stored.reviews||[]).find(x=>String(x.id)===String(review.id));
    if(!stored||!stored.complete||stored.error||!current||current.reply_status!=='unanswered'||(fresh.flags||[]).includes(String(review.company_id)+':'+String(review.id))){
@@ -379,15 +384,16 @@ function positiveBuildDrafts(button){
    if(confirmation!=='НАДІСЛАТИ')return;
    const key=String(review.company_id)+':'+String(review.id);
    const journal=positiveJournalRead();
-   if(journal[key]){alert('У журналі вже є спроба для цього відгуку. Перевірте її статус у Prom; повторне надсилання заблоковано.');return}
-   journal[key]={status:'attempted',day,shop:review.shop_name,comment:message,at:new Date().toISOString()};
+   if(!positiveMayPublish(key,journal)){alert('Відгук уже має спробу. Перевірте статус у журналі.');return}
+   const isRetry=journal[key]?.status==='manually_absent';
+   journal[key]={status:'attempted',day,shop:review.shop_name,comment:message,at:new Date().toISOString(),previous_attempt:journal[key]||null};
    if(!positiveJournalWrite(journal)){alert('Не вдалося зберегти журнал. Відправлення скасовано.');return}
    positiveRunBusy=true;send.disabled=true;
    const status=document.getElementById('positiveDraftStatus');
    status.textContent='⏳ Надсилаємо одну відповідь і перевіряємо її в Prom…';
    try{
     const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-     company_id:String(review.company_id),opinion_id:String(review.id),comment:message,confirmation
+     company_id:String(review.company_id),opinion_id:String(review.id),comment:message,retry_verified_absent:isRetry,retry_confirmation:isRetry?'ПЕРЕВІРЕНО НЕМАЄ':null,confirmation
     })});
     if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув не JSON.');
     const result=await res.json();
