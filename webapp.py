@@ -1663,30 +1663,38 @@ def positive_publish_one():
                             "pageType": "portal", "perPage": 20,
                             "searchQuery": "", "sortingQuery": "default"}).encode(),
                         headers=common_headers, method="POST")
-                    # Only retry the READ operation. Never retry comment creation.
+                    # Retry only the read-only Prom preflight, never the comment POST.
+                    # Keep a bounded total duration to avoid Render worker timeouts.
                     import time
                     payload = None
-                    for read_attempt in range(3):
+                    read_started = time.monotonic()
+                    read_limit_seconds = 22
+                    read_attempts = 0
+                    last_read_error = "невідома помилка"
+                    for read_attempt in range(10):
+                        remaining = read_limit_seconds - (time.monotonic() - read_started)
+                        if remaining < 1:
+                            break
+                        read_attempts += 1
                         try:
-                            with opener.open(req, timeout=15) as response:
+                            with opener.open(req, timeout=min(4, max(1, remaining))) as response:
                                 payload = json.loads(response.read(800001))
                             break
                         except urllib.error.HTTPError as read_error:
                             if read_error.code not in (429, 500, 502, 503, 504):
                                 raise
-                            if read_attempt == 2:
-                                return jsonify({"status": "error", "stage": "preflight_read",
-                                    "safe_to_retry": True, "post_attempted": False,
-                                    "message": "Prom не дозволив прочитати відгук (HTTP " +
-                                    str(read_error.code) + "). Публікацію не розпочато; повторіть пізніше."}), 503
+                            last_read_error = "HTTP " + str(read_error.code)
                         except (urllib.error.URLError, TimeoutError) as read_error:
-                            if read_attempt == 2:
-                                return jsonify({"status": "error", "stage": "preflight_read",
-                                    "safe_to_retry": True, "post_attempted": False,
-                                    "message": "Не вдалося прочитати відгук у Prom (" +
-                                    type(read_error).__name__ + "). Публікацію не розпочато."}), 503
-                        if read_attempt < 2:
-                            time.sleep(2 * (read_attempt + 1))
+                            last_read_error = type(read_error).__name__
+                        if read_attempt < 9 and time.monotonic() - read_started < read_limit_seconds - 1:
+                            time.sleep(0.5)
+                    if payload is None:
+                        return jsonify({"status": "error", "stage": "preflight_read",
+                            "safe_to_retry": True, "post_attempted": False,
+                            "read_attempts": read_attempts,
+                            "message": "Prom не дозволив прочитати відгук (" +
+                            last_read_error + "; спроб " + str(read_attempts) +
+                            " із максимум 10). Публікацію не розпочато; повторіть пізніше."}), 503
                     opinions = payload.get("opinions") if isinstance(payload, dict) else None
                     if not isinstance(opinions, list):
                         raise ValueError("Неправильний формат списку відгуків.")
