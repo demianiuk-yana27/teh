@@ -90,20 +90,37 @@ async function loadPositivePreview(button){
   const data=await res.json();if(!res.ok||data.status!=='ok')throw Error(data.message||'Помилка читання');
   const counts={unanswered:0,answered:0,needs_check:0};
   for(const review of data.reviews){counts[review.reply_status]=(counts[review.reply_status]||0)+1}
-  out.textContent='Знайдено '+data.reviews.length+' відгуків 4–5★ за дату. Без коментарів: '+counts.unanswered+'; з відповіддю продавця: '+counts.answered+'; потребують перевірки: '+counts.needs_check+'. Переглянуто '+data.pages_checked+' із '+data.total_pages+' сторінок. '+(data.complete?'Обхід за датою завершено.':'Увага: обхід НЕ завершено.')+' Публікацію вимкнено.';
+  out.textContent='За '+date+': '+data.reviews.length+' позитивних відгуків; без відповіді: '+counts.unanswered+'; уже з коментарем: '+counts.answered+'; невизначених: '+counts.needs_check+'. Переглянуто '+data.pages_checked+' із '+data.total_pages+' сторінок. '+(data.complete?'Обхід завершено.':'Увага: обхід НЕ завершено.')+' Відповіді не надсилаються.';
+  const toolbar=document.createElement('div');toolbar.style.cssText='padding:12px 0;font-weight:600';
+  list.append(toolbar);
+  const eligible=data.reviews.filter(r=>r.reply_status==='unanswered');
+  const exclusions=new Set();
+  function update(){toolbar.textContent='До майбутньої відповіді: '+(eligible.length-exclusions.size)+' · Виключено вручну: '+exclusions.size+' · Публікація вимкнена';}
   for(const review of data.reviews){
    const row=document.createElement('div');row.style.cssText='border-bottom:1px solid #ddd;padding:12px 0';
-   const check=document.createElement('input');check.type='checkbox';check.checked=true;check.disabled=review.reply_status!=='unanswered';check.setAttribute('aria-label','Виключити відгук '+review.id);
-   const title=document.createElement('strong');title.textContent=' '+review.rating+'★ · ID '+review.id+' · '+(review.date_raw||'Дата не визначена');
-   const status=document.createElement('p');status.textContent=review.reply_status==='unanswered'?'Без коментарів (попередньо без відповіді)':review.reply_status==='answered'?'Є відповідь продавця':'Потрібна перевірка коментарів';
-   const body=document.createElement('p');body.textContent=review.text||'Текст і характеристики ще не розпізнані';
-   const fields=document.createElement('small');fields.textContent='Коментарі: '+JSON.stringify(review.comments_info||{})+'; comments_count='+String(review.comments_count)+'; can_add_comment='+String(review.can_add_comment)+'; company_id='+String(review.company_id);
-   row.append(check,title,status,body,fields);list.append(row);
+   const title=document.createElement('strong');title.textContent=review.rating+'★ · ID '+review.id+' · '+(review.date_raw||'Дата не визначена');
+   const status=document.createElement('p');status.textContent=review.reply_status==='unanswered'?'Без відповіді':review.reply_status==='answered'?'Пропущено: уже є коментар':'Пропущено: статус коментаря невизначений';
+   row.append(title,status);
+   if(review.text){const body=document.createElement('p');body.textContent=review.text;row.append(body);}
+   if(Array.isArray(review.characteristics)&&review.characteristics.length){
+    const tags=document.createElement('p');tags.textContent='Характеристики: '+review.characteristics.join(' · ');row.append(tags);
+   }
+   if(!review.text&&(!review.characteristics||!review.characteristics.length)){
+    const empty=document.createElement('p');empty.textContent='Без тексту';row.append(empty);
+   }
+   if(review.reply_status==='unanswered'){
+    const label=document.createElement('label');label.style.cssText='display:flex;align-items:center;gap:8px;margin:8px 0';
+    const check=document.createElement('input');check.type='checkbox';
+    check.addEventListener('change',()=>{if(check.checked)exclusions.add(review.id);else exclusions.delete(review.id);update()});
+    label.append(check,document.createTextNode('Виключити з автоматичних відповідей'));row.append(label);
+   }
+   const info=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');
+   summary.textContent='Технічна діагностика тексту';
+   pre.textContent=JSON.stringify(review.content_diagnostic||{},null,2);pre.style.whiteSpace='pre-wrap';
+   info.append(summary,pre);row.append(info);list.append(row);
   }
-  const info=document.createElement('details'), summary=document.createElement('summary'), pre=document.createElement('pre');
-  summary.textContent='Технічні типи полів Prom (без значень)';
-  pre.textContent=JSON.stringify(data.field_types||{},null,2);pre.style.whiteSpace='pre-wrap';
-  info.append(summary,pre);list.append(info);
+  update();
+  const note=document.createElement('p');note.textContent='Виключення наразі діють лише для поточного перегляду. Не закривайте сторінку, якщо хочете зберегти поточні позначки для огляду. Автоматична відправка ще не реалізована.';list.append(note);
  }catch(e){out.textContent='❌ '+e.message}
  finally{button.disabled=false}
 }
