@@ -1700,12 +1700,64 @@ def positive_publish_one():
                 except Exception:
                     return jsonify({"status": "uncertain",
                         "message": "Запит надіслано, але підтвердження не отримано. Перевірте відгук у Prom вручну; повторно не надсилайте."}), 502
-                if isinstance(result, dict) and result.get("status") == "success":
-                    return jsonify({"status": "ok", "company_id": company_id,
-                                    "opinion_id": opinion_id,
-                                    "message": "Prom підтвердив створення коментаря."})
-                return jsonify({"status": "uncertain",
-                    "message": "Prom не підтвердив успіх. Перевірте коментар вручну, перш ніж повторювати."}), 502
+                # A successful create response is NOT proof of a visible reply.
+                # Read the same shop's review list again and confirm the reply exists.
+                import time
+                import random
+                verified = False
+                verification_detail = "Коментар не підтверджено повторним читанням."
+                for check in range(3):
+                    if check:
+                        time.sleep(1.5 + check)
+                    try:
+                        verify_req = urllib.request.Request(
+                            "https://my.prom.ua/cms/opinions/company/list",
+                            data=json.dumps({"filters": [], "page": 1,
+                                "pageType": "portal", "perPage": 20,
+                                "searchQuery": "", "sortingQuery": "default"}).encode(),
+                            headers=common_headers, method="POST")
+                        # Search all pages, since the target may not be on page one.
+                        for verify_page in range(1, 151):
+                            verify_body = json.dumps({"filters": [], "page": verify_page,
+                                "pageType": "portal", "perPage": 20,
+                                "searchQuery": "", "sortingQuery": "default"}).encode()
+                            verify_req = urllib.request.Request(
+                                "https://my.prom.ua/cms/opinions/company/list",
+                                data=verify_body, headers=common_headers, method="POST")
+                            with opener.open(verify_req, timeout=12) as verify_response:
+                                verified_payload = json.loads(verify_response.read(800001))
+                            records = verified_payload.get("opinions") if isinstance(verified_payload, dict) else None
+                            if not isinstance(records, list):
+                                raise ValueError("Невідомий формат перевірки Prom.")
+                            matched = next((x for x in records if isinstance(x, dict)
+                                and str(x.get("id")) == opinion_id), None)
+                            if matched is not None:
+                                if str(matched.get("company_id")) != company_id:
+                                    raise ValueError("Невідповідність магазину під час перевірки.")
+                                comments = matched.get("comments")
+                                if isinstance(comments, list) and any(
+                                    isinstance(x, dict) and x.get("authorIsCompany") is True
+                                    and x.get("message") == comment for x in comments):
+                                    verified = True
+                                elif (matched.get("comments_count", 0) > 0 and
+                                      isinstance(result, dict) and result.get("status") == "success"):
+                                    verification_detail = "Є коментар, але текст відповіді не підтверджений."
+                                break
+                            pagination = verified_payload.get("pagination") or {}
+                            if not records or (isinstance(pagination, dict) and
+                                    verify_page >= int(pagination.get("num_pages") or 1)):
+                                break
+                        if verified:
+                            break
+                    except Exception as verify_exc:
+                        verification_detail = type(verify_exc).__name__ + " під час перевірки."
+                if verified:
+                    return jsonify({"status": "ok", "verified": True,
+                        "company_id": company_id, "opinion_id": opinion_id,
+                        "message": "Точний текст відповіді підтверджено повторним читанням Prom."})
+                return jsonify({"status": "uncertain", "verified": False,
+                    "company_id": company_id, "opinion_id": opinion_id,
+                    "message": verification_detail + " Перевірте Prom вручну; автоматичний повтор заборонено."}), 409
             except (urllib.error.URLError, ValueError, TimeoutError) as exc:
                 last_error = type(exc).__name__ + ": " + str(exc)[:100]
                 continue
