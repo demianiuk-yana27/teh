@@ -1,4 +1,5 @@
 (()=>{
+function initOperationsTraining(){
 const root=document.getElementById('operationsTrainingApp');
 if(!root)return;
 const guide=window.OPERATIONS_TRAINING_GUIDE;
@@ -24,4 +25,7 @@ root.addEventListener('click',e=>{const b=e.target.closest('[data-ot-tab]');if(!
 root.addEventListener('input',e=>{if(e.target.id!=='otSearch')return;const pos=e.target.selectionStart;search=e.target.value;render();const inp=root.querySelector('#otSearch');inp.focus();inp.setSelectionRange(pos,pos);});
 root.addEventListener('change',e=>{if(!e.target.matches('[data-ot-done]'))return;completed[e.target.dataset.otDone]=e.target.checked;try{localStorage.setItem(completedKey,JSON.stringify(completed))}catch(_){}const n=root.querySelector('.ot-summary b');if(n)n.textContent=totalDone()+' із '+allCount();const bar=root.querySelector('.ot-progress>div');if(bar)bar.style.width=(100*totalDone()/allCount())+'%';});
 render();
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initOperationsTraining,{once:true});
+else initOperationsTraining();
 })();
