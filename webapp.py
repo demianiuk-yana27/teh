@@ -1089,3 +1089,115 @@ def negative_http_context_probe():
         })
     except Exception as exc:
         return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:180]})
+
+
+@app.route("/negative/http-company-list-probe", methods=["GET"])
+def negative_http_company_list_probe():
+    """Read-only POST /list pagination test for the current Prom session shop."""
+    import http.cookiejar
+    import urllib.request
+    import urllib.error
+    import json
+    import hashlib
+    from negative_reviews import _prom_session_cookies, COMPANY_REVIEWS_URL
+
+    try:
+        jar = http.cookiejar.CookieJar()
+        for item in _prom_session_cookies():
+            if not isinstance(item, dict):
+                continue
+            domain = str(item.get("domain") or "").lower()
+            if domain.lstrip(".") != "prom.ua" and not domain.lstrip(".").endswith(".prom.ua"):
+                continue
+            if not isinstance(item.get("name"), str) or not isinstance(item.get("value"), str):
+                continue
+            expiry = item.get("expirationDate", item.get("expiry"))
+            try:
+                expiry = int(expiry) if expiry is not None else None
+            except (TypeError, ValueError):
+                expiry = None
+            jar.set_cookie(http.cookiejar.Cookie(
+                version=0, name=item["name"], value=item["value"], port=None,
+                port_specified=False, domain=domain, domain_specified=True,
+                domain_initial_dot=domain.startswith("."), path=str(item.get("path") or "/"),
+                path_specified=True, secure=bool(item.get("secure", False)),
+                expires=expiry, discard=expiry is None, comment=None,
+                comment_url=None, rest={}, rfc2109=False))
+        if not list(jar):
+            return jsonify({"status": "error", "message": "Cookies Prom не знайдено."})
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect())
+        results = []
+        for page in (1, 2):
+            body = json.dumps({
+                "filters": [], "page": page, "pageType": "portal",
+                "perPage": 20, "searchQuery": "", "sortingQuery": "default"
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                COMPANY_REVIEWS_URL + "/list", data=body, method="POST",
+                headers={
+                    "Accept": "application/json, text/plain, */*",
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                    "Referer": COMPANY_REVIEWS_URL,
+                    "Origin": "https://my.prom.ua",
+                    "X-Requested-With": "XMLHttpRequest",
+                })
+            item = {"page_requested": page}
+            try:
+                try:
+                    response = opener.open(req, timeout=12)
+                except urllib.error.HTTPError as exc:
+                    response = exc
+                with response:
+                    item["http"] = response.code
+                    item["content_type"] = (response.headers.get("Content-Type") or "").split(";")[0]
+                    raw = response.read(600001)
+                    item["response_bytes"] = len(raw)
+                    item["oversized"] = len(raw) > 600000
+                    if response.code == 200 and not item["oversized"]:
+                        try:
+                            payload = json.loads(raw)
+                        except (ValueError, UnicodeDecodeError):
+                            payload = None
+                        item["json_object"] = isinstance(payload, dict)
+                        if isinstance(payload, dict):
+                            item["top_level_keys"] = sorted(str(k) for k in payload)[:20]
+                            item["status_value"] = str(payload.get("status"))[:40]
+                            item["response_fingerprint"] = hashlib.sha256(raw).hexdigest()[:16]
+                            context = payload.get("context")
+                            item["context_keys"] = sorted(str(k) for k in context)[:20] if isinstance(context, dict) else []
+                            # The /list endpoint may return opinions directly or nested under data/context.
+                            for candidate in (payload, context, payload.get("data")):
+                                if not isinstance(candidate, dict):
+                                    continue
+                                opinions = candidate.get("opinions")
+                                if isinstance(opinions, list):
+                                    item["opinions_count"] = len(opinions)
+                                    item["first_opinion_id"] = str(opinions[0].get("id")) if opinions and isinstance(opinions[0], dict) else None
+                                    item["negative_count"] = sum(
+                                        1 for x in opinions if isinstance(x, dict)
+                                        and type(x.get("rating")) is int and 1 <= x["rating"] <= 3
+                                    )
+                                pagination = candidate.get("pagination")
+                                if isinstance(pagination, dict):
+                                    item["pagination"] = {
+                                        k: pagination.get(k) for k in ("current_page", "num_pages", "items_per_page", "item_count")
+                                    }
+                            item["data_type"] = type(payload.get("data")).__name__
+                            item["data_keys"] = sorted(str(k) for k in payload["data"])[:20] if isinstance(payload.get("data"), dict) else []
+            except (OSError, ValueError, TimeoutError) as exc:
+                item["error"] = type(exc).__name__
+            results.append(item)
+        a, b = results
+        different = bool(a.get("response_fingerprint") and b.get("response_fingerprint")
+                         and a["response_fingerprint"] != b["response_fingerprint"])
+        return jsonify({
+            "status": "ok", "results": results,
+            "different_responses": different,
+            "note": "POST /list — тест лише читання для поточного магазину сесії; без запису в Google Sheets.",
+        })
+    except Exception as exc:
+        return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:160]})
