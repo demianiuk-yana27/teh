@@ -1362,6 +1362,7 @@ def positive_shops_batch():
     import json
     import time
     import random
+    import time
     from negative_reviews import _prom_session_cookies, load_active_shops, parse_date
 
     payload = request.get_json(silent=True) or {}
@@ -1372,6 +1373,9 @@ def positive_shops_batch():
         offset = int(payload.get("offset", 0))
     except (TypeError, ValueError):
         return jsonify({"status": "error", "message": "Некоректний offset."}), 400
+    target_id = str(payload.get("company_id") or "").strip()
+    if target_id and (not target_id.isdigit() or len(target_id) > 12):
+        return jsonify({"status": "error", "message": "Некоректний company_id."}), 400
     if offset < 0 or offset > 1000:
         return jsonify({"status": "error", "message": "Некоректний offset."}), 400
     try:
@@ -1381,6 +1385,8 @@ def positive_shops_batch():
         for shop in active:
             unique.setdefault(str(shop.id), shop)
         shops = list(unique.values())
+        if target_id:
+            shops = [shop for shop in shops if str(shop.id) == target_id]
         mapping = _positive_login_map()
         originals = _prom_session_cookies()
         output = []
@@ -1443,7 +1449,10 @@ def positive_shops_batch():
                     previous_date = None
                     ordered = True
                     total_pages = 1
+                    deadline = time.monotonic() + 48
                     for page in range(1, 151):
+                        if time.monotonic() > deadline:
+                            raise TimeoutError("Ліміт часу магазину; повторіть лише його.")
                         body = json.dumps({"filters": [], "page": page,
                             "pageType": "portal", "perPage": 20,
                             "searchQuery": "", "sortingQuery": "default"}).encode()
@@ -1459,9 +1468,9 @@ def positive_shops_batch():
                                 header: urllib.parse.unquote(csrf.value)})
                         # Prom intermittently returns 500/502/503/504/429 on large shops.
                         # Retry only transient failures, with bounded exponential backoff.
-                        for attempt in range(2):
+                        for attempt in range(3):
                             try:
-                                with opener.open(req, timeout=8) as response:
+                                with opener.open(req, timeout=12) as response:
                                     raw = response.read(800001)
                                 if len(raw) > 800000:
                                     raise ValueError("Завелика відповідь Prom.")
@@ -1473,9 +1482,9 @@ def positive_shops_batch():
                                 retryable = (status in (429, 500, 502, 503, 504)
                                              or isinstance(exc, (TimeoutError, urllib.error.URLError))
                                              and status is None)
-                                if not retryable or attempt == 1:
+                                if not retryable or attempt == 2:
                                     raise
-                                time.sleep(min(0.7 * (2 ** attempt), 2) + random.uniform(0, 0.5))
+                                time.sleep(min(1.0 * (2 ** attempt), 3) + random.uniform(0, 0.5))
                         opinions = data.get("opinions") if isinstance(data, dict) else None
                         if not isinstance(opinions, list):
                             raise ValueError("Неочікувана відповідь Prom.")
