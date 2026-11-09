@@ -1582,11 +1582,14 @@ def positive_publish_one():
         return jsonify({"status": "error", "message": "Некоректні дані або підтвердження."}), 400
     comment = comment.strip()
     key = (company_id, opinion_id)
+    retry_absent = body.get("retry_verified_absent") is True
+    if retry_absent and body.get("retry_confirmation") != "ПЕРЕВІРЕНО НЕМАЄ":
+        return jsonify({"status": "error", "message": "Для повторної спроби потрібне окреме підтвердження."}), 400
     if not _positive_publish_lock.acquire(blocking=False):
         return jsonify({"status": "error", "message": "Інша тестова публікація вже виконується."}), 409
     try:
-        if key in _positive_publish_attempts:
-            return jsonify({"status": "error", "message": "Цей відгук уже мав спробу публікації в поточному процесі. Перевірте Prom вручну."}), 409
+        if key in _positive_publish_attempts and not retry_absent:
+            return jsonify({"status": "error", "message": "Цей відгук уже мав спробу публікації. Повтор дозволений лише після ручної перевірки відсутності відповіді."}), 409
         active = {str(shop.id) for shop in load_active_shops(_sheet_id())}
         if company_id not in active:
             return jsonify({"status": "error", "message": "Магазин вимкнений у Google Sheets."}), 403
