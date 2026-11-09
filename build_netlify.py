@@ -242,7 +242,7 @@ function positiveShowJournal(){
   const stamp=document.createElement('div');stamp.style.cssText='font-size:12px;color:#64748b;margin-top:4px';
   stamp.textContent='Спроба: '+(item.at?new Date(item.at).toLocaleString('uk-UA'):'невідомо');
   const state=document.createElement('div');state.style.cssText='font-size:13px;margin-top:6px;font-weight:700';
-  const statusLabel=()=>item.status==='manually_verified'?'✅ Підтверджено вручну в Prom':item.status==='sent'?'🟡 API підтвердив; у Prom не перевірено':item.status==='attempted'?'⚠️ Невизначено — перевірити в Prom':item.status==='verified'?'✅ Перевірено сервером у Prom':'⚠️ '+(item.status||'Невідомо');
+  const statusLabel=()=>item.status==='manually_verified'?'✅ Підтверджено вручну в Prom':item.status==='sent'?'🟡 API підтвердив; у Prom не перевірено':item.status==='attempted'?'⚠️ Невизначено — перевірити в Prom':item.status==='manually_absent'?'❌ Перевірено — відповіді немає':item.status==='verified'?'✅ Перевірено сервером у Prom':'⚠️ '+(item.status||'Невідомо');
   state.textContent=statusLabel();
   const reply=document.createElement('div');reply.style.cssText='font-size:12px;margin-top:6px;white-space:pre-wrap;color:#475569';
   reply.textContent='Текст спроби: '+(item.comment||'не збережено');
@@ -260,6 +260,20 @@ function positiveShowJournal(){
     positiveShowJournal();
    });
    card.append(verify);
+  }
+  if(item.status!=='manually_absent'&&item.status!=='manually_verified'){
+   const absent=document.createElement('button');absent.type='button';absent.className='run';
+   absent.style.cssText='background:#9f1239;margin-top:8px;margin-left:6px';
+   absent.textContent='❌ Перевірила — відповіді немає';
+   absent.addEventListener('click',()=>{
+    if(!confirm('Ви перевірили саме магазин '+(item.shop||company)+' та відгук №'+opinion+' і відповіді там немає? Це лише запис у журналі, нічого не надсилається.'))return;
+    const latest=positiveJournalRead();
+    if(!latest[key])return;
+    latest[key]={...latest[key],status:'manually_absent',checked_at:new Date().toISOString()};
+    if(!positiveJournalWrite(latest)){alert('Не вдалося зберегти результат перевірки.');return}
+    positiveShowJournal();
+   });
+   card.append(absent);
   }
   target.append(card);
  }
