@@ -1223,6 +1223,121 @@ def negative_http_company_list_probe():
     except Exception as exc:
         return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:160]})
 
+@app.route("/positive/shop-switch-probe", methods=["POST"])
+def positive_shop_switch_probe():
+    """Read-only review probe for two known Prom sign-to accounts.
+
+    Uses an isolated cookie jar; never saves switched cookies or publishes replies.
+    """
+    import http.cookiejar
+    import urllib.request
+    import urllib.error
+    import urllib.parse
+    import json
+    from negative_reviews import _prom_session_cookies
+
+    allowed = ("46271331", "45771423")
+    try:
+        original = _prom_session_cookies()
+        output = []
+        for account_id in allowed:
+            jar = http.cookiejar.CookieJar()
+            for item in original:
+                if not isinstance(item, dict):
+                    continue
+                domain = str(item.get("domain") or "").lower()
+                if domain.lstrip(".") != "prom.ua" and not domain.lstrip(".").endswith(".prom.ua"):
+                    continue
+                if not isinstance(item.get("name"), str) or not isinstance(item.get("value"), str):
+                    continue
+                expiry = item.get("expirationDate", item.get("expiry"))
+                try:
+                    expiry = int(expiry) if expiry is not None else None
+                except (TypeError, ValueError):
+                    expiry = None
+                jar.set_cookie(http.cookiejar.Cookie(
+                    version=0, name=item["name"], value=item["value"], port=None,
+                    port_specified=False, domain=domain, domain_specified=True,
+                    domain_initial_dot=domain.startswith("."),
+                    path=str(item.get("path") or "/"), path_specified=True,
+                    secure=bool(item.get("secure", False)), expires=expiry,
+                    discard=expiry is None, comment=None, comment_url=None,
+                    rest={}, rfc2109=False))
+            class NoRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, req, fp, code, msg, headers, newurl):
+                    return None
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(jar), NoRedirect())
+            result = {"account_id": account_id, "switch_status": None,
+                      "redirect_to_cms": False, "reviews_status": None,
+                      "company_ids": [], "review_count": None}
+            try:
+                req = urllib.request.Request(
+                    "https://my.prom.ua/remote/auth/sign-to/" + account_id,
+                    headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html,application/xhtml+xml"})
+                try:
+                    response = opener.open(req, timeout=12)
+                except urllib.error.HTTPError as exc:
+                    response = exc
+                with response:
+                    result["switch_status"] = response.status
+                    loc = response.headers.get("Location", "")
+                    result["redirect_to_cms"] = (
+                        loc.startswith("https://my.prom.ua/cms") or loc.startswith("/cms"))
+                if result["switch_status"] not in (301, 302, 303) or not result["redirect_to_cms"]:
+                    result["error"] = "Перемикання не підтверджено."
+                    output.append(result)
+                    continue
+                csrf = next((c for c in jar if c.name.lower() in (
+                    "csrftoken", "csrf_token", "xsrf-token", "xsrf_token")), None)
+                if csrf is None:
+                    result["error"] = "Немає CSRF-cookie після перемикання."
+                    output.append(result)
+                    continue
+                csrf_header = "X-XSRF-TOKEN" if "xsrf" in csrf.name.lower() else "X-CSRFToken"
+                body = json.dumps({"filters": [], "page": 1, "pageType": "portal",
+                                   "perPage": 20, "searchQuery": "",
+                                   "sortingQuery": "default"}).encode("utf-8")
+                req = urllib.request.Request(
+                    "https://my.prom.ua/cms/opinions/company/list",
+                    data=body, method="POST",
+                    headers={"Accept": "application/json, text/plain, */*",
+                             "Content-Type": "application/json",
+                             "User-Agent": "Mozilla/5.0",
+                             "Origin": "https://my.prom.ua",
+                             "Referer": "https://my.prom.ua/cms/opinions/company",
+                             "X-Requested-With": "XMLHttpRequest",
+                             csrf_header: urllib.parse.unquote(csrf.value)})
+                try:
+                    with opener.open(req, timeout=15) as response:
+                        result["reviews_status"] = response.status
+                        raw = response.read(800001)
+                        if len(raw) > 800000:
+                            raise ValueError("Відповідь завелика.")
+                        payload = json.loads(raw)
+                    opinions = payload.get("opinions") if isinstance(payload, dict) else None
+                    if not isinstance(opinions, list):
+                        raise ValueError("Неочікуваний формат відгуків.")
+                    result["review_count"] = len(opinions)
+                    result["company_ids"] = sorted(set(
+                        str(o["company_id"]) for o in opinions
+                        if isinstance(o, dict) and o.get("company_id") is not None))[:5]
+                except urllib.error.HTTPError as exc:
+                    result["reviews_status"] = exc.code
+                    result["error"] = "Не вдалося прочитати відгуки."
+                except (ValueError, TypeError):
+                    result["error"] = "Не вдалося розібрати відповідь."
+            except (urllib.error.URLError, TimeoutError):
+                result["error"] = "Помилка з'єднання під час перемикання."
+            output.append(result)
+        ids = [x["company_ids"][0] for x in output if len(x["company_ids"]) == 1]
+        return jsonify({"status": "ok", "shops": output,
+                        "distinct_companies": len(ids) == 2 and len(set(ids)) == 2,
+                        "note": "Тест лише читання. Cookies не зберігаються, відповіді не публікуються."})
+    except Exception:
+        return jsonify({"status": "error", "message": "Не вдалося виконати тест перемикання."}), 500
+
+
 @app.route("/positive/reviews-preview", methods=["POST"])
 def positive_reviews_preview():
     """Read-only current-session company review preview; never publishes replies."""
