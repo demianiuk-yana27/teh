@@ -102,12 +102,7 @@ async function loadPositivePreview(button){
    const status=document.createElement('p');status.textContent=review.reply_status==='unanswered'?'Без відповіді':review.reply_status==='answered'?'Пропущено: уже є коментар':'Пропущено: статус коментаря невизначений';
    row.append(title,status);
    if(review.text){const body=document.createElement('p');body.textContent=review.text;row.append(body);}
-   if(Array.isArray(review.characteristics)&&review.characteristics.length){
-    const tags=document.createElement('p');tags.textContent='Характеристики: '+review.characteristics.join(' · ');row.append(tags);
-   }
-   if(!review.text&&(!review.characteristics||!review.characteristics.length)){
-    const empty=document.createElement('p');empty.textContent='Без тексту';row.append(empty);
-   }
+   if(!review.text){const empty=document.createElement('p');empty.textContent='Без тексту покупця';row.append(empty);}
    if(review.reply_status==='unanswered'){
     const label=document.createElement('label');label.style.cssText='display:flex;align-items:center;gap:8px;margin:8px 0';
     const check=document.createElement('input');check.type='checkbox';
