@@ -1,3 +1,4 @@
+# Deployment refresh: positive reply queue UI (2026-11-09).
 from pathlib import Path
 
 p = Path('netlify/index.html')
