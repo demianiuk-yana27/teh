@@ -770,6 +770,22 @@ if pos < 0:
     raise SystemExit('Main frontend script not found')
 s = s[:pos] + loaders + s[pos:]
 
+# Render the operations internship on the server side as a resilient fallback.
+# The content is visible even when browser JavaScript is blocked or fails to initialize.
+import json as _operations_json
+import html as _operations_html
+_operations_raw = Path('netlify/operations-training-guide.js').read_text(encoding='utf-8')
+_operations_data = _operations_json.loads(_operations_raw.split('=', 1)[1].strip().rstrip(';'))
+_operations_cards = []
+for _section in _operations_data['sections']:
+    _operations_cards.append('<h3 style="margin:24px 0 12px;color:#173456">' + _operations_html.escape(_section['title']) + '</h3>')
+    for _number, _item in enumerate(_section['items'], 1):
+        _title = _operations_html.escape(_item[0])
+        _body = _operations_html.escape(_item[1]).replace('\\n', '<br>')
+        _operations_cards.append('<details style="background:white;border:1px solid #dce5f3;border-radius:12px;margin-bottom:10px;padding:17px 20px"><summary style="cursor:pointer;font-weight:700;color:#183454">' + str(_number).zfill(2) + '. ' + _title + '</summary><div style="margin-top:14px;line-height:1.75;color:#405878">' + _body + '</div></details>')
+_operations_fallback = '<div class="ot-server-fallback" style="max-width:1100px"><div style="background:white;border:1px solid #dce5f3;border-radius:14px;padding:18px 22px;color:#456280">🎓 Навчальна програма · 20 тем. Натисніть на назву теми, щоб прочитати інструкцію.</div>' + ''.join(_operations_cards) + '</div>'
+s = s.replace('<div id="operationsTrainingApp"></div>', '<div id="operationsTrainingApp">' + _operations_fallback + '</div>', 1)
+
 # Embed the small operations training scripts in the generated HTML.
 # This keeps the training view functional even if Cloudflare serves stale/missing JS assets.
 operations_guide_js = Path('netlify/operations-training-guide.js').read_text(encoding='utf-8')
