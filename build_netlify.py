@@ -88,7 +88,7 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <strong>Контрольована публікація — максимум 10 за запуск</strong>
 <p style="font-size:12px;color:#64748b">Кожна відповідь перевіряється сервером у Prom. Пауза 4 секунди. Будь-яка помилка зупиняє чергу. Журнал зберігається в цьому браузері.</p>
 <label for="positiveBatchLimit">Кількість</label> <input id="positiveBatchLimit" type="number" min="1" max="10" value="3" style="width:65px"/>
-<button class="run" type="button" onclick="positiveStartQueue()" style="background:#b45309">🚀 Запустити підтверджену чергу</button>
+<button class="run" type="button" onclick="positiveStartQueue()" disabled title="Тимчасово вимкнено до перевірки результатів публікації" style="background:#94a3b8;cursor:not-allowed">🚀 Запустити підтверджену чергу</button>
 <button class="run" type="button" onclick="positiveStopQueue()" style="background:#64748b">⏹ Зупинити після поточного</button>
 <div class="status" id="positiveQueueStatus"></div>
 </div><div class="status" id="positiveDraftStatus"></div><div id="positiveDraftList"></div>
@@ -230,6 +230,10 @@ function positiveJournalWrite(journal){
 }
 function positiveStopQueue(){positiveQueueStop=true;const el=document.getElementById('positiveQueueStatus');if(el)el.textContent='⏹ Зупинка запитана. Поточний запит буде завершено.'}
 async function positiveStartQueue(){
+ const notice=document.getElementById('positiveQueueStatus');
+ if(notice)notice.textContent='⛔ Чергу тимчасово вимкнено: фактичні публікації не збіглися з лічильником. Перевіряємо журнал і підтвердження Prom.';
+ return;
+
  const out=document.getElementById('positiveQueueStatus'),day=document.getElementById('positiveDay').value;
  if(positiveQueueRunning||positiveRunBusy){out.textContent='Інший процес уже виконується.';return}
  const limit=Number(document.getElementById('positiveBatchLimit').value);
