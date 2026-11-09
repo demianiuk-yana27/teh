@@ -1305,15 +1305,26 @@ def positive_reviews_preview():
                 if type(rating) is not int or rating not in (4, 5):
                     continue
                 # Preserve unknown date/status fields for safe diagnostics, without exposing personal data.
+                raw_date = str(opinion.get("date_created") or opinion.get("created_at") or opinion.get("date") or "")
+                parsed = parse_date(raw_date[:10]) or parse_date(raw_date)
+                if parsed != chosen:
+                    continue
+                comments = opinion.get("comments")
+                comments_info = {"type": type(comments).__name__,
+                    "count": len(comments) if isinstance(comments, (list, dict)) else None,
+                    "first_keys": sorted(str(k) for k in comments[0])[:25] if isinstance(comments, list) and comments and isinstance(comments[0], dict) else []}
                 results.append({"id": str(oid), "rating": rating,
                     "text": str(opinion.get("text") or opinion.get("comment") or opinion.get("message") or "")[:2000],
-                    "date_raw": str(opinion.get("created_at") or opinion.get("createdAt") or opinion.get("date") or "")[:80],
+                    "date_raw": raw_date[:80], "comments_info": comments_info,
+                    "comments_count": opinion.get("comments_count"),
+                    "can_add_comment": opinion.get("can_add_comment"),
+                    "company_id": str(opinion.get("company_id") or ""),
                     "fields": sorted(str(k) for k in opinion.keys())[:35]})
             if page >= total_pages or not payload["opinions"]:
                 break
         return jsonify({"status": "ok", "reviews": results, "pages_checked": pages,
                         "total_pages": total_pages, "complete": pages >= total_pages,
-                        "selected_date": day, "date_filter_applied": False,
+                        "selected_date": day, "date_filter_applied": True,
                         "note": "Діагностичний попередній перегляд поточного магазину. Дату та статус відповіді ще потрібно зіставити з полями Prom. Публікація вимкнена."})
     except Exception as exc:
         return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:160]}), 502
