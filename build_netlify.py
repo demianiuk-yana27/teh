@@ -180,6 +180,7 @@ async function checkPromCompanyList(button){
   out.textContent=[
    "POST /cms/opinions/company/list:",
    ...(d.results||[]).map(x=>"Сторінка "+x.page_requested+": "+(x.error||("HTTP "+x.http+", "+x.content_type+", ключі ["+(x.top_level_keys||[]).join(", ")+"]"+", context ["+(x.context_keys||[]).join(", ")+"]"+", data "+(x.data_type||"—")+" ["+(x.data_keys||[]).join(", ")+"]"+", відгуків "+(x.opinions_count??"—")+", негативних "+(x.negative_count??"—")+", current_page "+(x.pagination?.current_page??"—")+", перший ID "+(x.first_opinion_id??"—")+", відбиток "+(x.response_fingerprint??"—")))),
+   ...(d.results||[]).map(x=>"Сторінка "+x.page_requested+" — HTTP-діагностика: Cloudflare challenge="+(x.cf_mitigated?"так":"ні")+", CF-Ray="+(x.cf_ray_present?"так":"ні")+", server="+(x.server_class||"—")+", CSRF-cookie="+(x.csrf_cookie_present?"є":"немає")+", WWW-Authenticate="+(x.www_authenticate_present?"є":"немає")+", redirect="+(x.redirect_present?"так":"ні")),
    "Відповіді відрізняються: "+(d.different_responses?"✅ так":"⚠️ ні / не вдалося перевірити"),
    d.note||""
   ].join("\\n");
