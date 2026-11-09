@@ -1384,7 +1384,7 @@ def positive_shops_batch():
         mapping = _positive_login_map()
         originals = _prom_session_cookies()
         output = []
-        for shop in shops[offset:offset + 3]:
+        for shop in shops[offset:offset + 1]:
             item = {"company_id": str(shop.id), "shop_name": shop.name,
                     "reviews": [], "pages_checked": 0, "complete": False}
             accounts = mapping.get(str(shop.id), [])
@@ -1459,9 +1459,9 @@ def positive_shops_batch():
                                 header: urllib.parse.unquote(csrf.value)})
                         # Prom intermittently returns 500/502/503/504/429 on large shops.
                         # Retry only transient failures, with bounded exponential backoff.
-                        for attempt in range(5):
+                        for attempt in range(2):
                             try:
-                                with opener.open(req, timeout=20) as response:
+                                with opener.open(req, timeout=8) as response:
                                     raw = response.read(800001)
                                 if len(raw) > 800000:
                                     raise ValueError("Завелика відповідь Prom.")
@@ -1473,9 +1473,9 @@ def positive_shops_batch():
                                 retryable = (status in (429, 500, 502, 503, 504)
                                              or isinstance(exc, (TimeoutError, urllib.error.URLError))
                                              and status is None)
-                                if not retryable or attempt == 4:
+                                if not retryable or attempt == 1:
                                     raise
-                                time.sleep(min(1.5 * (2 ** attempt), 10) + random.uniform(0, 0.5))
+                                time.sleep(min(0.7 * (2 ** attempt), 2) + random.uniform(0, 0.5))
                         opinions = data.get("opinions") if isinstance(data, dict) else None
                         if not isinstance(opinions, list):
                             raise ValueError("Неочікувана відповідь Prom.")
