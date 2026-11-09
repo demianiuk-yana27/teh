@@ -83,7 +83,14 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <p style="font-size:13px;color:#64748b">Вставте ваші готові шаблони: один шаблон на рядок. Вони зберігаються лише в цьому браузері. Натисніть «Підготувати план», щоб побачити, який текст дістанеться кожному відгуку. Жодних повідомлень у Prom не надсилаємо.</p>
 <textarea id="positiveTemplates" rows="5" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:10px" placeholder="Один шаблон відповіді на рядок"></textarea>
 <button class="run" type="button" onclick="positiveBuildDrafts(this)" style="background:#7c3aed;margin-top:8px">📝 Підготувати план відповідей</button>
-<div class="status" id="positiveDraftStatus"></div><div id="positiveDraftList"></div>
+<div style="margin:14px 0;padding:12px;border:1px solid #e2e8f0;border-radius:10px">
+<strong>Контрольована публікація — максимум 10 за запуск</strong>
+<p style="font-size:12px;color:#64748b">Кожна відповідь перевіряється сервером у Prom. Пауза 4 секунди. Будь-яка помилка зупиняє чергу. Журнал зберігається в цьому браузері.</p>
+<label for="positiveBatchLimit">Кількість</label> <input id="positiveBatchLimit" type="number" min="1" max="10" value="3" style="width:65px"/>
+<button class="run" type="button" onclick="positiveStartQueue()" style="background:#b45309">🚀 Запустити підтверджену чергу</button>
+<button class="run" type="button" onclick="positiveStopQueue()" style="background:#64748b">⏹ Зупинити після поточного</button>
+<div class="status" id="positiveQueueStatus"></div>
+</div><div class="status" id="positiveDraftStatus"></div><div id="positiveDraftList"></div>
 </div>
 <div class="status" id="positiveShopProbeStatus" style="white-space:pre-wrap"></div>
 <div class="status" id="positiveStatus" style="white-space:pre-wrap"></div><div id="positiveList"></div></div></section>"""
@@ -210,6 +217,60 @@ async function loadPositivePreview(button,retryOnly=false){
  finally{positiveRunBusy=false;controls.forEach(b=>b.disabled=false);positiveRender(day)}
 }
 function retryPositiveFailed(button){loadPositivePreview(button,true)}
+let positiveQueueStop=false;
+let positiveQueueRunning=false;
+let positiveDraftPlan=[];
+function positiveJournalKey(){return 'teh-positive-journal-v1'}
+function positiveJournalRead(){
+ try{const v=JSON.parse(localStorage.getItem(positiveJournalKey())||'{}');return v&&typeof v==='object'?v:{}}catch(e){return {}}
+}
+function positiveJournalWrite(journal){
+ try{localStorage.setItem(positiveJournalKey(),JSON.stringify(journal));return true}catch(e){return false}
+}
+function positiveStopQueue(){positiveQueueStop=true;const el=document.getElementById('positiveQueueStatus');if(el)el.textContent='⏹ Зупинка запитана. Поточний запит буде завершено.'}
+async function positiveStartQueue(){
+ const out=document.getElementById('positiveQueueStatus'),day=document.getElementById('positiveDay').value;
+ if(positiveQueueRunning||positiveRunBusy){out.textContent='Інший процес уже виконується.';return}
+ const limit=Number(document.getElementById('positiveBatchLimit').value);
+ if(!Number.isInteger(limit)||limit<1||limit>10){out.textContent='Оберіть від 1 до 10 відповідей.';return}
+ const state=positiveRead(day),flags=new Set(state.flags||[]),journal=positiveJournalRead();
+ const shops=Object.values(state.shops);
+ if(!shops.length||shops.some(x=>!x.complete||x.error)){out.textContent='Спершу завершіть збір усіх магазинів.';return}
+ const candidates=positiveDraftPlan.filter(x=>{
+  const key=x.company_id+':'+x.id,shop=state.shops[x.company_id];
+  const fresh=shop&&(shop.reviews||[]).find(r=>String(r.id)===String(x.id));
+  return fresh&&fresh.reply_status==='unanswered'&&!flags.has(key)&&!journal[key];
+ }).slice(0,limit);
+ if(!candidates.length){out.textContent='Немає доступних чернеток для запуску. Перевірте журнал та сформуйте план.';return}
+ const names=candidates.map(x=>x.shop_name+' №'+x.id).join('\\n');
+ const confirmation=prompt('СПРАВЖНЯ ПУБЛІКАЦІЯ В PROM.\\nБуде надіслано до '+candidates.length+' відповідей:\\n'+names+'\\n\\nДля запуску введіть НАДІСЛАТИ '+candidates.length);
+ if(confirmation!=='НАДІСЛАТИ '+candidates.length)return;
+ positiveQueueStop=false;positiveQueueRunning=true;positiveRunBusy=true;
+ let sent=0;
+ try{
+  for(const item of candidates){
+   if(positiveQueueStop)break;
+   const key=item.company_id+':'+item.id,now=positiveRead(day);
+   const shop=now.shops[item.company_id],review=shop&&(shop.reviews||[]).find(r=>String(r.id)===String(item.id));
+   if(!shop||!shop.complete||shop.error||!review||review.reply_status!=='unanswered'||(now.flags||[]).includes(key)){out.textContent='⏹ Статус змінився для '+key+'. Чергу зупинено.';break}
+   if(positiveJournalRead()[key]){out.textContent='⏹ Вже є запис у журналі для '+key+'. Чергу зупинено.';break}
+   const currentJournal=positiveJournalRead();
+   currentJournal[key]={status:'attempted',day,shop:item.shop_name,comment:item.comment,at:new Date().toISOString()};
+   if(!positiveJournalWrite(currentJournal)){out.textContent='⏹ Неможливо записати журнал. Відправлення скасовано.';break}
+   out.textContent='⏳ Надсилаємо '+key+' ('+(sent+1)+'/'+candidates.length+')';
+   try{
+    const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:item.company_id,opinion_id:item.id,comment:item.comment,confirmation:'НАДІСЛАТИ'})});
+    if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув не JSON');
+    const result=await res.json();
+    if(!res.ok||result.status!=='ok')throw Error(result.message||'Prom не підтвердив відправлення');
+    const done=positiveJournalRead();done[key]={...done[key],status:'sent',confirmed_at:new Date().toISOString()};positiveJournalWrite(done);
+    review.reply_status='answered';positiveSave(day,now);sent++;
+    out.textContent='✅ Надіслано '+sent+' із '+candidates.length+'.';
+   }catch(e){out.textContent='⛔ Зупинено після '+sent+' успішних. '+key+': '+e.message+'. Запис позначено як невизначений; перевірте Prom вручну.';break}
+   if(!positiveQueueStop&&sent<candidates.length)await new Promise(resolve=>setTimeout(resolve,4000));
+  }
+ }finally{positiveQueueRunning=false;positiveRunBusy=false;positiveRender(day);out.textContent+=' Журнал спроб збережено в браузері.'}
+}
 function positiveBuildDrafts(button){
  const day=document.getElementById('positiveDay').value, status=document.getElementById('positiveDraftStatus');
  const target=document.getElementById('positiveDraftList');target.replaceChildren();
@@ -233,6 +294,7 @@ function positiveBuildDrafts(button){
  }
  eligible.sort((a,b)=>String(a.company_id).localeCompare(String(b.company_id))||String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
  status.textContent='🧪 Підготовлено '+eligible.length+' чернеток за '+day+' із '+templates.length+' шаблонів. Відправлення вимкнене. План сформовано за збереженими даними; перед майбутньою публікацією потрібна повторна перевірка Prom.';
+ positiveDraftPlan=eligible.map((review,i)=>({...review,comment:templates[i%templates.length]}));
  const fragment=document.createDocumentFragment();
  for(let i=0;i<eligible.length;i++){
   const review=eligible[i],wrap=document.createElement('div');
