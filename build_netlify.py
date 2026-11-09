@@ -294,6 +294,23 @@ function positiveJournalWrite(journal){
  try{localStorage.setItem(positiveJournalKey(),JSON.stringify(journal));return true}catch(e){return false}
 }
 function positiveStopQueue(){positiveQueueStop=true;const el=document.getElementById('positiveQueueStatus');if(el)el.textContent='⏹ Зупинка запитана. Поточний запит буде завершено.'}
+async function positiveParsePublishResponse(res,startedAt){
+ const type=(res.headers.get('content-type')||'').toLowerCase();
+ const duration=Math.round(performance.now()-startedAt);
+ const ray=res.headers.get('cf-ray')||'—';
+ const requestId=res.headers.get('x-request-id')||'—';
+ const diagnostic='HTTP '+res.status+' '+(res.statusText||'')+', тип '+(type||'не вказано')+', '+duration+' мс, CF-Ray '+ray+', Request-ID '+requestId;
+ if(!type.includes('application/json')){
+  // Never display response HTML: proxy error pages can contain sensitive details.
+  throw Error('Неочікувана відповідь сервера ('+diagnostic+'). Результат публікації невідомий');
+ }
+ let result;
+ try{result=await res.json()}catch(_){throw Error('Пошкоджений JSON ('+diagnostic+'). Результат публікації невідомий')}
+ if(!res.ok||result.status!=='ok'||result.verified!==true){
+  throw Error((result.message||'Prom не підтвердив точний текст відповіді')+' ('+diagnostic+')');
+ }
+ return result;
+}
 async function positiveStartQueue(){
  const out=document.getElementById('positiveQueueStatus'),day=document.getElementById('positiveDay').value;
  if(positiveQueueRunning||positiveRunBusy){out.textContent='Інший процес уже виконується.';return}
@@ -326,10 +343,10 @@ async function positiveStartQueue(){
    if(!positiveJournalWrite(currentJournal)){out.textContent='⏹ Неможливо записати журнал. Відправлення скасовано.';break}
    out.textContent='⏳ Надсилаємо '+key+' ('+(sent+1)+'/'+candidates.length+')';
    try{
+    const startedAt=performance.now();
+    const startedAt=performance.now();
     const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:item.company_id,opinion_id:item.id,comment:item.comment,retry_verified_absent:isRetry,retry_confirmation:isRetry?'ПЕРЕВІРЕНО НЕМАЄ':null,confirmation:'НАДІСЛАТИ'})});
-    if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув не JSON');
-    const result=await res.json();
-    if(!res.ok||result.status!=='ok'||result.verified!==true)throw Error(result.message||'Prom не підтвердив точний текст відповіді');
+    const result=await positiveParsePublishResponse(res,startedAt);
     const done=positiveJournalRead();done[key]={...done[key],status:'verified',verified_at:new Date().toISOString()};positiveJournalWrite(done);
     review.reply_status='answered';positiveSave(day,now);sent++;
     out.textContent='✅ Підтверджено в Prom '+sent+' із '+candidates.length+'.';
@@ -397,9 +414,7 @@ function positiveBuildDrafts(button){
     const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
      company_id:String(review.company_id),opinion_id:String(review.id),comment:message,retry_verified_absent:isRetry,retry_confirmation:isRetry?'ПЕРЕВІРЕНО НЕМАЄ':null,confirmation
     })});
-    if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув не JSON.');
-    const result=await res.json();
-    if(!res.ok||result.status!=='ok'||result.verified!==true)throw Error(result.message||'Фактичну появу відповіді не підтверджено.');
+    const result=await positiveParsePublishResponse(res,startedAt);
     const updated=positiveJournalRead();
     updated[key]={...updated[key],status:'verified',verified_at:new Date().toISOString()};
     positiveJournalWrite(updated);
