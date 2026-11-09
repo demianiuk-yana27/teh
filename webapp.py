@@ -1556,6 +1556,166 @@ def positive_shops_batch():
                         "message": type(exc).__name__ + ": " + str(exc)[:140]}), 500
 
 
+
+_positive_publish_lock = threading.Lock()
+_positive_publish_attempts = set()
+
+
+@app.route("/positive/publish-one", methods=["POST"])
+def positive_publish_one():
+    """Explicitly confirmed ONE-comment test. Never retries a POST after ambiguity."""
+    import http.cookiejar
+    import urllib.request
+    import urllib.error
+    import urllib.parse
+    import json
+    from negative_reviews import _prom_session_cookies, load_active_shops
+
+    body = request.get_json(silent=True) or {}
+    company_id = str(body.get("company_id") or "")
+    opinion_id = str(body.get("opinion_id") or "")
+    comment = body.get("comment")
+    if (body.get("confirmation") != "НАДІСЛАТИ" or
+            not company_id.isdigit() or not opinion_id.isdigit() or
+            not isinstance(comment, str) or not comment.strip() or
+            len(comment) > 2000 or len(comment.strip()) < 5):
+        return jsonify({"status": "error", "message": "Некоректні дані або підтвердження."}), 400
+    comment = comment.strip()
+    key = (company_id, opinion_id)
+    if not _positive_publish_lock.acquire(blocking=False):
+        return jsonify({"status": "error", "message": "Інша тестова публікація вже виконується."}), 409
+    try:
+        if key in _positive_publish_attempts:
+            return jsonify({"status": "error", "message": "Цей відгук уже мав спробу публікації в поточному процесі. Перевірте Prom вручну."}), 409
+        active = {str(shop.id) for shop in load_active_shops(_sheet_id())}
+        if company_id not in active:
+            return jsonify({"status": "error", "message": "Магазин вимкнений у Google Sheets."}), 403
+        accounts = _positive_login_map().get(company_id) or []
+        if not accounts:
+            return jsonify({"status": "error", "message": "Не знайдено акаунт Prom."}), 404
+        original = _prom_session_cookies()
+        last_error = "Не вдалося підтвердити акаунт магазину."
+        for account in accounts:
+            jar = http.cookiejar.CookieJar()
+            for item in original:
+                if not isinstance(item, dict):
+                    continue
+                domain = str(item.get("domain") or "").lower()
+                if domain.lstrip(".") != "prom.ua" and not domain.lstrip(".").endswith(".prom.ua"):
+                    continue
+                if not isinstance(item.get("name"), str) or not isinstance(item.get("value"), str):
+                    continue
+                expiry = item.get("expirationDate", item.get("expiry"))
+                try:
+                    expiry = int(expiry) if expiry is not None else None
+                except (TypeError, ValueError):
+                    expiry = None
+                jar.set_cookie(http.cookiejar.Cookie(
+                    version=0, name=item["name"], value=item["value"],
+                    port=None, port_specified=False, domain=domain,
+                    domain_specified=True, domain_initial_dot=domain.startswith("."),
+                    path=str(item.get("path") or "/"), path_specified=True,
+                    secure=bool(item.get("secure", False)), expires=expiry,
+                    discard=expiry is None, comment=None, comment_url=None,
+                    rest={}, rfc2109=False))
+            class NoRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, req, fp, code, msg, headers, newurl):
+                    return None
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(jar), NoRedirect())
+            try:
+                try:
+                    response = opener.open(urllib.request.Request(
+                        "https://my.prom.ua/remote/auth/sign-to/" + account,
+                        headers={"User-Agent": "Mozilla/5.0"}), timeout=12)
+                except urllib.error.HTTPError as exc:
+                    response = exc
+                with response:
+                    location = response.headers.get("Location", "")
+                    switched = response.status in (301, 302, 303) and (
+                        location.startswith("/cms") or
+                        location.startswith("https://my.prom.ua/cms"))
+                if not switched:
+                    last_error = "Не підтверджено перемикання магазину."
+                    continue
+                csrf = next((c for c in jar if c.name.lower() in (
+                    "csrftoken", "csrf_token", "xsrf-token", "xsrf_token")), None)
+                if csrf is None:
+                    last_error = "Немає CSRF-cookie."
+                    continue
+                header = "X-XSRF-TOKEN" if "xsrf" in csrf.name.lower() else "X-CSRFToken"
+                common_headers = {
+                    "Accept": "application/json, text/plain, */*",
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0",
+                    "Origin": "https://my.prom.ua",
+                    "Referer": "https://my.prom.ua/cms/opinions/company",
+                    "X-Requested-With": "XMLHttpRequest",
+                    header: urllib.parse.unquote(csrf.value)}
+                found = None
+                for page in range(1, 151):
+                    req = urllib.request.Request(
+                        "https://my.prom.ua/cms/opinions/company/list",
+                        data=json.dumps({"filters": [], "page": page,
+                            "pageType": "portal", "perPage": 20,
+                            "searchQuery": "", "sortingQuery": "default"}).encode(),
+                        headers=common_headers, method="POST")
+                    with opener.open(req, timeout=15) as response:
+                        payload = json.loads(response.read(800001))
+                    opinions = payload.get("opinions") if isinstance(payload, dict) else None
+                    if not isinstance(opinions, list):
+                        raise ValueError("Неправильний формат списку відгуків.")
+                    if not opinions:
+                        break
+                    for opinion in opinions:
+                        if not isinstance(opinion, dict):
+                            continue
+                        if str(opinion.get("company_id")) != company_id:
+                            raise ValueError("company_id не збігається. Публікацію зупинено.")
+                        if str(opinion.get("id")) == opinion_id:
+                            found = opinion
+                            break
+                    if found is not None:
+                        break
+                    pagination = payload.get("pagination") or {}
+                    if isinstance(pagination, dict) and page >= int(pagination.get("num_pages") or 1):
+                        break
+                if found is None:
+                    last_error = "Відгук не знайдено у вибраному магазині."
+                    continue
+                if (type(found.get("rating")) is not int or
+                        found["rating"] not in (4, 5) or
+                        found.get("comments_count") != 0 or found.get("comments") != []):
+                    return jsonify({"status": "error", "message": "Відгук уже має коментар або не відповідає умовам. Нічого не надіслано."}), 409
+                # Mark before POST: if network times out, never blindly retry.
+                _positive_publish_attempts.add(key)
+                req = urllib.request.Request(
+                    "https://my.prom.ua/remote/opinion_comment/create",
+                    data=json.dumps({"opinionId": int(opinion_id), "comment": comment},
+                                    ensure_ascii=False).encode("utf-8"),
+                    headers=common_headers, method="POST")
+                try:
+                    with opener.open(req, timeout=20) as response:
+                        result = json.loads(response.read(100001))
+                except Exception:
+                    return jsonify({"status": "uncertain",
+                        "message": "Запит надіслано, але підтвердження не отримано. Перевірте відгук у Prom вручну; повторно не надсилайте."}), 502
+                if isinstance(result, dict) and result.get("status") == "success":
+                    return jsonify({"status": "ok", "company_id": company_id,
+                                    "opinion_id": opinion_id,
+                                    "message": "Prom підтвердив створення коментаря."})
+                return jsonify({"status": "uncertain",
+                    "message": "Prom не підтвердив успіх. Перевірте коментар вручну, перш ніж повторювати."}), 502
+            except (urllib.error.URLError, ValueError, TimeoutError) as exc:
+                last_error = type(exc).__name__ + ": " + str(exc)[:100]
+                continue
+        return jsonify({"status": "error", "message": last_error}), 409
+    except Exception as exc:
+        return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:120]}), 500
+    finally:
+        _positive_publish_lock.release()
+
+
 @app.route("/positive/reviews-preview", methods=["POST"])
 def positive_reviews_preview():
     """Read-only current-session company review preview; never publishes replies."""
