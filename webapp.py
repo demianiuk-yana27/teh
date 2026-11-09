@@ -1125,6 +1125,9 @@ def negative_http_company_list_probe():
                 comment_url=None, rest={}, rfc2109=False))
         if not list(jar):
             return jsonify({"status": "error", "message": "Cookies Prom не знайдено."})
+        cookie_names = [c.name.lower() for c in jar]
+        csrf_cookie_present = any("csrf" in name or "xsrf" in name for name in cookie_names)
+
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self, req, fp, code, msg, headers, newurl):
                 return None
@@ -1154,6 +1157,13 @@ def negative_http_company_list_probe():
                 with response:
                     item["http"] = response.code
                     item["content_type"] = (response.headers.get("Content-Type") or "").split(";")[0]
+                    item["cf_mitigated"] = (response.headers.get("cf-mitigated") or "").lower() == "challenge"
+                    item["cf_ray_present"] = bool(response.headers.get("CF-Ray"))
+                    item["server_class"] = "cloudflare" if "cloudflare" in (response.headers.get("Server") or "").lower() else "other_or_unspecified"
+                    item["csrf_cookie_present"] = csrf_cookie_present
+                    item["www_authenticate_present"] = bool(response.headers.get("WWW-Authenticate"))
+                    item["redirect_present"] = bool(response.headers.get("Location"))
+
                     raw = response.read(600001)
                     item["response_bytes"] = len(raw)
                     item["oversized"] = len(raw) > 600000
