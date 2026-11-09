@@ -1507,6 +1507,7 @@ def positive_shops_batch():
                                 ordered and dates and max(dates) < chosen):
                             item["complete"] = True
                             break
+                    item.pop("error", None)
                     if not item["complete"]:
                         item["error"] = "Досягнуто ліміт сторінок."
                     break
