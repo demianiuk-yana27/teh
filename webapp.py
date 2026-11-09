@@ -1272,7 +1272,11 @@ def positive_reviews_preview():
         seen = set()
         pages = 0
         total_pages = 1
-        for page in range(1, 31):
+        previous_date = None
+        chronological = True
+        stopped_at_older = False
+        field_types = {}
+        for page in range(1, 151):
             body = json.dumps({"filters": [], "page": page, "pageType": "portal",
                                "perPage": 20, "searchQuery": "", "sortingQuery": "default"}).encode("utf-8")
             req = urllib.request.Request(COMPANY_REVIEWS_URL + "/list", data=body, method="POST",
@@ -1294,6 +1298,7 @@ def positive_reviews_preview():
                     total_pages = max(1, int(pagination.get("num_pages") or 1))
                 except (ValueError, TypeError):
                     pass
+            page_dates = []
             for opinion in payload["opinions"]:
                 if not isinstance(opinion, dict):
                     continue
@@ -1301,31 +1306,49 @@ def positive_reviews_preview():
                 if oid is None or str(oid) in seen:
                     continue
                 seen.add(str(oid))
-                rating = opinion.get("rating")
-                if type(rating) is not int or rating not in (4, 5):
-                    continue
-                # Preserve unknown date/status fields for safe diagnostics, without exposing personal data.
                 raw_date = str(opinion.get("date_created") or opinion.get("created_at") or opinion.get("date") or "")
                 parsed = parse_date(raw_date[:10]) or parse_date(raw_date)
-                if parsed != chosen:
+                if parsed:
+                    page_dates.append(parsed)
+                    if previous_date is not None and parsed > previous_date:
+                        chronological = False
+                    previous_date = parsed
+                else:
+                    chronological = False
+                rating = opinion.get("rating")
+                if parsed != chosen or type(rating) is not int or rating not in (4, 5):
                     continue
+                for key, value in opinion.items():
+                    if key not in field_types:
+                        field_types[str(key)] = type(value).__name__
                 comments = opinion.get("comments")
-                comments_info = {"type": type(comments).__name__,
-                    "count": len(comments) if isinstance(comments, (list, dict)) else None,
-                    "first_keys": sorted(str(k) for k in comments[0])[:25] if isinstance(comments, list) and comments and isinstance(comments[0], dict) else []}
+                count = opinion.get("comments_count")
+                if isinstance(comments, list) and any(isinstance(c, dict) and c.get("authorIsCompany") is True for c in comments):
+                    reply_status = "answered"
+                elif comments == [] and count == 0:
+                    reply_status = "unanswered"
+                else:
+                    reply_status = "needs_check"
                 results.append({"id": str(oid), "rating": rating,
                     "text": str(opinion.get("text") or opinion.get("comment") or opinion.get("message") or "")[:2000],
-                    "date_raw": raw_date[:80], "comments_info": comments_info,
-                    "comments_count": opinion.get("comments_count"),
-                    "can_add_comment": opinion.get("can_add_comment"),
+                    "date_raw": raw_date[:80], "reply_status": reply_status,
+                    "comments_count": count, "can_add_comment": opinion.get("can_add_comment"),
                     "company_id": str(opinion.get("company_id") or ""),
-                    "fields": sorted(str(k) for k in opinion.keys())[:35]})
+                    "comments_info": {"type": type(comments).__name__,
+                        "count": len(comments) if isinstance(comments, (list, dict)) else None,
+                        "first_keys": sorted(str(k) for k in comments[0])[:25] if isinstance(comments, list) and comments and isinstance(comments[0], dict) else []}})
             if page >= total_pages or not payload["opinions"]:
                 break
+            # Stop only after verifying newest-first order across all observed reviews.
+            if chronological and page_dates and max(page_dates) < chosen:
+                stopped_at_older = True
+                break
         return jsonify({"status": "ok", "reviews": results, "pages_checked": pages,
-                        "total_pages": total_pages, "complete": pages >= total_pages,
+                        "total_pages": total_pages, "complete": pages >= total_pages or stopped_at_older,
+                        "stopped_at_older": stopped_at_older,
                         "selected_date": day, "date_filter_applied": True,
-                        "note": "Діагностичний попередній перегляд поточного магазину. Дату та статус відповіді ще потрібно зіставити з полями Prom. Публікація вимкнена."})
+                        "field_types": field_types,
+                        "note": "Лише читання поточного магазину. Статус needs_check вимагає ручної перевірки. Публікація вимкнена."})
     except Exception as exc:
         return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:160]}), 502
 
