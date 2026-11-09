@@ -82,6 +82,7 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <div class="card"><h3>Збір відгуків</h3><p>Перегляньте текст покупця та позначте прапорцем відгуки, які потребують індивідуальної відповіді. Збираємо з усіх активних магазинів (TRUE) у Google Sheets. Автоматичне надсилання вимкнено.</p>
 <label for="positiveDay">Дата відгуків</label> <input type="date" id="positiveDay"/>
 <button class="run" type="button" onclick="loadPositivePreview(this)">🔎 Зібрати з усіх магазинів</button>
+<button class="run" type="button" onclick="refreshPositivePreview(this)" style="background:#0f766e">🔄 Оновити відгуки за цю дату</button>
 <button class="run" type="button" onclick="retryPositiveFailed(this)" style="background:#64748b">🔄 Повторити невдалі</button>
 
 <div style="margin-top:18px;padding:16px;border:1px solid #dbe3ee;border-radius:12px">
@@ -221,6 +222,17 @@ async function loadPositivePreview(button,retryOnly=false){
   }
  }catch(e){out.textContent='❌ '+e.message+'; попередні результати збережені.'}
  finally{positiveRunBusy=false;controls.forEach(b=>b.disabled=false);positiveRender(day)}
+}
+async function refreshPositivePreview(button){
+ const day=document.getElementById('positiveDay').value;
+ if(!day){document.getElementById('positiveStatus').textContent='❌ Оберіть дату.';return}
+ if(positiveRunBusy)return;
+ // Keep exclusion flags and the separate publication journal. Only invalidate
+ // cached read-only shop snapshots so Prom is queried again for this date.
+ const state=positiveRead(day);
+ state.shops={};
+ positiveSave(day,state);
+ await loadPositivePreview(button,false);
 }
 function retryPositiveFailed(button){loadPositivePreview(button,true)}
 let positiveQueueStop=false;
