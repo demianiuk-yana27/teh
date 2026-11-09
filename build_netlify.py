@@ -152,8 +152,8 @@ function positiveRender(day){
   update();
   const note=document.createElement('p');note.style.cssText='font-size:12px;color:#64748b;margin-top:14px';note.textContent='🚩 — виключити відгук. Позначки зберігаються у цьому браузері для вибраної дати. Відправлення відповідей вимкнено.';list.append(note);
 }}
-async function positiveFetchShop(day,offset,companyId){
- const body=companyId?{date:day,offset:0,company_id:companyId}:{date:day,offset};
+async function positiveFetchShop(day,offset,companyId,skipIds){
+ const body=companyId?{date:day,offset:0,company_id:companyId}:{date:day,offset,skip_company_ids:skipIds||[]};
  const res=await fetch('/api/positive/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув HTML (HTTP '+res.status+')');
  const batch=await res.json();if(!res.ok||batch.status!=='ok')throw Error(batch.message||'Помилка збору');
@@ -169,7 +169,7 @@ async function loadPositivePreview(button,retryOnly=false){
  try{
   if(retryOnly){
    const failed=Object.values(state.shops).filter(x=>!x.complete||x.error);
-   if(!failed.length){out.textContent='Немає невдалих магазинів для повтору.';positiveRender(day);return}
+   if(!failed.length){positiveRender(day);return}
    for(let i=0;i<failed.length;i++){
     const shop=failed[i];
     out.textContent='⏳ Повтор '+(i+1)+'/'+failed.length+': '+shop.shop_name;
@@ -184,10 +184,12 @@ async function loadPositivePreview(button,retryOnly=false){
    let offset=0,total=1;
    while(offset<total){
     out.textContent='⏳ Магазин '+(offset+1)+'/'+(total===1?'…':total)+'; успішні результати збережено';
-    const batch=await positiveFetchShop(day,offset);
+    const skipIds=Object.values(state.shops).filter(x=>x.complete&&!x.error).map(x=>x.company_id);
+    const batch=await positiveFetchShop(day,offset,null,skipIds);
     total=batch.total_shops;
     if(!batch.shops.length)throw Error('Порожня відповідь магазину');
     for(const shop of batch.shops){
+     if(shop.skipped_cached)continue;
      const previous=state.shops[shop.company_id];
      if(!previous||!previous.complete||previous.error||shop.complete&&!shop.error){
       state.shops[shop.company_id]=shop;
