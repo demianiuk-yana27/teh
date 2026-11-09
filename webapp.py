@@ -1374,6 +1374,10 @@ def positive_shops_batch():
     except (TypeError, ValueError):
         return jsonify({"status": "error", "message": "Некоректний offset."}), 400
     target_id = str(payload.get("company_id") or "").strip()
+    skip_ids = payload.get("skip_company_ids") or []
+    if not isinstance(skip_ids, list) or len(skip_ids) > 200 or any(not str(x).isdigit() for x in skip_ids):
+        return jsonify({"status": "error", "message": "Некоректний список пропусків."}), 400
+    skip_ids = {str(x) for x in skip_ids}
     if target_id and (not target_id.isdigit() or len(target_id) > 12):
         return jsonify({"status": "error", "message": "Некоректний company_id."}), 400
     if offset < 0 or offset > 1000:
@@ -1391,6 +1395,9 @@ def positive_shops_batch():
         originals = _prom_session_cookies()
         output = []
         for shop in shops[offset:offset + 1]:
+            if str(shop.id) in skip_ids:
+                output.append({"company_id": str(shop.id), "shop_name": shop.name, "skipped_cached": True})
+                continue
             item = {"company_id": str(shop.id), "shop_name": shop.name,
                     "reviews": [], "pages_checked": 0, "complete": False}
             accounts = mapping.get(str(shop.id), [])
