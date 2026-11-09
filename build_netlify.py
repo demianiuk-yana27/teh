@@ -86,10 +86,10 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <textarea id="positiveTemplates" rows="5" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:10px" placeholder="Один шаблон відповіді на рядок"></textarea>
 <button class="run" type="button" onclick="positiveBuildDrafts(this)" style="background:#7c3aed;margin-top:8px">📝 Підготувати план відповідей</button>
 <div style="margin:14px 0;padding:12px;border:1px solid #e2e8f0;border-radius:10px">
-<strong>Контрольована публікація — максимум 10 за запуск</strong>
-<p style="font-size:12px;color:#64748b">Кожна відповідь перевіряється сервером у Prom. Пауза 4 секунди. Будь-яка помилка зупиняє чергу. Журнал зберігається в цьому браузері.</p>
-<label for="positiveBatchLimit">Кількість</label> <input id="positiveBatchLimit" type="number" min="1" max="10" value="3" style="width:65px"/>
-<button class="run" type="button" onclick="positiveStartQueue()" disabled title="Тимчасово вимкнено до перевірки результатів публікації" style="background:#94a3b8;cursor:not-allowed">🚀 Запустити підтверджену чергу</button>
+<strong>Контрольована тестова черга — максимум 3 за запуск</strong>
+<p style="font-size:12px;color:#64748b">Після кожної відповіді сервер звіряє точний текст у Prom. Пауза 4 секунди. За будь-якої помилки черга зупиняється без повтору. Журнал поки лише в цьому браузері — не запускайте одночасно з інших пристроїв.</p>
+<label for="positiveBatchLimit">Кількість</label> <input id="positiveBatchLimit" type="number" min="1" max="3" value="2" style="width:65px"/>
+<button class="run" type="button" onclick="positiveStartQueue()" style="background:#b45309">🚀 Запустити підтверджену чергу</button>
 <button class="run" type="button" onclick="positiveStopQueue()" style="background:#64748b">⏹ Зупинити після поточного</button>
 <div class="status" id="positiveQueueStatus"></div><div style="margin-top:10px"><button class="run" type="button" onclick="positiveShowJournal(this)" style="background:#475569">📋 Показати журнал спроб</button><button class="run" type="button" onclick="positiveExportJournal()" style="background:#475569">⬇️ Експорт журналу JSON</button><div id="positiveJournalView" style="margin-top:8px"></div></div>
 </div><div class="status" id="positiveDraftStatus"></div><div id="positiveDraftList"></div>
@@ -288,14 +288,10 @@ function positiveJournalWrite(journal){
 }
 function positiveStopQueue(){positiveQueueStop=true;const el=document.getElementById('positiveQueueStatus');if(el)el.textContent='⏹ Зупинка запитана. Поточний запит буде завершено.'}
 async function positiveStartQueue(){
- const notice=document.getElementById('positiveQueueStatus');
- if(notice)notice.textContent='⛔ Чергу тимчасово вимкнено: фактичні публікації не збіглися з лічильником. Перевіряємо журнал і підтвердження Prom.';
- return;
-
  const out=document.getElementById('positiveQueueStatus'),day=document.getElementById('positiveDay').value;
  if(positiveQueueRunning||positiveRunBusy){out.textContent='Інший процес уже виконується.';return}
  const limit=Number(document.getElementById('positiveBatchLimit').value);
- if(!Number.isInteger(limit)||limit<1||limit>10){out.textContent='Оберіть від 1 до 10 відповідей.';return}
+ if(!Number.isInteger(limit)||limit<1||limit>3){out.textContent='Оберіть від 1 до 3 відповідей.';return}
  const state=positiveRead(day),flags=new Set(state.flags||[]),journal=positiveJournalRead();
  const shops=Object.values(state.shops);
  if(!shops.length||shops.some(x=>!x.complete||x.error)){out.textContent='Спершу завершіть збір усіх магазинів.';return}
@@ -325,10 +321,10 @@ async function positiveStartQueue(){
     const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:item.company_id,opinion_id:item.id,comment:item.comment,confirmation:'НАДІСЛАТИ'})});
     if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув не JSON');
     const result=await res.json();
-    if(!res.ok||result.status!=='ok')throw Error(result.message||'Prom не підтвердив відправлення');
-    const done=positiveJournalRead();done[key]={...done[key],status:'sent',confirmed_at:new Date().toISOString()};positiveJournalWrite(done);
+    if(!res.ok||result.status!=='ok'||result.verified!==true)throw Error(result.message||'Prom не підтвердив точний текст відповіді');
+    const done=positiveJournalRead();done[key]={...done[key],status:'verified',verified_at:new Date().toISOString()};positiveJournalWrite(done);
     review.reply_status='answered';positiveSave(day,now);sent++;
-    out.textContent='✅ Надіслано '+sent+' із '+candidates.length+'.';
+    out.textContent='✅ Підтверджено в Prom '+sent+' із '+candidates.length+'.';
    }catch(e){out.textContent='⛔ Зупинено після '+sent+' успішних. '+key+': '+e.message+'. Запис позначено як невизначений; перевірте Prom вручну.';break}
    if(!positiveQueueStop&&sent<candidates.length)await new Promise(resolve=>setTimeout(resolve,4000));
   }
