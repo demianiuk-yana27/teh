@@ -379,21 +379,32 @@ function positiveBuildDrafts(button){
    const message=templates[i%templates.length];
    const confirmation=prompt('УВАГА: це СПРАВЖНЯ публікація в Prom.\\nМагазин: '+review.shop_name+'\\nВідгук: №'+review.id+'\\nТекст: '+message+'\\n\\nДля надсилання рівно ОДНІЄЇ відповіді введіть НАДІСЛАТИ');
    if(confirmation!=='НАДІСЛАТИ')return;
+   const key=String(review.company_id)+':'+String(review.id);
+   const journal=positiveJournalRead();
+   if(journal[key]){alert('У журналі вже є спроба для цього відгуку. Перевірте її статус у Prom; повторне надсилання заблоковано.');return}
+   journal[key]={status:'attempted',day,shop:review.shop_name,comment:message,at:new Date().toISOString()};
+   if(!positiveJournalWrite(journal)){alert('Не вдалося зберегти журнал. Відправлення скасовано.');return}
    positiveRunBusy=true;send.disabled=true;
    const status=document.getElementById('positiveDraftStatus');
-   status.textContent='⏳ Перевіряємо відгук у Prom та надсилаємо одну відповідь…';
+   status.textContent='⏳ Надсилаємо одну відповідь і перевіряємо її в Prom…';
    try{
     const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
      company_id:String(review.company_id),opinion_id:String(review.id),comment:message,confirmation
     })});
-    if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув не JSON. Перевірте відгук у Prom вручну, перш ніж повторювати.');
+    if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув не JSON.');
     const result=await res.json();
-    if(!res.ok||result.status!=='ok')throw Error(result.message||'Не вдалося підтвердити публікацію.');
+    if(!res.ok||result.status!=='ok'||result.verified!==true)throw Error(result.message||'Фактичну появу відповіді не підтверджено.');
+    const updated=positiveJournalRead();
+    updated[key]={...updated[key],status:'verified',verified_at:new Date().toISOString()};
+    positiveJournalWrite(updated);
     current.reply_status='answered';positiveSave(day,fresh);
-    send.textContent='✅ Надіслано';send.disabled=true;
-    status.textContent='✅ Prom підтвердив публікацію відповіді на №'+review.id+'.';
+    send.textContent='✅ Перевірено в Prom';send.disabled=true;
+    status.textContent='✅ Відповідь №'+review.id+' підтверджено повторним читанням Prom.';
     positiveRender(day);
-   }catch(e){status.textContent='⚠️ '+e.message+' Не натискайте повторно без перевірки в Prom.';send.disabled=false}
+   }catch(e){
+    status.textContent='⚠️ '+e.message+' Спроба записана в журналі як невизначена. Не надсилайте повторно без ручної перевірки в Prom.';
+    send.disabled=true;send.textContent='⚠️ Перевірте журнал';
+   }
    finally{positiveRunBusy=false}
   });
   wrap.append(heading,buyer,reply,send);fragment.append(wrap);
