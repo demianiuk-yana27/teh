@@ -88,9 +88,9 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <textarea id="positiveTemplates" rows="5" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:10px" placeholder="Один шаблон відповіді на рядок"></textarea>
 <button class="run" type="button" onclick="positiveBuildDrafts(this)" style="background:#7c3aed;margin-top:8px">📝 Підготувати план відповідей</button>
 <div style="margin:14px 0;padding:12px;border:1px solid #e2e8f0;border-radius:10px">
-<strong>Контрольована тестова черга — максимум 3 за запуск</strong>
+<strong>Контрольована тестова черга — максимум 5 за запуск</strong>
 <p style="font-size:12px;color:#64748b">Після кожної відповіді сервер звіряє точний текст у Prom. Пауза 4 секунди. За будь-якої помилки черга зупиняється без повтору. Журнал поки лише в цьому браузері — не запускайте одночасно з інших пристроїв.</p>
-<label for="positiveBatchLimit">Кількість</label> <input id="positiveBatchLimit" type="number" min="1" max="3" value="2" style="width:65px"/>
+<label for="positiveBatchLimit">Кількість</label> <input id="positiveBatchLimit" type="number" min="1" max="5" value="3" style="width:65px"/>
 <button class="run" type="button" onclick="positiveStartQueue()" style="background:#b45309">🚀 Запустити підтверджену чергу</button>
 <button class="run" type="button" onclick="positiveStopQueue()" style="background:#64748b">⏹ Зупинити після поточного</button>
 <div class="status" id="positiveQueueStatus"></div><div style="margin-top:10px"><button class="run" type="button" onclick="positiveShowJournal(this)" style="background:#475569">📋 Показати журнал спроб</button><button class="run" type="button" onclick="positiveExportJournal()" style="background:#475569">⬇️ Експорт журналу JSON</button><div id="positiveJournalView" style="margin-top:8px"></div></div>
@@ -297,7 +297,7 @@ async function positiveStartQueue(){
  const out=document.getElementById('positiveQueueStatus'),day=document.getElementById('positiveDay').value;
  if(positiveQueueRunning||positiveRunBusy){out.textContent='Інший процес уже виконується.';return}
  const limit=Number(document.getElementById('positiveBatchLimit').value);
- if(!Number.isInteger(limit)||limit<1||limit>3){out.textContent='Оберіть від 1 до 3 відповідей.';return}
+ if(!Number.isInteger(limit)||limit<1||limit>5){out.textContent='Оберіть від 1 до 5 відповідей.';return}
  const state=positiveRead(day),flags=new Set(state.flags||[]),journal=positiveJournalRead();
  const shops=Object.values(state.shops);
  if(!shops.length||shops.some(x=>!x.complete||x.error)){out.textContent='Спершу завершіть збір усіх магазинів.';return}
