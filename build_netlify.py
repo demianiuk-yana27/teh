@@ -781,7 +781,7 @@ for _section in _operations_data['sections']:
     _operations_cards.append('<h3 style="margin:24px 0 12px;color:#173456">' + _operations_html.escape(_section['title']) + '</h3>')
     for _number, _item in enumerate(_section['items'], 1):
         _title = _operations_html.escape(_item[0])
-        _body = _operations_html.escape(_item[1]).replace('\\n\\n', '</p><p style="margin:14px 0;line-height:1.8">').replace('\\n', '<br>')
+        _body = _operations_html.escape(_item[1]).replace('\n\n', '</p><p style="margin:14px 0;line-height:1.8">').replace('\n', '<br>')
         _body = '<p style="margin:14px 0;line-height:1.8">' + _body + '</p>'
         _operations_cards.append('<details style="background:white;border:1px solid #dce5f3;border-radius:12px;margin-bottom:10px;padding:17px 20px"><summary style="cursor:pointer;font-weight:700;color:#183454">' + str(_number).zfill(2) + '. ' + _title + '</summary><div style="margin-top:14px;line-height:1.75;color:#405878">' + _body + '</div></details>')
 _operations_fallback = '<div class="ot-server-fallback" style="max-width:1100px"><div style="background:white;border:1px solid #dce5f3;border-radius:14px;padding:18px 22px;color:#456280">🎓 Навчальна програма · 20 тем. Натисніть на назву теми, щоб прочитати інструкцію.</div>' + ''.join(_operations_cards) + '</div>'
