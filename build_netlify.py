@@ -76,10 +76,23 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <div class="card"><h3>Збір відгуків</h3><p>Перегляньте текст покупця та позначте прапорцем відгуки, які потребують індивідуальної відповіді. Зараз доступний активний магазин Prom; автоматичне надсилання вимкнено.</p>
 <label for="positiveDay">Дата відгуків</label> <input type="date" id="positiveDay"/>
 <button class="run" type="button" onclick="loadPositivePreview(this)">🔎 Зібрати для перевірки</button>
+<button class="run" type="button" onclick="probePositiveShopSwitch(this)" style="background:#475569">🧪 Перевірити 2 магазини</button>
+<div class="status" id="positiveShopProbeStatus" style="white-space:pre-wrap"></div>
 <div class="status" id="positiveStatus" style="white-space:pre-wrap"></div><div id="positiveList"></div></div></section>"""
 s = s.replace('</main>', positive_html + '</main>', 1)
 s = s.replace('data-target-view="ordercount"><span', 'data-target-view="ordercount"><span', 1)
 positive_script = """<script>
+async function probePositiveShopSwitch(button){
+ const out=document.getElementById('positiveShopProbeStatus');
+ button.disabled=true;out.textContent='⏳ Перевіряємо два магазини без публікації…';
+ try{
+  const res=await fetch('/api/positive/shop-switch-probe',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  const data=await res.json();if(!res.ok||data.status!=='ok')throw Error(data.message||'Помилка перевірки');
+  const lines=(data.shops||[]).map(x=>'Акаунт '+x.account_id+': sign-to HTTP '+String(x.switch_status)+', перехід у CMS '+(x.redirect_to_cms?'так':'ні')+', відгуки HTTP '+String(x.reviews_status)+', company_id '+(x.company_ids||[]).join(', ')+', відгуків на сторінці '+String(x.review_count)+(x.error?', помилка: '+x.error:''));
+  out.textContent=lines.join('\\n')+'\\nРізні магазини підтверджені: '+(data.distinct_companies?'✅ так':'⚠️ ні')+'. Тест лише читання.';
+ }catch(e){out.textContent='❌ '+e.message}
+ finally{button.disabled=false}
+}
 async function loadPositivePreview(button){
  const out=document.getElementById('positiveStatus'), list=document.getElementById('positiveList');
  const date=document.getElementById('positiveDay').value;
