@@ -103,6 +103,10 @@ async function loadPositivePreview(button){
   let offset=0,total=1;
   while(offset<total){
    const res=await fetch('/api/positive/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date,offset})});
+   const contentType=res.headers.get('content-type')||'';
+   if(!contentType.includes('application/json')){
+    throw Error('Сервер повернув HTML замість JSON (HTTP '+res.status+'). Збір зупинено після '+offset+' магазинів. Спробуйте ще раз після оновлення сайту.');
+   }
    const batch=await res.json();if(!res.ok||batch.status!=='ok')throw Error(batch.message||'Помилка читання');
    total=batch.total_shops;
    if(!batch.shops.length&&offset<total)throw Error('Порожня порція магазинів');
