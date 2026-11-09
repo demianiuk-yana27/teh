@@ -1222,3 +1222,99 @@ def negative_http_company_list_probe():
         })
     except Exception as exc:
         return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:160]})
+
+@app.route("/positive/reviews-preview", methods=["POST"])
+def positive_reviews_preview():
+    """Read-only current-session company review preview; never publishes replies."""
+    import http.cookiejar
+    import urllib.request
+    import urllib.error
+    import urllib.parse
+    import json
+    from negative_reviews import _prom_session_cookies, COMPANY_REVIEWS_URL, parse_date
+
+    data = request.get_json(silent=True) or {}
+    day = str(data.get("date") or "").strip()
+    chosen = parse_date(day)
+    if not chosen:
+        return jsonify({"status": "error", "message": "Оберіть коректну дату."}), 400
+    try:
+        jar = http.cookiejar.CookieJar()
+        for item in _prom_session_cookies():
+            if not isinstance(item, dict):
+                continue
+            domain = str(item.get("domain") or "").lower()
+            if domain.lstrip(".") != "prom.ua" and not domain.lstrip(".").endswith(".prom.ua"):
+                continue
+            if not isinstance(item.get("name"), str) or not isinstance(item.get("value"), str):
+                continue
+            expiry = item.get("expirationDate", item.get("expiry"))
+            try:
+                expiry = int(expiry) if expiry is not None else None
+            except (TypeError, ValueError):
+                expiry = None
+            jar.set_cookie(http.cookiejar.Cookie(
+                version=0, name=item["name"], value=item["value"], port=None,
+                port_specified=False, domain=domain, domain_specified=True,
+                domain_initial_dot=domain.startswith("."), path=str(item.get("path") or "/"),
+                path_specified=True, secure=bool(item.get("secure", False)),
+                expires=expiry, discard=expiry is None, comment=None,
+                comment_url=None, rest={}, rfc2109=False))
+        csrf = next((c for c in jar if c.name.lower() in ("csrftoken", "csrf_token", "xsrf-token", "xsrf_token")), None)
+        if not csrf:
+            return jsonify({"status": "error", "message": "У сесії немає CSRF-cookie Prom."}), 400
+        header = "X-XSRF-TOKEN" if "xsrf" in csrf.name.lower() else "X-CSRFToken"
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect())
+        results = []
+        seen = set()
+        pages = 0
+        total_pages = 1
+        for page in range(1, 31):
+            body = json.dumps({"filters": [], "page": page, "pageType": "portal",
+                               "perPage": 20, "searchQuery": "", "sortingQuery": "default"}).encode("utf-8")
+            req = urllib.request.Request(COMPANY_REVIEWS_URL + "/list", data=body, method="POST",
+                headers={"Accept": "application/json, text/plain, */*", "Content-Type": "application/json",
+                         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                         "Referer": COMPANY_REVIEWS_URL, "Origin": "https://my.prom.ua",
+                         "X-Requested-With": "XMLHttpRequest", header: urllib.parse.unquote(csrf.value)})
+            with opener.open(req, timeout=15) as response:
+                raw = response.read(800001)
+                if len(raw) > 800000:
+                    raise RuntimeError("Відповідь Prom перевищила безпечний розмір.")
+                payload = json.loads(raw)
+            if not isinstance(payload, dict) or not isinstance(payload.get("opinions"), list):
+                raise RuntimeError("Prom повернув неочікуваний формат відгуків.")
+            pages += 1
+            pagination = payload.get("pagination") or {}
+            if isinstance(pagination, dict):
+                try:
+                    total_pages = max(1, int(pagination.get("num_pages") or 1))
+                except (ValueError, TypeError):
+                    pass
+            for opinion in payload["opinions"]:
+                if not isinstance(opinion, dict):
+                    continue
+                oid = opinion.get("id")
+                if oid is None or str(oid) in seen:
+                    continue
+                seen.add(str(oid))
+                rating = opinion.get("rating")
+                if type(rating) is not int or rating not in (4, 5):
+                    continue
+                # Preserve unknown date/status fields for safe diagnostics, without exposing personal data.
+                results.append({"id": str(oid), "rating": rating,
+                    "text": str(opinion.get("text") or opinion.get("comment") or opinion.get("message") or "")[:2000],
+                    "date_raw": str(opinion.get("created_at") or opinion.get("createdAt") or opinion.get("date") or "")[:80],
+                    "fields": sorted(str(k) for k in opinion.keys())[:35]})
+            if page >= total_pages or not payload["opinions"]:
+                break
+        return jsonify({"status": "ok", "reviews": results, "pages_checked": pages,
+                        "total_pages": total_pages, "complete": pages >= total_pages,
+                        "selected_date": day, "date_filter_applied": False,
+                        "note": "Діагностичний попередній перегляд поточного магазину. Дату та статус відповіді ще потрібно зіставити з полями Prom. Публікація вимкнена."})
+    except Exception as exc:
+        return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:160]}), 502
+
