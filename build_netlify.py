@@ -342,18 +342,18 @@ function positiveBuildDrafts(button){
  const failed=shops.filter(x=>!x.complete||x.error);
  if(!shops.length){status.textContent='❌ Спочатку зберіть відгуки.';return}
  if(failed.length){status.textContent='⚠️ Спершу повторіть невдалі магазини: '+failed.map(x=>x.shop_name).join(', ');return}
- const flags=new Set(state.flags||[]);
+ const flags=new Set(state.flags||[]),journal=positiveJournalRead();
  const seen=new Set(),eligible=[];
  for(const shop of shops){
   for(const review of shop.reviews||[]){
    const key=String(review.company_id)+':'+String(review.id);
    if(seen.has(key))continue;seen.add(key);
-   if(review.reply_status!=='unanswered'||flags.has(key))continue;
+   if(review.reply_status!=='unanswered'||flags.has(key)||journal[key])continue;
    eligible.push(review);
   }
  }
  eligible.sort((a,b)=>String(a.company_id).localeCompare(String(b.company_id))||String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
- status.textContent='🧪 Підготовлено '+eligible.length+' чернеток за '+day+' із '+templates.length+' шаблонів. Відправлення вимкнене. План сформовано за збереженими даними; перед майбутньою публікацією потрібна повторна перевірка Prom.';
+ status.textContent='🧪 Підготовлено '+eligible.length+' чернеток за '+day+' із '+templates.length+' шаблонів. Попередні спроби з журналу виключені. Перед публікацією сервер перевіряє актуальний стан у Prom.';
  positiveDraftPlan=eligible.map((review,i)=>({...review,comment:templates[i%templates.length]}));
  const fragment=document.createDocumentFragment();
  for(let i=0;i<eligible.length;i++){
@@ -368,6 +368,7 @@ function positiveBuildDrafts(button){
   send.textContent='🧪 Надіслати лише цю відповідь';
   send.addEventListener('click',async()=>{
    if(positiveRunBusy)return;
+   if(positiveJournalRead()[String(review.company_id)+':'+String(review.id)]){alert('Цей відгук уже є в журналі спроб. Повторне надсилання заборонено.');return}
    const fresh=positiveRead(day),stored=fresh.shops[String(review.company_id)];
    const current=stored&&(stored.reviews||[]).find(x=>String(x.id)===String(review.id));
    if(!stored||!stored.complete||stored.error||!current||current.reply_status!=='unanswered'||(fresh.flags||[]).includes(String(review.company_id)+':'+String(review.id))){
