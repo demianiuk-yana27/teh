@@ -82,16 +82,16 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <label for="positiveDay">Дата відгуків</label> <input type="date" id="positiveDay"/>
 <button class="run" type="button" onclick="loadPositivePreview(this)">🔎 Зібрати з усіх магазинів</button>
 <button class="run" type="button" onclick="retryPositiveFailed(this)" style="background:#64748b">🔄 Повторити невдалі</button>
-<button class="run" type="button" onclick="probePositiveShopSwitch(this)" style="background:#475569">🧪 Перевірити 2 магазини</button>
+
 <div style="margin-top:18px;padding:16px;border:1px solid #dbe3ee;border-radius:12px">
 <h3>🧪 Перевірка майбутніх відповідей — без публікації</h3>
 <p style="font-size:13px;color:#64748b">Вставте ваші готові шаблони: один шаблон на рядок. Вони зберігаються лише в цьому браузері. Натисніть «Підготувати план», щоб побачити, який текст дістанеться кожному відгуку. Жодних повідомлень у Prom не надсилаємо.</p>
 <textarea id="positiveTemplates" rows="5" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:10px" placeholder="Один шаблон відповіді на рядок"></textarea>
 <button class="run" type="button" onclick="positiveBuildDrafts(this)" style="background:#7c3aed;margin-top:8px">📝 Підготувати план відповідей</button>
 <div style="margin:14px 0;padding:12px;border:1px solid #e2e8f0;border-radius:10px">
-<strong>Контрольована черга — максимум 50 за запуск</strong>
-<p style="font-size:12px;color:#64748b">Після кожної відповіді сервер звіряє точний текст у Prom. Пауза 4 секунди. За будь-якої помилки черга зупиняється без повтору. Журнал поки лише в цьому браузері — не запускайте одночасно з інших пристроїв.</p>
-<label for="positiveBatchLimit">Кількість</label> <input id="positiveBatchLimit" type="number" min="1" max="50" value="10" style="width:65px"/>
+<strong>Контрольована черга відповідей — до всіх доступних відгуків</strong>
+<p style="font-size:12px;color:#64748b">Після кожної відповіді сервер звіряє точний текст у Prom. Пауза 2 секунди. За будь-якої помилки черга зупиняється без повтору. Журнал поки лише в цьому браузері — не запускайте одночасно з інших пристроїв.</p>
+<label for="positiveBatchLimit">Кількість</label> <select id="positiveBatchLimit" style="padding:9px;border:1px solid #cbd5e1;border-radius:7px"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="all">Усі доступні</option></select>
 <button class="run" type="button" onclick="positiveStartQueue()" style="background:#b45309">🚀 Запустити підтверджену чергу</button>
 <button class="run" type="button" onclick="positiveStopQueue()" style="background:#64748b">⏹ Зупинити після поточного</button>
 <div class="status" id="positiveQueueStatus"></div><div style="margin-top:10px"><button class="run" type="button" onclick="positiveShowJournal(this)" style="background:#475569">📋 Показати журнал спроб</button><button class="run" type="button" onclick="positiveExportJournal()" style="background:#475569">⬇️ Експорт журналу JSON</button><div id="positiveJournalView" style="margin-top:8px"></div></div>
@@ -316,8 +316,9 @@ async function positiveParsePublishResponse(res,startedAt){
 async function positiveStartQueue(){
  const out=document.getElementById('positiveQueueStatus'),day=document.getElementById('positiveDay').value;
  if(positiveQueueRunning||positiveRunBusy){out.textContent='Інший процес уже виконується.';return}
- const limit=Number(document.getElementById('positiveBatchLimit').value);
- if(!Number.isInteger(limit)||limit<1||limit>50){out.textContent='Оберіть від 1 до 50 відповідей.';return}
+ const limitChoice=document.getElementById('positiveBatchLimit').value;
+ const limit=limitChoice==='all'?Infinity:Number(limitChoice);
+ if(!(limitChoice==='all'||[10,25,50].includes(limit))){out.textContent='Оберіть кількість відповідей.';return}
  const state=positiveRead(day),flags=new Set(state.flags||[]),journal=positiveJournalRead();
  const shops=Object.values(state.shops);
  if(!shops.length||shops.some(x=>!x.complete||x.error)){out.textContent='Спершу завершіть збір усіх магазинів.';return}
@@ -327,7 +328,7 @@ async function positiveStartQueue(){
   return fresh&&fresh.reply_status==='unanswered'&&!flags.has(key)&&positiveMayPublish(key,journal);
  }).slice(0,limit);
  if(!candidates.length){out.textContent='Немає доступних чернеток для запуску. Перевірте журнал та сформуйте план.';return}
- const names=candidates.map(x=>x.shop_name+' №'+x.id).join('\\n');
+ const names=candidates.slice(0,12).map(x=>x.shop_name+' №'+x.id).join('\\n')+(candidates.length>12?'\\n…та ще '+(candidates.length-12)+' відгуків':'');
  const confirmation=prompt('СПРАВЖНЯ ПУБЛІКАЦІЯ В PROM.\\nБуде надіслано до '+candidates.length+' відповідей:\\n'+names+'\\n\\nДля запуску введіть НАДІСЛАТИ '+candidates.length);
  if(confirmation!=='НАДІСЛАТИ '+candidates.length)return;
  positiveQueueStop=false;positiveQueueRunning=true;positiveRunBusy=true;
@@ -355,7 +356,7 @@ async function positiveStartQueue(){
     if(e.safePreflight){const saved=positiveJournalRead();if(saved[key]?.status==='attempted'){saved[key]={...saved[key],status:'preflight_failed',error:String(e.message),failed_at:new Date().toISOString()};positiveJournalWrite(saved)}out.textContent='⏹ Зупинено після '+sent+' успішних. '+key+': '+e.message+'. Сервер підтвердив, що POST не виконувався; спроба доступна після повторної підготовки плану.';}
     else out.textContent='⛔ Зупинено після '+sent+' успішних. '+key+': '+e.message+'. Запис позначено як невизначений; перевірте Prom вручну.';
     break}
-   if(!positiveQueueStop&&sent<candidates.length)await new Promise(resolve=>setTimeout(resolve,4000));
+   if(!positiveQueueStop&&sent<candidates.length)await new Promise(resolve=>setTimeout(resolve,2000));
   }
  }finally{positiveQueueRunning=false;positiveRunBusy=false;positiveRender(day);out.textContent+=' Журнал спроб збережено в браузері.'}
 }
