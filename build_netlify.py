@@ -241,7 +241,37 @@ function positiveBuildDrafts(button){
   heading.textContent=review.shop_name+' · № '+review.id+' · Шаблон '+(i%templates.length+1);
   const buyer=document.createElement('p');buyer.textContent='Покупець: '+(review.text||'Без тексту');buyer.style.cssText='font-size:13px';
   const reply=document.createElement('p');reply.textContent='Чернетка: '+templates[i%templates.length];reply.style.cssText='font-size:14px;white-space:pre-wrap;font-weight:600';
-  wrap.append(heading,buyer,reply);fragment.append(wrap);
+  const send=document.createElement('button');send.type='button';send.className='run';
+  send.style.cssText='background:#b45309;margin-top:6px';
+  send.textContent='🧪 Надіслати лише цю відповідь';
+  send.addEventListener('click',async()=>{
+   if(positiveRunBusy)return;
+   const fresh=positiveRead(day),stored=fresh.shops[String(review.company_id)];
+   const current=stored&&(stored.reviews||[]).find(x=>String(x.id)===String(review.id));
+   if(!stored||!stored.complete||stored.error||!current||current.reply_status!=='unanswered'||(fresh.flags||[]).includes(String(review.company_id)+':'+String(review.id))){
+    alert('Відгук уже виключено або його статус змінився. Публікацію скасовано.');return;
+   }
+   const message=templates[i%templates.length];
+   const confirmation=prompt('УВАГА: це СПРАВЖНЯ публікація в Prom.\\nМагазин: '+review.shop_name+'\\nВідгук: №'+review.id+'\\nТекст: '+message+'\\n\\nДля надсилання рівно ОДНІЄЇ відповіді введіть НАДІСЛАТИ');
+   if(confirmation!=='НАДІСЛАТИ')return;
+   positiveRunBusy=true;send.disabled=true;
+   const status=document.getElementById('positiveDraftStatus');
+   status.textContent='⏳ Перевіряємо відгук у Prom та надсилаємо одну відповідь…';
+   try{
+    const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+     company_id:String(review.company_id),opinion_id:String(review.id),comment:message,confirmation
+    })});
+    if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув не JSON. Перевірте відгук у Prom вручну, перш ніж повторювати.');
+    const result=await res.json();
+    if(!res.ok||result.status!=='ok')throw Error(result.message||'Не вдалося підтвердити публікацію.');
+    current.reply_status='answered';positiveSave(day,fresh);
+    send.textContent='✅ Надіслано';send.disabled=true;
+    status.textContent='✅ Prom підтвердив публікацію відповіді на №'+review.id+'.';
+    positiveRender(day);
+   }catch(e){status.textContent='⚠️ '+e.message+' Не натискайте повторно без перевірки в Prom.';send.disabled=false}
+   finally{positiveRunBusy=false}
+  });
+  wrap.append(heading,buyer,reply,send);fragment.append(wrap);
  }
  target.append(fragment);
 }
