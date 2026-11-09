@@ -151,7 +151,7 @@ function positiveRender(day){
   }
   update();
   const note=document.createElement('p');note.style.cssText='font-size:12px;color:#64748b;margin-top:14px';note.textContent='🚩 — виключити відгук. Позначки зберігаються у цьому браузері для вибраної дати. Відправлення відповідей вимкнено.';list.append(note);
-}}
+}
 async function positiveFetchShop(day,offset,companyId,skipIds){
  const body=companyId?{date:day,offset:0,company_id:companyId}:{date:day,offset,skip_company_ids:skipIds||[]};
  const res=await fetch('/api/positive/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
