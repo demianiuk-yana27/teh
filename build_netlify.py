@@ -78,6 +78,13 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <button class="run" type="button" onclick="loadPositivePreview(this)">🔎 Зібрати з усіх магазинів</button>
 <button class="run" type="button" onclick="retryPositiveFailed(this)" style="background:#64748b">🔄 Повторити невдалі</button>
 <button class="run" type="button" onclick="probePositiveShopSwitch(this)" style="background:#475569">🧪 Перевірити 2 магазини</button>
+<div style="margin-top:18px;padding:16px;border:1px solid #dbe3ee;border-radius:12px">
+<h3>🧪 Перевірка майбутніх відповідей — без публікації</h3>
+<p style="font-size:13px;color:#64748b">Вставте ваші готові шаблони: один шаблон на рядок. Вони зберігаються лише в цьому браузері. Натисніть «Підготувати план», щоб побачити, який текст дістанеться кожному відгуку. Жодних повідомлень у Prom не надсилаємо.</p>
+<textarea id="positiveTemplates" rows="5" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:10px" placeholder="Один шаблон відповіді на рядок"></textarea>
+<button class="run" type="button" onclick="positiveBuildDrafts(this)" style="background:#7c3aed;margin-top:8px">📝 Підготувати план відповідей</button>
+<div class="status" id="positiveDraftStatus"></div><div id="positiveDraftList"></div>
+</div>
 <div class="status" id="positiveShopProbeStatus" style="white-space:pre-wrap"></div>
 <div class="status" id="positiveStatus" style="white-space:pre-wrap"></div><div id="positiveList"></div></div></section>"""
 s = s.replace('</main>', positive_html + '</main>', 1)
@@ -203,6 +210,47 @@ async function loadPositivePreview(button,retryOnly=false){
  finally{positiveRunBusy=false;controls.forEach(b=>b.disabled=false);positiveRender(day)}
 }
 function retryPositiveFailed(button){loadPositivePreview(button,true)}
+function positiveBuildDrafts(button){
+ const day=document.getElementById('positiveDay').value, status=document.getElementById('positiveDraftStatus');
+ const target=document.getElementById('positiveDraftList');target.replaceChildren();
+ if(!day){status.textContent='❌ Спочатку виберіть дату.';return}
+ const templates=document.getElementById('positiveTemplates').value.split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean);
+ if(!templates.length){status.textContent='❌ Додайте хоча б один шаблон відповіді.';return}
+ try{localStorage.setItem('teh-positive-templates-v1',JSON.stringify(templates))}catch(e){}
+ const state=positiveRead(day), shops=Object.values(state.shops);
+ const failed=shops.filter(x=>!x.complete||x.error);
+ if(!shops.length){status.textContent='❌ Спочатку зберіть відгуки.';return}
+ if(failed.length){status.textContent='⚠️ Спершу повторіть невдалі магазини: '+failed.map(x=>x.shop_name).join(', ');return}
+ const flags=new Set(state.flags||[]);
+ const seen=new Set(),eligible=[];
+ for(const shop of shops){
+  for(const review of shop.reviews||[]){
+   const key=String(review.company_id)+':'+String(review.id);
+   if(seen.has(key))continue;seen.add(key);
+   if(review.reply_status!=='unanswered'||flags.has(key))continue;
+   eligible.push(review);
+  }
+ }
+ eligible.sort((a,b)=>String(a.company_id).localeCompare(String(b.company_id))||String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
+ status.textContent='🧪 Підготовлено '+eligible.length+' чернеток за '+day+' із '+templates.length+' шаблонів. Відправлення вимкнене. План сформовано за збереженими даними; перед майбутньою публікацією потрібна повторна перевірка Prom.';
+ const fragment=document.createDocumentFragment();
+ for(let i=0;i<eligible.length;i++){
+  const review=eligible[i],wrap=document.createElement('div');
+  wrap.style.cssText='padding:12px;margin:8px 0;border:1px solid #e2e8f0;border-radius:10px;background:#fafaff';
+  const heading=document.createElement('div');heading.style.cssText='font-size:12px;color:#64748b;font-weight:700';
+  heading.textContent=review.shop_name+' · № '+review.id+' · Шаблон '+(i%templates.length+1);
+  const buyer=document.createElement('p');buyer.textContent='Покупець: '+(review.text||'Без тексту');buyer.style.cssText='font-size:13px';
+  const reply=document.createElement('p');reply.textContent='Чернетка: '+templates[i%templates.length];reply.style.cssText='font-size:14px;white-space:pre-wrap;font-weight:600';
+  wrap.append(heading,buyer,reply);fragment.append(wrap);
+ }
+ target.append(fragment);
+}
+function positiveRestoreTemplates(){
+ try{const templates=JSON.parse(localStorage.getItem('teh-positive-templates-v1')||'[]');const el=document.getElementById('positiveTemplates');if(el&&Array.isArray(templates))el.value=templates.join('\\n')}catch(e){}
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',positiveRestoreTemplates);
+else positiveRestoreTemplates();
+
 
 </script>"""
 s = s.replace('</body>', positive_script + '</body>', 1)
