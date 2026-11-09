@@ -1360,6 +1360,8 @@ def positive_shops_batch():
     import urllib.error
     import urllib.parse
     import json
+    import time
+    import random
     from negative_reviews import _prom_session_cookies, load_active_shops, parse_date
 
     payload = request.get_json(silent=True) or {}
@@ -1455,11 +1457,25 @@ def positive_shops_batch():
                                 "Referer": "https://my.prom.ua/cms/opinions/company",
                                 "X-Requested-With": "XMLHttpRequest",
                                 header: urllib.parse.unquote(csrf.value)})
-                        with opener.open(req, timeout=15) as response:
-                            raw = response.read(800001)
-                            if len(raw) > 800000:
-                                raise ValueError("Завелика відповідь Prom.")
-                            data = json.loads(raw)
+                        # Prom intermittently returns 500/502/503/504/429 on large shops.
+                        # Retry only transient failures, with bounded exponential backoff.
+                        for attempt in range(5):
+                            try:
+                                with opener.open(req, timeout=20) as response:
+                                    raw = response.read(800001)
+                                if len(raw) > 800000:
+                                    raise ValueError("Завелика відповідь Prom.")
+                                data = json.loads(raw)
+                                break
+                            except (urllib.error.HTTPError, urllib.error.URLError,
+                                    TimeoutError) as exc:
+                                status = getattr(exc, "code", None)
+                                retryable = (status in (429, 500, 502, 503, 504)
+                                             or isinstance(exc, (TimeoutError, urllib.error.URLError))
+                                             and status is None)
+                                if not retryable or attempt == 4:
+                                    raise
+                                time.sleep(min(1.5 * (2 ** attempt), 10) + random.uniform(0, 0.5))
                         opinions = data.get("opinions") if isinstance(data, dict) else None
                         if not isinstance(opinions, list):
                             raise ValueError("Неочікувана відповідь Prom.")
