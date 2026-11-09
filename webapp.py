@@ -1127,6 +1127,14 @@ def negative_http_company_list_probe():
             return jsonify({"status": "error", "message": "Cookies Prom не знайдено."})
         cookie_names = [c.name.lower() for c in jar]
         csrf_cookie_present = any("csrf" in name or "xsrf" in name for name in cookie_names)
+        # Use the current session's CSRF cookie without exposing its value.
+        # A CSRF cookie alone does not authenticate POST: the matching header may be required.
+        from urllib.parse import unquote
+        csrf_cookie = next((c for c in jar if c.name.lower() in ("csrftoken", "csrf_token", "xsrf-token", "xsrf_token")), None)
+        csrf_value = unquote(csrf_cookie.value) if csrf_cookie else None
+        csrf_header_name = ("X-XSRF-TOKEN" if csrf_cookie and "xsrf" in csrf_cookie.name.lower()
+                            else "X-CSRFToken")
+
 
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -1148,7 +1156,10 @@ def negative_http_company_list_probe():
                     "Origin": "https://my.prom.ua",
                     "X-Requested-With": "XMLHttpRequest",
                 })
-            item = {"page_requested": page}
+            if csrf_value:
+                req.add_header(csrf_header_name, csrf_value)
+            item = {"page_requested": page, "csrf_header_sent": bool(csrf_value),
+                    "csrf_header_kind": csrf_header_name if csrf_value else None}
             try:
                 try:
                     response = opener.open(req, timeout=12)
