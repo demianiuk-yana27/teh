@@ -1323,20 +1323,49 @@ def positive_reviews_preview():
                         field_types[str(key)] = type(value).__name__
                 comments = opinion.get("comments")
                 count = opinion.get("comments_count")
-                if isinstance(comments, list) and any(isinstance(c, dict) and c.get("authorIsCompany") is True for c in comments):
+                if isinstance(count, int) and count > 0:
                     reply_status = "answered"
                 elif comments == [] and count == 0:
                     reply_status = "unanswered"
                 else:
                     reply_status = "needs_check"
+                own_text = opinion.get("comment_work")
+                own_text = own_text.strip() if isinstance(own_text, str) else ""
+                tags = opinion.get("tags")
+                user_ratings = opinion.get("userRatings")
+                # Keep the raw tag structures out of the response: only human-readable
+                # strings and known display labels are exposed for manager review.
+                def display_labels(value):
+                    labels = []
+                    if isinstance(value, str):
+                        if value.strip():
+                            labels.append(value.strip()[:180])
+                    elif isinstance(value, list):
+                        for element in value[:20]:
+                            if isinstance(element, str) and element.strip():
+                                labels.append(element.strip()[:180])
+                            elif isinstance(element, dict):
+                                for key in ("title", "label", "name", "text", "value"):
+                                    v = element.get(key)
+                                    if isinstance(v, str) and v.strip():
+                                        labels.append(v.strip()[:180])
+                                        break
+                    return labels
+                characteristics = display_labels(tags)
+                if isinstance(user_ratings, dict):
+                    for value in list(user_ratings.values())[:20]:
+                        characteristics.extend(display_labels(value))
+                characteristics = list(dict.fromkeys(characteristics))[:20]
                 results.append({"id": str(oid), "rating": rating,
-                    "text": str(opinion.get("text") or opinion.get("comment") or opinion.get("message") or "")[:2000],
+                    "text": own_text[:2000], "characteristics": characteristics,
                     "date_raw": raw_date[:80], "reply_status": reply_status,
                     "comments_count": count, "can_add_comment": opinion.get("can_add_comment"),
                     "company_id": str(opinion.get("company_id") or ""),
-                    "comments_info": {"type": type(comments).__name__,
-                        "count": len(comments) if isinstance(comments, (list, dict)) else None,
-                        "first_keys": sorted(str(k) for k in comments[0])[:25] if isinstance(comments, list) and comments and isinstance(comments[0], dict) else []}})
+                    "content_diagnostic": {"comment_work_length": len(own_text),
+                        "tags_type": type(tags).__name__, "tags_count": len(tags) if isinstance(tags, list) else None,
+                        "tags_first_type": type(tags[0]).__name__ if isinstance(tags, list) and tags else None,
+                        "tags_first_keys": sorted(str(k) for k in tags[0])[:20] if isinstance(tags, list) and tags and isinstance(tags[0], dict) else [],
+                        "userRatings_keys": sorted(str(k) for k in user_ratings)[:20] if isinstance(user_ratings, dict) else []}})
             if page >= total_pages or not payload["opinions"]:
                 break
             # Stop only after verifying newest-first order across all observed reviews.
