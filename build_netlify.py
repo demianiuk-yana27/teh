@@ -228,7 +228,7 @@ let positiveDraftPlan=[];
 function positiveJournalKey(){return 'teh-positive-journal-v1'}
 function positiveMayPublish(key,journal){
  const entry=journal[key];
- return !entry||entry.status==='manually_absent';
+ return !entry||entry.status==='manually_absent'||entry.status==='preflight_failed';
 }
 function positiveJournalRead(){
  try{const v=JSON.parse(localStorage.getItem(positiveJournalKey())||'{}');return v&&typeof v==='object'?v:{}}catch(e){return {}}
@@ -307,7 +307,9 @@ async function positiveParsePublishResponse(res,startedAt){
  let result;
  try{result=await res.json()}catch(_){throw Error('Пошкоджений JSON ('+diagnostic+'). Результат публікації невідомий')}
  if(!res.ok||result.status!=='ok'||result.verified!==true){
-  throw Error((result.message||'Prom не підтвердив точний текст відповіді')+' ('+diagnostic+')');
+  const error=Error((result.message||'Prom не підтвердив точний текст відповіді')+' ('+diagnostic+')');
+  error.safePreflight=(result.stage==='preflight_read'&&result.post_attempted===false&&result.safe_to_retry===true);
+  throw error;
  }
  return result;
 }
@@ -349,7 +351,10 @@ async function positiveStartQueue(){
     const done=positiveJournalRead();done[key]={...done[key],status:'verified',verified_at:new Date().toISOString()};positiveJournalWrite(done);
     review.reply_status='answered';positiveSave(day,now);sent++;
     out.textContent='✅ Підтверджено в Prom '+sent+' із '+candidates.length+'.';
-   }catch(e){out.textContent='⛔ Зупинено після '+sent+' успішних. '+key+': '+e.message+'. Запис позначено як невизначений; перевірте Prom вручну.';break}
+   }catch(e){
+    if(e.safePreflight){const saved=positiveJournalRead();if(saved[key]?.status==='attempted'){saved[key]={...saved[key],status:'preflight_failed',error:String(e.message),failed_at:new Date().toISOString()};positiveJournalWrite(saved)}out.textContent='⏹ Зупинено після '+sent+' успішних. '+key+': '+e.message+'. Сервер підтвердив, що POST не виконувався; спроба доступна після повторної підготовки плану.';}
+    else out.textContent='⛔ Зупинено після '+sent+' успішних. '+key+': '+e.message+'. Запис позначено як невизначений; перевірте Prom вручну.';
+    break}
    if(!positiveQueueStop&&sent<candidates.length)await new Promise(resolve=>setTimeout(resolve,4000));
   }
  }finally{positiveQueueRunning=false;positiveRunBusy=false;positiveRender(day);out.textContent+=' Журнал спроб збережено в браузері.'}
