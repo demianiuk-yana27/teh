@@ -76,6 +76,7 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <div class="card"><h3>Збір відгуків</h3><p>Перегляньте текст покупця та позначте прапорцем відгуки, які потребують індивідуальної відповіді. Збираємо з усіх активних магазинів (TRUE) у Google Sheets. Автоматичне надсилання вимкнено.</p>
 <label for="positiveDay">Дата відгуків</label> <input type="date" id="positiveDay"/>
 <button class="run" type="button" onclick="loadPositivePreview(this)">🔎 Зібрати з усіх магазинів</button>
+<button class="run" type="button" onclick="retryPositiveFailed(this)" style="background:#64748b">🔄 Повторити невдалі</button>
 <button class="run" type="button" onclick="probePositiveShopSwitch(this)" style="background:#475569">🧪 Перевірити 2 магазини</button>
 <div class="status" id="positiveShopProbeStatus" style="white-space:pre-wrap"></div>
 <div class="status" id="positiveStatus" style="white-space:pre-wrap"></div><div id="positiveList"></div></div></section>"""
@@ -93,40 +94,29 @@ async function probePositiveShopSwitch(button){
  }catch(e){out.textContent='❌ '+e.message}
  finally{button.disabled=false}
 }
-async function loadPositivePreview(button){
- const out=document.getElementById('positiveStatus'), list=document.getElementById('positiveList');
- const date=document.getElementById('positiveDay').value;
- if(!date){out.textContent='❌ Оберіть дату.';return}
- button.disabled=true;out.textContent='⏳ Збираємо з активних магазинів…';list.replaceChildren();
- try{
-  const data={reviews:[],shops:[],pages_checked:0,total_pages:0,complete:true};
-  let offset=0,total=1;
-  while(offset<total){
-   const res=await fetch('/api/positive/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date,offset})});
-   const contentType=res.headers.get('content-type')||'';
-   if(!contentType.includes('application/json')){
-    throw Error('Сервер повернув HTML замість JSON (HTTP '+res.status+'). Збір зупинено після '+offset+' магазинів. Спробуйте ще раз після оновлення сайту.');
-   }
-   const batch=await res.json();if(!res.ok||batch.status!=='ok')throw Error(batch.message||'Помилка читання');
-   total=batch.total_shops;
-   if(!batch.shops.length&&offset<total)throw Error('Порожня порція магазинів');
-   for(const shop of batch.shops){
-    data.shops.push(shop);data.pages_checked+=shop.pages_checked||0;
-    data.reviews.push(...(shop.reviews||[]));
-    if(!shop.complete||shop.error)data.complete=false;
-   }
-   offset=batch.next_offset;
-   out.textContent='⏳ Перевірено магазинів: '+Math.min(offset,total)+' / '+total+' · Знайдено відгуків: '+data.reviews.length;
-  }
-  const seen=new Set();
-  data.reviews=data.reviews.filter(r=>{const key=r.company_id+':'+r.id;if(seen.has(key))return false;seen.add(key);return true});
-  const errors=data.shops.filter(x=>x.error);
-  const counts={unanswered:0,answered:0,needs_check:0};
-  for(const review of data.reviews){counts[review.reply_status]=(counts[review.reply_status]||0)+1}
-  out.textContent='За '+date+': магазинів '+data.shops.length+'; позитивних відгуків '+data.reviews.length+'; без відповіді '+counts.unanswered+'; уже з коментарем '+counts.answered+'; невизначених '+counts.needs_check+'. Сторінок перевірено '+data.pages_checked+'. '+(data.complete?'Усі магазини оброблені.':'⚠️ Є неповні або помилкові магазини: '+errors.map(x=>x.shop_name+' ('+x.error+')').join('; '))+'. Публікація вимкнена.';
+const positiveCachePrefix='teh-positive-v2:';
+let positiveRunBusy=false;
+function positiveCacheKey(day){return positiveCachePrefix+day}
+function positiveRead(day){
+ try{const v=JSON.parse(localStorage.getItem(positiveCacheKey(day))||'null');return v&&v.shops&&typeof v.shops==='object'?v:{shops:{},flags:[]}}catch(e){return {shops:{},flags:[]}}
+}
+function positiveSave(day,v){
+ try{localStorage.setItem(positiveCacheKey(day),JSON.stringify(v))}
+ catch(e){document.getElementById('positiveStatus').textContent+=' ⚠️ Не вдалося зберегти результат у браузері.'}
+}
+function positiveRender(day){
+ const out=document.getElementById('positiveStatus'),list=document.getElementById('positiveList');
+ const state=positiveRead(day), shops=Object.values(state.shops);
+ const errors=shops.filter(x=>!x.complete||x.error), successful=shops.filter(x=>x.complete&&!x.error);
+ const data={shops,reviews:successful.flatMap(x=>x.reviews||[]),pages_checked:shops.reduce((n,x)=>n+(x.pages_checked||0),0)};
+ const seen=new Set();data.reviews=data.reviews.filter(x=>{const key=x.company_id+':'+x.id;if(seen.has(key))return false;seen.add(key);return true});
+ const counts={unanswered:0,answered:0,needs_check:0};
+ for(const x of data.reviews)counts[x.reply_status]=(counts[x.reply_status]||0)+1;
+ out.textContent='За '+day+': успішно '+successful.length+'; не вдалося '+errors.length+'; позитивних відгуків '+data.reviews.length+'; без відповіді '+counts.unanswered+'; вже з коментарем '+counts.answered+'; сторінок '+data.pages_checked+'. '+(errors.length?'⚠️ Повторіть: '+errors.map(x=>x.shop_name).join(', ')+'.':'')+' Публікація вимкнена.';
+ list.replaceChildren();
   const toolbar=document.createElement('div');toolbar.style.cssText='padding:14px 4px;font-weight:700;color:#334155';list.append(toolbar);
   const eligible=data.reviews.filter(r=>r.reply_status==='unanswered');
-  const exclusions=new Set();
+  const exclusions=new Set(state.flags||[]);
   const suspicious=/але|проте|однак|хоча|жах|поган|обман|шахра|хам|груб|брак|поламан|зламан|не рекоменд|не працю|не відповіда|повернен|розчар|скарг|проблем|дефект|хірн|фігн|твар|лайно|говн|ужас|плох|затрим|довго чека/iu;
   function update(){toolbar.textContent='До відповіді: '+(eligible.length-exclusions.size)+' · Виключено: '+exclusions.size+' · Публікація вимкнена';}
   for(const review of data.reviews){
@@ -153,16 +143,65 @@ async function loadPositivePreview(button){
     const check=document.createElement('input');check.type='checkbox';check.setAttribute('aria-label','Виключити відгук № '+review.id);
     check.style.cssText='position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer';
     const emoji=document.createElement('span');emoji.textContent='🚩';emoji.style.cssText='font-size:23px;filter:grayscale(1);opacity:.55;pointer-events:none';
-    check.addEventListener('change',()=>{if(check.checked){exclusions.add(review.company_id+':'+review.id);row.style.background='#fff1f2';row.style.borderColor='#fda4af';label.style.background='#ffe4e6';emoji.style.filter='none';emoji.style.opacity='1';}else{exclusions.delete(review.company_id+':'+review.id);row.style.background=suspicious.test(review.text||'')?'#fffbeb':'#fff';row.style.borderColor=suspicious.test(review.text||'')?'#fbbf24':'#e2e8f0';label.style.background='#f1f5f9';emoji.style.filter='grayscale(1)';emoji.style.opacity='.55';}update()});
+    if(exclusions.has(review.company_id+':'+review.id)){check.checked=true;row.style.background='#fff1f2';row.style.borderColor='#fda4af';label.style.background='#ffe4e6';emoji.style.filter='none';emoji.style.opacity='1'}
+    check.addEventListener('change',()=>{if(check.checked){exclusions.add(review.company_id+':'+review.id);row.style.background='#fff1f2';row.style.borderColor='#fda4af';label.style.background='#ffe4e6';emoji.style.filter='none';emoji.style.opacity='1';}else{exclusions.delete(review.company_id+':'+review.id);row.style.background=suspicious.test(review.text||'')?'#fffbeb':'#fff';row.style.borderColor=suspicious.test(review.text||'')?'#fbbf24':'#e2e8f0';label.style.background='#f1f5f9';emoji.style.filter='grayscale(1)';emoji.style.opacity='.55';}state.flags=[...exclusions];positiveSave(day,state);update()});
     label.append(check,emoji);row.append(label);
    }
    list.append(row);
   }
   update();
-  const note=document.createElement('p');note.style.cssText='font-size:12px;color:#64748b;margin-top:14px';note.textContent='🚩 — виключити відгук. Позначки діють лише до наступного збору або оновлення сторінки. Відправлення відповідей вимкнено.';list.append(note);
- }catch(e){out.textContent='❌ '+e.message}
- finally{button.disabled=false}
+  const note=document.createElement('p');note.style.cssText='font-size:12px;color:#64748b;margin-top:14px';note.textContent='🚩 — виключити відгук. Позначки зберігаються у цьому браузері для вибраної дати. Відправлення відповідей вимкнено.';list.append(note);
+}}
+async function positiveFetchShop(day,offset,companyId){
+ const body=companyId?{date:day,offset:0,company_id:companyId}:{date:day,offset};
+ const res=await fetch('/api/positive/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув HTML (HTTP '+res.status+')');
+ const batch=await res.json();if(!res.ok||batch.status!=='ok')throw Error(batch.message||'Помилка збору');
+ return batch;
 }
+async function loadPositivePreview(button,retryOnly=false){
+ const day=document.getElementById('positiveDay').value,out=document.getElementById('positiveStatus');
+ if(!day){out.textContent='❌ Оберіть дату.';return}
+ if(positiveRunBusy)return;
+ positiveRunBusy=true;
+ const controls=document.querySelectorAll('#positive-reviews button.run');controls.forEach(b=>b.disabled=true);
+ let state=positiveRead(day);
+ try{
+  if(retryOnly){
+   const failed=Object.values(state.shops).filter(x=>!x.complete||x.error);
+   if(!failed.length){out.textContent='Немає невдалих магазинів для повтору.';positiveRender(day);return}
+   for(let i=0;i<failed.length;i++){
+    const shop=failed[i];
+    out.textContent='⏳ Повтор '+(i+1)+'/'+failed.length+': '+shop.shop_name;
+    try{
+     const batch=await positiveFetchShop(day,0,shop.company_id);
+     const result=batch.shops[0];
+     if(result&&String(result.company_id)===String(shop.company_id)){state.shops[shop.company_id]=result;positiveSave(day,state)}
+    }catch(e){state.shops[shop.company_id]={...shop,complete:false,error:e.message};positiveSave(day,state)}
+    positiveRender(day);
+   }
+  }else{
+   let offset=0,total=1;
+   while(offset<total){
+    out.textContent='⏳ Магазин '+(offset+1)+'/'+(total===1?'…':total)+'; успішні результати збережено';
+    const batch=await positiveFetchShop(day,offset);
+    total=batch.total_shops;
+    if(!batch.shops.length)throw Error('Порожня відповідь магазину');
+    for(const shop of batch.shops){
+     const previous=state.shops[shop.company_id];
+     if(!previous||!previous.complete||previous.error||shop.complete&&!shop.error){
+      state.shops[shop.company_id]=shop;
+     }
+    }
+    positiveSave(day,state);
+    offset=batch.next_offset;
+   }
+  }
+ }catch(e){out.textContent='❌ '+e.message+'; попередні результати збережені.'}
+ finally{positiveRunBusy=false;controls.forEach(b=>b.disabled=false);positiveRender(day)}
+}
+function retryPositiveFailed(button){loadPositivePreview(button,true)}
+
 </script>"""
 s = s.replace('</body>', positive_script + '</body>', 1)
 
