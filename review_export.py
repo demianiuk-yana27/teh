@@ -235,7 +235,12 @@ def _write_reviews(book, sheet_name, reviews):
             ])
             if review["type"] == "company" and review["shopUrl"]:
                 requests.append({"range": f"'{sheet_name}'!Y{row}", "values": [[review["shopUrl"]]]})
-        if review.get("editUrl") and (is_new or not str(current[11]).strip()):
+        if review.get("deletedByBuyer"):
+            # Explicitly deleted by the buyer: remove stale editing links,
+            # while keeping the review itself and manager-entered fields.
+            if str(current[11]).strip():
+                requests.append({"range": f"'{sheet_name}'!L{row}", "values": [[""]]})
+        elif review.get("editUrl") and (is_new or not str(current[11]).strip()):
             requests.append({"range": f"'{sheet_name}'!L{row}", "values": [[review["editUrl"]]]})
         if order:
             link_requests.append({
