@@ -179,52 +179,79 @@ def _last_data_row(values):
 
 
 def _write_reviews(book, sheet_name, reviews):
+    """Upsert imported reviews in the test copy; preserve manager-edited columns."""
     if not reviews:
         return 0
     sheet = book.worksheet(sheet_name)
-    dates = {item["date"] for item in reviews}
-    existing = _existing_keys(sheet, dates)
-    fresh = [item for item in reviews if (item["date"], normalize_name(item["shopName"]), item["orderId"] or ("Відгук " + item["reviewId"])) not in existing]
-    if not fresh:
-        return 0
-    fresh.sort(key=lambda x: (_date_number(x["date"]), normalize_name(x["shopName"]), x["orderId"]))
+    existing_rows = sheet.get("A:L")
+    by_review = {}
+    by_order = {}
+    for index, row in enumerate(existing_rows[2:], start=3):
+        padded = row + [""] * (12 - len(row))
+        date = parse_date(padded[6])
+        shop = normalize_name(str(padded[7]))
+        marker = str(padded[3] or "").strip()
+        if not date or not shop:
+            continue
+        key = (date.strftime("%d.%m.%Y"), shop)
+        match = re.fullmatch(r"Відгук\\s+(\\d+)", marker)
+        if match:
+            by_review[key + (match.group(1),)] = index
+        elif re.fullmatch(r"\\d+", marker):
+            by_order[key + (marker,)] = index
 
-    values = sheet.get("A:L")
-    row = _last_data_row(values) + 1
-    previous_date = None
+    last = _last_data_row(existing_rows)
+    append_row = last + 1
     requests = []
     link_requests = []
-    sheet_id = sheet.id
+    inserted = 0
+    for review in sorted(reviews, key=lambda x: (_date_number(x["date"]), normalize_name(x["shopName"]), x["reviewId"])):
+        key = (review["date"], normalize_name(review["shopName"]))
+        order = str(review.get("orderId") or "")
+        rid = str(review["reviewId"])
+        row = by_review.get(key + (rid,))
+        if row is None and order:
+            row = by_order.get(key + (order,))
+        is_new = row is None
+        if is_new:
+            row = append_row
+            append_row += 1
+            inserted += 1
+        by_review[key + (rid,)] = row
+        if order:
+            by_order[key + (order,)] = row
 
-    for review in fresh:
-        if previous_date and previous_date != review["date"]:
-            sheet.format(f"A{row}:L{row}", {"backgroundColor": {"red": 1, "green": 0.9, "blue": 0.7}})
-            row += 1
-        text = f"⭐ {review['rating']}/5" + (f"\n{review['text']}" if review["text"] else "")
-        requests.extend([
-            {"range": f"'{sheet_name}'!D{row}", "values": [[(review["orderId"] or ("Відгук " + review["reviewId"]))]]},
-            {"range": f"'{sheet_name}'!G{row}", "values": [[review["date"]]]},
-            {"range": f"'{sheet_name}'!H{row}", "values": [[review["shopName"]]]},
-            {"range": f"'{sheet_name}'!I{row}", "values": [[text]]},
-            {"range": f"'{sheet_name}'!L{row}", "values": [[review["editUrl"]]]},
-        ])
-        if review["type"] == "company" and review["shopUrl"]:
-            requests.append({"range": f"'{sheet_name}'!Y{row}", "values": [[review["shopUrl"]]]})
-        if review["orderId"]:
+        # Existing manager-entered fields remain untouched.
+        current = (existing_rows[row - 1] + [""] * 12) if row <= len(existing_rows) else [""] * 12
+        marker = order or ("Відгук " + rid)
+        if is_new or str(current[3]).strip() != marker:
+            requests.append({"range": f"'{sheet_name}'!D{row}", "values": [[marker]]})
+        if is_new:
+            body = f"⭐ {review['rating']}/5" + (f"\\n{review['text']}" if review["text"] else "")
+            requests.extend([
+                {"range": f"'{sheet_name}'!G{row}", "values": [[review["date"]]]},
+                {"range": f"'{sheet_name}'!H{row}", "values": [[review["shopName"]]]},
+                {"range": f"'{sheet_name}'!I{row}", "values": [[body]]},
+            ])
+            if review["type"] == "company" and review["shopUrl"]:
+                requests.append({"range": f"'{sheet_name}'!Y{row}", "values": [[review["shopUrl"]]]})
+        if review.get("editUrl") and (is_new or not str(current[11]).strip()):
+            requests.append({"range": f"'{sheet_name}'!L{row}", "values": [[review["editUrl"]]]})
+        if order:
             link_requests.append({
                 "repeatCell": {
-                    "range": {"sheetId": sheet_id, "startRowIndex": row - 1, "endRowIndex": row, "startColumnIndex": 3, "endColumnIndex": 4},
-                    "cell": {"userEnteredFormat": {"textFormat": {"link": {"uri": f"https://my.prom.ua/cms/order/edit/{review['orderId']}"}}}},
+                    "range": {"sheetId": sheet.id, "startRowIndex": row - 1,
+                              "endRowIndex": row, "startColumnIndex": 3, "endColumnIndex": 4},
+                    "cell": {"userEnteredFormat": {"textFormat": {"link": {
+                        "uri": f"https://my.prom.ua/cms/order/edit/{order}"}}}},
                     "fields": "userEnteredFormat.textFormat.link",
                 }
             })
-        previous_date = review["date"]
-        row += 1
-
-    book.values_batch_update({"valueInputOption": "USER_ENTERED", "data": requests})
+    if requests:
+        book.values_batch_update({"valueInputOption": "USER_ENTERED", "data": requests})
     if link_requests:
         book.batch_update({"requests": link_requests})
-    return len(fresh)
+    return inserted
 
 
 def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_id=None, login_map=None):
