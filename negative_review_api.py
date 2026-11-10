@@ -120,6 +120,53 @@ def _customer_review_url(opener, opinion_id, order_id, kind):
     return short
 
 
+def _order_id(opinion):
+    """Find a real order ID, never substitute the opinion ID."""
+    import re
+    for key in ("order_id", "orderId", "order_number", "orderNumber"):
+        value = opinion.get(key)
+        if isinstance(value, (int, str)) and str(value).strip().isdigit():
+            return str(value).strip()
+    for key in ("order", "order_info", "orderInfo"):
+        nested = opinion.get(key)
+        if isinstance(nested, dict):
+            for field in ("id", "order_id", "orderId", "number", "orderNumber"):
+                value = nested.get(field)
+                if isinstance(value, (int, str)) and str(value).strip().isdigit():
+                    return str(value).strip()
+    for key in ("orderUrl", "order_url", "orderEditUrl", "order_edit_url"):
+        url = opinion.get(key)
+        if isinstance(url, str):
+            match = re.search(r"/(?:order/edit|order)/([0-9]+)", url)
+            if match:
+                return match.group(1)
+    return ""
+
+
+def _company_tags(opinion):
+    """Only buyer-selected characteristics, not seller comments."""
+    parts = []
+    for key in ("tags", "userRatings", "user_ratings"):
+        values = opinion.get(key)
+        if not isinstance(values, list):
+            continue
+        for item in values:
+            if isinstance(item, str):
+                value = item.strip()
+            elif isinstance(item, dict):
+                value = next((str(item[k]).strip() for k in (
+                    "title", "text", "label", "name", "value", "caption")
+                    if isinstance(item.get(k), str) and item[k].strip()), "")
+                emoji = next((item[k] for k in ("emoji", "icon") if isinstance(item.get(k), str)), "")
+                if emoji and value and not value.startswith(emoji):
+                    value = emoji + " " + value
+            else:
+                continue
+            if value and value not in parts:
+                parts.append(value)
+    return parts
+
+
 def _candidate(opinion, kind, shop):
     rating = opinion.get("rating")
     if type(rating) is not int or rating not in (1, 2, 3):
@@ -129,11 +176,7 @@ def _candidate(opinion, kind, shop):
         raise ValueError("company_id не збігається з вибраним магазином")
     # Some company opinions have no order_id. Keep the review, using its
     # verified opinion ID as a fallback identifier (never fabricate an order).
-    raw_order_id = opinion.get("orderId") if kind == "product" else (
-        opinion.get("order_id") or opinion.get("orderId"))
-    order_id = str(raw_order_id or "").strip()
-    if order_id and not order_id.isdigit():
-        order_id = ""
+    order_id = _order_id(opinion)
     review_id = str(opinion.get("id") or "").strip()
     if not review_id.isdigit():
         raise ValueError("Відгук без коректного ID")
@@ -145,7 +188,7 @@ def _candidate(opinion, kind, shop):
         body = "\n".join(str(x).strip() for x in parts if isinstance(x, str) and x.strip())
         edit = ""
     else:
-        body = str(opinion.get("comment_work") or "").strip()
+        body = "\n".join(filter(None, [str(opinion.get("comment_work") or "").strip(), *_company_tags(opinion)]))
         edit = ""
     return {"type": kind, "orderId": order_id, "reviewId": review_id,
             "date": dt.strftime("%d.%m.%Y"), "rating": rating,
