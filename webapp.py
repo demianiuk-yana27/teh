@@ -218,9 +218,9 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
     global negative_status
     try:
         if process_name == "reviews":
-            result = run_review_export(sheet_id, since, until)
+            result = run_review_export(sheet_id, since, until, destination_spreadsheet_id="1HDuSqgb2cQpXzkxOK9GJTFQaomO4uHnNsFJzok9DjYc")
             message = (
-                "Вигрузка відгуків завершена. "
+                "🧪 Тестова вигрузка (копія таблиці). "
                 f"Знайдено: компанія — {result['collected_company']}, товари — {result['collected_product']}; "
                 f"додано нових: {result['written']}. "
                 f"Пропущено магазинів: {result['skipped']}; неповних перевірок: {result['incomplete']}."
