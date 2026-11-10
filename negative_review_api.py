@@ -100,12 +100,17 @@ def _date(value):
 
 
 
-def _customer_review_url(opener, opinion_id, order_id):
-    """Use the same short-link API as Prom's 'Посилання на редагування' menu."""
+def _customer_review_url(opener, opinion_id, order_id, kind):
+    """Resolve the buyer-facing link using the review-type-specific Prom URL."""
     if not str(opinion_id).isdigit() or not str(order_id).isdigit():
         raise ValueError("Немає ID відгуку або замовлення для клієнтського посилання")
-    target = ("https://prom.ua/ua/opinions/edit/" + str(opinion_id)
-              + "?order_id=" + str(order_id))
+    if kind == "product":
+        target = "https://prom.ua/product-opinions/edit/" + str(opinion_id)
+    elif kind == "company":
+        target = ("https://prom.ua/ua/opinions/edit/" + str(opinion_id)
+                  + "?order_id=" + str(order_id))
+    else:
+        raise ValueError("Невідомий тип відгуку")
     url = ("https://my.prom.ua/cms/opinions/get_short_url?"
            + urllib.parse.urlencode({"url": target}))
     result = _read(opener, url)
@@ -192,7 +197,7 @@ def collect_shop(shop, account, since, until=""):
                 if dt and start <= dt and (end is None or dt <= end):
                     candidate = _candidate(opinion, kind, shop)
                     if candidate:
-                        candidate["editUrl"] = _customer_review_url(opener, oid, candidate["orderId"])
+                        candidate["editUrl"] = _customer_review_url(opener, oid, candidate["orderId"], kind)
                         found.append(candidate)
             total = int(pagination.get("num_pages") or 1)
             if page >= total or (ordered and dates and max(dates) < start):
