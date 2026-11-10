@@ -640,16 +640,29 @@ negative_export_fix = r'''<script>
       if(!response.ok || data.status === 'error') throw Error(data.message || 'HTTP '+response.status);
       if(data.status !== 'started') throw Error(data.message || 'Процес не запущено');
       el.textContent = '⏳ ' + (data.message || 'Вигрузка виконується…');
+      window.__negativeStatusFailures = 0;
       poll = setInterval(async () => {
         try {
           const statusResponse = await fetch(apiBase + '/negative/status', {cache:'no-store'});
-          if(!statusResponse.ok) throw Error('HTTP '+statusResponse.status);
+          if(!statusResponse.ok) {
+            const details = (await statusResponse.text()).slice(0,220);
+            throw Error('HTTP '+statusResponse.status+(details ? ': '+details : ''));
+          }
           const state = await statusResponse.json();
+          window.__negativeStatusFailures = 0;
           if(state.status === 'success') finish(state.message || 'Вигрузку завершено.', false);
           else if(state.status === 'error') finish(state.message || 'Помилка вигрузки.', true);
           else if(state.status === 'running') el.textContent = '⏳ '+(state.message || 'Вигрузка виконується…');
         } catch (error) {
-          finish('Не вдалося перевірити стан: '+error.message+'. Перевірте тестову таблицю перед повторним запуском.', true);
+          // A temporary status-request failure must not be interpreted as
+          // an export failure. Keep polling a few times without relaunching.
+          window.__negativeStatusFailures = (window.__negativeStatusFailures || 0) + 1;
+          el.textContent = '⚠️ Перевірка стану (' + window.__negativeStatusFailures + '/5): ' + error.message + '. Вигрузку повторно не запускайте.';
+          if(window.__negativeStatusFailures >= 5) {
+            clearInterval(poll);
+            if(button) button.disabled = false;
+            el.textContent = '⚠️ Статус недоступний: ' + error.message + '. Результат вигрузки невідомий. Спочатку перевірте тестову таблицю.';
+          }
         }
       }, 2500);
     } catch(error) { finish(error.message, true); }
