@@ -178,6 +178,21 @@ def _last_data_row(values):
     return last
 
 
+def _sheet_review_date(value, expected_year):
+    """Sheets may display DD.MM without a year, even for full dates."""
+    parsed = parse_date(value)
+    if parsed:
+        return parsed.strftime("%d.%m.%Y")
+    text = str(value or "").strip()
+    match = re.fullmatch(r"(\\d{1,2})[.](\\d{1,2})[.]?", text)
+    if match:
+        try:
+            return datetime(int(expected_year), int(match.group(2)), int(match.group(1))).strftime("%d.%m.%Y")
+        except ValueError:
+            return ""
+    return ""
+
+
 def _write_reviews(book, sheet_name, reviews):
     """Upsert imported reviews in the test copy; preserve manager-edited columns."""
     if not reviews:
@@ -186,14 +201,15 @@ def _write_reviews(book, sheet_name, reviews):
     existing_rows = sheet.get("A:L")
     by_review = {}
     by_order = {}
+    year_hint = int(reviews[0]["date"].split(".")[-1])
     for index, row in enumerate(existing_rows[2:], start=3):
         padded = row + [""] * (12 - len(row))
-        date = parse_date(padded[6])
+        date = _sheet_review_date(padded[6], year_hint)
         shop = normalize_name(str(padded[7]))
         marker = str(padded[3] or "").strip()
         if not date or not shop:
             continue
-        key = (date.strftime("%d.%m.%Y"), shop)
+        key = (date, shop)
         match = re.fullmatch(r"Відгук\s+(\d+)", marker)
         if match:
             by_review[key + (match.group(1),)] = index
@@ -259,6 +275,7 @@ def _write_reviews(book, sheet_name, reviews):
                     "fields": "userEnteredFormat.textFormat.link",
                 }
             })
+    print(f"[negative-reviews] sheet={sheet_name}: collected={len(reviews)}, new={inserted}, existing={len(reviews)-inserted}", flush=True)
     if requests:
         book.values_batch_update({"valueInputOption": "USER_ENTERED", "data": requests})
     if link_requests:
