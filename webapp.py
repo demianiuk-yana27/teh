@@ -2003,6 +2003,7 @@ def negative_product_api_probe():
             return type(value).__name__
         return jsonify({"status": "ok", "http_status": status,
                         "schema": shape(data),
+                        "opinion_fields": shape(((data.get("context") or {}).get("opinions") or [{}])[0], 0) if isinstance(data, dict) else {},
                         "note": "Лише структура полів, без текстів відгуків і cookie."})
     except urllib.error.HTTPError as exc:
         return jsonify({"status": "prom_error", "http_status": exc.code,
