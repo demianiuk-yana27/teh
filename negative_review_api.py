@@ -167,6 +167,15 @@ def _company_tags(opinion):
     return parts
 
 
+def _deleted_by_buyer(opinion):
+    """Only explicit Prom deletion flags; a missing URL is not proof."""
+    for key in ("deletedByAuthor", "deleted_by_author", "deletedByUser", "deleted_by_user"):
+        if opinion.get(key) is True:
+            return True
+    # Generic deleted flags do not identify who deleted the review.
+    return False
+
+
 def _candidate(opinion, kind, shop):
     rating = opinion.get("rating")
     if type(rating) is not int or rating not in (1, 2, 3):
@@ -193,7 +202,8 @@ def _candidate(opinion, kind, shop):
     return {"type": kind, "orderId": order_id, "reviewId": review_id,
             "date": dt.strftime("%d.%m.%Y"), "rating": rating,
             "text": body, "shopName": shop.name, "shopUrl": shop.url,
-            "editUrl": edit if edit.startswith("https://") else ""}
+            "editUrl": edit if edit.startswith("https://") else "",
+            "deletedByBuyer": _deleted_by_buyer(opinion)}
 
 
 def collect_shop(shop, account, since, until=""):
@@ -248,7 +258,7 @@ def collect_shop(shop, account, since, until=""):
                     if candidate:
                         # Company edit links require a real order ID; never insert
                         # an opinion ID in its place.
-                        if kind == "product" or candidate["orderId"]:
+                        if not candidate["deletedByBuyer"] and (kind == "product" or candidate["orderId"]):
                             try:
                                 candidate["editUrl"] = _customer_review_url(
                                     opener, oid, candidate["orderId"], kind)
