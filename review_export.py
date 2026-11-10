@@ -184,7 +184,7 @@ def _write_reviews(book, sheet_name, reviews):
     sheet = book.worksheet(sheet_name)
     dates = {item["date"] for item in reviews}
     existing = _existing_keys(sheet, dates)
-    fresh = [item for item in reviews if (item["date"], normalize_name(item["shopName"]), item["orderId"]) not in existing]
+    fresh = [item for item in reviews if (item["date"], normalize_name(item["shopName"]), item["orderId"] or ("Відгук " + item["reviewId"])) not in existing]
     if not fresh:
         return 0
     fresh.sort(key=lambda x: (_date_number(x["date"]), normalize_name(x["shopName"]), x["orderId"]))
@@ -202,7 +202,7 @@ def _write_reviews(book, sheet_name, reviews):
             row += 1
         text = f"⭐ {review['rating']}/5" + (f"\n{review['text']}" if review["text"] else "")
         requests.extend([
-            {"range": f"'{sheet_name}'!D{row}", "values": [[review["orderId"]]]},
+            {"range": f"'{sheet_name}'!D{row}", "values": [[(review["orderId"] or ("Відгук " + review["reviewId"]))]]},
             {"range": f"'{sheet_name}'!G{row}", "values": [[review["date"]]]},
             {"range": f"'{sheet_name}'!H{row}", "values": [[review["shopName"]]]},
             {"range": f"'{sheet_name}'!I{row}", "values": [[text]]},
@@ -210,13 +210,14 @@ def _write_reviews(book, sheet_name, reviews):
         ])
         if review["type"] == "company" and review["shopUrl"]:
             requests.append({"range": f"'{sheet_name}'!Y{row}", "values": [[review["shopUrl"]]]})
-        link_requests.append({
-            "repeatCell": {
-                "range": {"sheetId": sheet_id, "startRowIndex": row - 1, "endRowIndex": row, "startColumnIndex": 3, "endColumnIndex": 4},
-                "cell": {"userEnteredFormat": {"textFormat": {"link": {"uri": f"https://my.prom.ua/cms/order/edit/{review['orderId']}"}}}},
-                "fields": "userEnteredFormat.textFormat.link",
-            }
-        })
+        if review["orderId"]:
+            link_requests.append({
+                "repeatCell": {
+                    "range": {"sheetId": sheet_id, "startRowIndex": row - 1, "endRowIndex": row, "startColumnIndex": 3, "endColumnIndex": 4},
+                    "cell": {"userEnteredFormat": {"textFormat": {"link": {"uri": f"https://my.prom.ua/cms/order/edit/{review['orderId']}"}}}},
+                    "fields": "userEnteredFormat.textFormat.link",
+                }
+            })
         previous_date = review["date"]
         row += 1
 
