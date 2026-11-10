@@ -107,7 +107,7 @@ def _customer_review_url(opener, opinion_id, order_id, kind):
     if kind == "product":
         target = "https://prom.ua/product-opinions/edit/" + str(opinion_id)
     elif kind == "company":
-        target = ("https://prom.ua/ua/opinions/edit/" + str(opinion_id)
+        target = ("https://prom.ua/product-opinions/edit/" + str(opinion_id)
                   + "?order_id=" + str(order_id))
     else:
         raise ValueError("Невідомий тип відгуку")
@@ -123,14 +123,14 @@ def _customer_review_url(opener, opinion_id, order_id, kind):
 def _order_id(opinion):
     """Find a real order ID, never substitute the opinion ID."""
     import re
-    for key in ("order_id", "orderId", "order_number", "orderNumber"):
+    for key in ("linked_order_id", "linkedOrderId", "order_id", "orderId", "order_number", "orderNumber"):
         value = opinion.get(key)
         if isinstance(value, (int, str)) and str(value).strip().isdigit():
             return str(value).strip()
     for key in ("order", "order_info", "orderInfo"):
         nested = opinion.get(key)
         if isinstance(nested, dict):
-            for field in ("id", "order_id", "orderId", "number", "orderNumber"):
+            for field in ("id", "linked_order_id", "order_id", "orderId", "number", "orderNumber"):
                 value = nested.get(field)
                 if isinstance(value, (int, str)) and str(value).strip().isdigit():
                     return str(value).strip()
