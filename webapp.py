@@ -218,7 +218,13 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
     global negative_status
     try:
         if process_name == "reviews":
-            result = run_review_export(sheet_id, since, until, destination_spreadsheet_id="1HDuSqgb2cQpXzkxOK9GJTFQaomO4uHnNsFJzok9DjYc", login_map=_positive_login_map())
+            # Reuse the confirmed account/company mapping already used by
+            # positive reviews. Never guess an account ID from company_id.
+            login_map = _positive_login_map()
+            if not login_map:
+                raise RuntimeError("Карта sign-to порожня у запущеній версії сервера.")
+            print(f"[negative-reviews] confirmed sign-to mapping: {len(login_map)} company IDs", flush=True)
+            result = run_review_export(sheet_id, since, until, destination_spreadsheet_id="1HDuSqgb2cQpXzkxOK9GJTFQaomO4uHnNsFJzok9DjYc", login_map=login_map)
             message = (
                 "🧪 Тестова вигрузка (копія таблиці). "
                 f"Знайдено: компанія — {result['collected_company']}, товари — {result['collected_product']}; "
@@ -1350,6 +1356,26 @@ def _positive_login_map():
         if account not in mapping[company]:
             mapping[company].append(account)
     return mapping
+
+
+@app.route("/negative/sign-to-readiness", methods=["GET"])
+def negative_sign_to_readiness():
+    """Read-only deployment diagnostic: never reveal account IDs or cookies."""
+    try:
+        shops = load_active_shops(_sheet_id())
+        mapping = _positive_login_map()
+        matched = sum(1 for shop in shops if mapping.get(str(shop.id)))
+        return jsonify({
+            "status": "ok" if matched else "error",
+            "mapping_companies": len(mapping),
+            "active_shops": len(shops),
+            "mapped_active_shops": matched,
+            "unmapped_active_shops": len(shops) - matched,
+            "destination": "test_copy",
+            "writes": False
+        })
+    except Exception as exc:
+        return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:180]}), 500
 
 
 @app.route("/positive/shops-batch", methods=["POST"])
