@@ -224,7 +224,20 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
             if not login_map:
                 raise RuntimeError("Карта sign-to порожня у запущеній версії сервера.")
             print(f"[negative-reviews] confirmed sign-to mapping: {len(login_map)} company IDs", flush=True)
-            result = run_review_export(sheet_id, since, until, destination_spreadsheet_id="1HDuSqgb2cQpXzkxOK9GJTFQaomO4uHnNsFJzok9DjYc", login_map=login_map)
+            def update_shop_progress(current, total, shop_name):
+                negative_status.update({
+                    "running": True,
+                    "process": "reviews",
+                    "status": "running",
+                    "message": f"Магазин {current} з {total}: {shop_name}. Перевіряємо відгуки…",
+                    "current_shop": current,
+                    "total_shops": total,
+                    "run_id": run_id,
+                })
+            result = run_review_export(
+                sheet_id, since, until,
+                destination_spreadsheet_id="1HDuSqgb2cQpXzkxOK9GJTFQaomO4uHnNsFJzok9DjYc",
+                login_map=login_map, progress_callback=update_shop_progress)
             message = (
                 "🧪 Тестова вигрузка (копія таблиці). "
                 f"Знайдено: компанія — {result['collected_company']}, товари — {result['collected_product']}; "
