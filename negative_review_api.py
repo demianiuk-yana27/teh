@@ -116,10 +116,10 @@ def _candidate(opinion, kind, shop):
     if kind == "product":
         parts = [opinion.get(k) for k in ("title", "text", "pros", "cons")]
         body = "\n".join(str(x).strip() for x in parts if isinstance(x, str) and x.strip())
-        edit = str(opinion.get("editOpinionUrl") or "")
+        edit = ""  # Seller editOpinionUrl is NOT a customer-facing review link.
     else:
         body = str(opinion.get("comment_work") or "").strip()
-        edit = str(opinion.get("edit_opinion_url") or "")
+        edit = ""  # Customer-facing link requires separate verification.
     return {"type": kind, "orderId": str(order_id),
             "date": dt.strftime("%d.%m.%Y"), "rating": rating,
             "text": body, "shopName": shop.name, "shopUrl": shop.url,
