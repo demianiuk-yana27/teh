@@ -643,7 +643,7 @@ negative_export_fix = r'''<script>
       window.__negativeStatusFailures = 0;
       poll = setInterval(async () => {
         try {
-          const statusResponse = await fetch(apiBase + '/negative/status', {cache:'no-store'});
+          const statusResponse = await fetch(apiBase + '/negative/export-status', {cache:'no-store'});
           if(!statusResponse.ok) {
             const details = (await statusResponse.text()).slice(0,220);
             throw Error('HTTP '+statusResponse.status+(details ? ': '+details : ''));
