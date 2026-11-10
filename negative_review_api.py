@@ -127,10 +127,16 @@ def _candidate(opinion, kind, shop):
     company_id = opinion.get("companyId" if kind == "product" else "company_id")
     if str(company_id) != str(shop.id):
         raise ValueError("company_id не збігається з вибраним магазином")
-    order_id = opinion.get("orderId") if kind == "product" else (
+    # Some company opinions have no order_id. Keep the review, using its
+    # verified opinion ID as a fallback identifier (never fabricate an order).
+    raw_order_id = opinion.get("orderId") if kind == "product" else (
         opinion.get("order_id") or opinion.get("orderId"))
-    if not order_id or not str(order_id).isdigit():
-        raise ValueError("Відгук без orderId: потрібно перевірити схему API")
+    order_id = str(raw_order_id or "").strip()
+    if order_id and not order_id.isdigit():
+        order_id = ""
+    review_id = str(opinion.get("id") or "").strip()
+    if not review_id.isdigit():
+        raise ValueError("Відгук без коректного ID")
     dt = _date(opinion.get("dateCreated" if kind == "product" else "date_created"))
     if not dt:
         raise ValueError("Відгук без розпізнаної дати")
@@ -141,7 +147,7 @@ def _candidate(opinion, kind, shop):
     else:
         body = str(opinion.get("comment_work") or "").strip()
         edit = ""
-    return {"type": kind, "orderId": str(order_id),
+    return {"type": kind, "orderId": order_id, "reviewId": review_id,
             "date": dt.strftime("%d.%m.%Y"), "rating": rating,
             "text": body, "shopName": shop.name, "shopUrl": shop.url,
             "editUrl": edit if edit.startswith("https://") else ""}
@@ -197,7 +203,13 @@ def collect_shop(shop, account, since, until=""):
                 if dt and start <= dt and (end is None or dt <= end):
                     candidate = _candidate(opinion, kind, shop)
                     if candidate:
-                        candidate["editUrl"] = _customer_review_url(opener, oid, candidate["orderId"], kind)
+                        # Company edit links require a real order ID; never insert
+                        # an opinion ID in its place.
+                        if kind == "product" or candidate["orderId"]:
+                            candidate["editUrl"] = _customer_review_url(
+                                opener, oid, candidate["orderId"], kind)
+                        else:
+                            candidate["editUrl"] = ""
                         found.append(candidate)
             total = int(pagination.get("num_pages") or 1)
             if page >= total or (ordered and dates and max(dates) < start):
