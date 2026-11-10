@@ -1940,3 +1940,72 @@ def positive_reviews_preview():
     except Exception as exc:
         return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:160]}), 502
 
+
+@app.route("/negative/product-api-probe", methods=["GET"])
+def negative_product_api_probe():
+    """Read-only Prom product-review API diagnostic. Never exports or changes data."""
+    import http.cookiejar
+    import urllib.request
+    import urllib.error
+    import json
+    from negative_reviews import _prom_session_cookies
+
+    try:
+        jar = http.cookiejar.CookieJar()
+        for cookie in _prom_session_cookies():
+            if not isinstance(cookie, dict):
+                continue
+            domain = str(cookie.get("domain") or "").lower()
+            if domain.lstrip(".") != "prom.ua" and not domain.lstrip(".").endswith(".prom.ua"):
+                continue
+            name, value = cookie.get("name"), cookie.get("value")
+            if not isinstance(name, str) or not isinstance(value, str):
+                continue
+            expiry = cookie.get("expirationDate", cookie.get("expiry"))
+            try:
+                expiry = int(expiry) if expiry is not None else None
+            except (TypeError, ValueError):
+                expiry = None
+            jar.set_cookie(http.cookiejar.Cookie(
+                version=0, name=name, value=value, port=None, port_specified=False,
+                domain=domain, domain_specified=True, domain_initial_dot=domain.startswith("."),
+                path=str(cookie.get("path") or "/"), path_specified=True,
+                secure=bool(cookie.get("secure", False)), expires=expiry,
+                discard=expiry is None, comment=None, comment_url=None,
+                rest={}, rfc2109=False))
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        url = ("https://my.prom.ua/cms/opinions/product/prom/context"
+               "?page=1&perPage=20&sortingQuery=-date_created&pageType=portal")
+        req = urllib.request.Request(url, headers={
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://my.prom.ua/cms/opinions/product/prom",
+            "User-Agent": "Mozilla/5.0",
+            "X-Requested-With": "XMLHttpRequest"})
+        with opener.open(req, timeout=18) as response:
+            raw = response.read(800001)
+            status = response.status
+            content_type = response.headers.get("Content-Type", "")
+        if len(raw) > 800000:
+            raise ValueError("Prom повернув завелику відповідь.")
+        if "json" not in content_type.lower():
+            return jsonify({"status": "unexpected", "http_status": status,
+                            "content_type": content_type[:80],
+                            "message": "Prom не повернув JSON; можливо, потрібна авторизація."})
+        data = json.loads(raw)
+        def shape(value, depth=0):
+            if depth >= 3:
+                return type(value).__name__
+            if isinstance(value, dict):
+                return {str(k)[:70]: shape(v, depth + 1) for k, v in list(value.items())[:35]}
+            if isinstance(value, list):
+                return {"type": "list", "count": len(value),
+                        "first_item_shape": shape(value[0], depth + 1) if value else None}
+            return type(value).__name__
+        return jsonify({"status": "ok", "http_status": status,
+                        "schema": shape(data),
+                        "note": "Лише структура полів, без текстів відгуків і cookie."})
+    except urllib.error.HTTPError as exc:
+        return jsonify({"status": "prom_error", "http_status": exc.code,
+                        "message": "Prom відхилив читання; жодних змін не внесено."})
+    except Exception as exc:
+        return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:160]})
