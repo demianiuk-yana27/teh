@@ -241,7 +241,10 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
             message = (
                 "🧪 Тестова вигрузка (копія таблиці). "
                 f"Знайдено: компанія — {result['collected_company']}, товари — {result['collected_product']}; "
-                f"додано нових: {result['written']}. "
+                f"додано нових: компанія — {result['written_company']}, товари — {result['written_product']} "
+                f"(разом {result['written']}); "
+                f"вже в таблиці: компанія — {result['collected_company'] - result['written_company']}, "
+                f"товари — {result['collected_product'] - result['written_product']}. "
                 f"Пропущено магазинів: {result['skipped']}; неповних перевірок: {result['incomplete']}."
             )
         elif process_name == "analytics":
