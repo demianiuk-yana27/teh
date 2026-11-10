@@ -1361,6 +1361,7 @@ def _positive_login_map():
 @app.route("/negative/sign-to-readiness", methods=["GET"])
 def negative_sign_to_readiness():
     """Read-only deployment diagnostic: never reveal account IDs or cookies."""
+    from negative_reviews import load_active_shops
     try:
         shops = load_active_shops(_sheet_id())
         mapping = _positive_login_map()
