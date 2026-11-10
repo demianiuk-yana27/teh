@@ -148,9 +148,23 @@ def run_process_with_13(process_num):
     return jsonify({"status": "started", "message": "Процес запущено."})
 
 
-# Замінюємо тільки обробники старих маршрутів, не створюючи дублікати URL.
-app.view_functions["run_negative"] = run_negative_parallel
-app.view_functions["get_negative_status"] = get_negative_status_parallel
+# Reviews use the verified sign-to map and TEST spreadsheet from webapp.
+# Keep independent parallel workers for the other existing processes.
+def run_negative_dispatch(process_name):
+    if process_name == "reviews":
+        return base.run_negative(process_name)
+    return run_negative_parallel(process_name)
+
+
+def negative_status_dispatch():
+    process_name = str(request.args.get("process") or "").strip()
+    if not process_name or process_name == "reviews":
+        return base.get_negative_status()
+    return get_negative_status_parallel()
+
+
+app.view_functions["run_negative"] = run_negative_dispatch
+app.view_functions["get_negative_status"] = negative_status_dispatch
 app.view_functions["run_process_endpoint"] = run_process_with_13
 
 
