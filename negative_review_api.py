@@ -143,6 +143,31 @@ def _order_id(opinion):
     return ""
 
 
+_EMOJI_NAMES = {
+    "face_with_monocle": "🧐", "monocle": "🧐",
+    "imp": "👿", "angry": "😠", "rage": "😡",
+    "woman-gesturing-no": "🙅‍♀️", "woman_gesturing_no": "🙅‍♀️",
+    "hourglass_flowing_sand": "⏳", "hourglass": "⌛",
+    "star": "⭐", "thumbs_down": "👎", "disappointed": "😞",
+    "cry": "😢", "thinking_face": "🤔", "slightly_frowning_face": "🙁",
+}
+
+
+def _display_emoji(value):
+    """Convert Prom's emoji aliases to glyphs; never print raw alias names."""
+    import re
+    if not isinstance(value, str):
+        return ""
+    value = value.strip().strip(":")
+    if not value:
+        return ""
+    if value in _EMOJI_NAMES:
+        return _EMOJI_NAMES[value]
+    if re.fullmatch(r"[a-z][a-z0-9_-]*", value):
+        return ""
+    return value
+
+
 def _company_tags(opinion):
     """Only buyer-selected characteristics, not seller comments."""
     parts = []
@@ -157,7 +182,7 @@ def _company_tags(opinion):
                 value = next((str(item[k]).strip() for k in (
                     "title", "text", "label", "name", "value", "caption")
                     if isinstance(item.get(k), str) and item[k].strip()), "")
-                emoji = next((item[k] for k in ("emoji", "icon") if isinstance(item.get(k), str)), "")
+                emoji = _display_emoji(next((item[k] for k in ("emoji", "icon") if isinstance(item.get(k), str)), ""))
                 if emoji and value and not value.startswith(emoji):
                     value = emoji + " " + value
             else:
