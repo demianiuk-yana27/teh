@@ -602,181 +602,61 @@ loaders += '<script src="ttn.js?v=2"></script><script src="boss-dashboard.js?v=4
 s = s.replace("setStatus(id,d.status==='started'?'running':'busy','⏳ '+d.message)}catch(e){setStatus(id,'error','❌ '+e.message)}}async function runOrderCount()",
 """setStatus(id,d.status==='started'?'running':'busy','⏳ '+d.message);if(d.status==='started'){clearInterval(timers[id]);timers[id]=setInterval(async()=>{try{const state=await jf(API+'/negative/status');if(state.status==='running')setStatus(id,'running','⏳ '+state.message);else if(state.status==='success'||state.status==='error'){clearInterval(timers[id]);setStatus(id,state.status,(state.status==='success'?'✅ ':'❌ ')+state.message)}}catch(e){clearInterval(timers[id]);setStatus(id,'error','❌ '+e.message)}},2000)}}catch(e){setStatus(id,'error','❌ '+e.message)}}async function runOrderCount()""",1)
 
-# Read-only diagnostics for the negative reviews integrations.
-negative_diagnostic_controls = '''<div class="card" style="margin-top:16px"><h3>Перевірка підключень</h3><p>Google-таблиця, аркуші, активні магазини та авторизація Prom. Без запису даних.</p><button class="run" onclick="checkNegativeConnections(this)">🔎 Перевірити підключення</button> <button class="run" type="button" onclick="checkReviewReadProbe(this)">📖 Перевірити читання відгуків</button> <button class="run" type="button" onclick="checkPromReviewsHttp(this)">🌐 Перевірити відгуки через HTTP (без браузера)</button> <button class="run" type="button" onclick="checkPromContextJson(this)">🧪 Перевірити JSON відгуків</button> <button class="run" type="button" onclick="checkPromCompanyList(this)">📄 Перевірити сторінки компанії (POST)</button> <button class="run" type="button" onclick="showPromConnectionGuide(this)">🔐 Підключити Prom</button><div class="status promConnectionGuide" style="display:none;white-space:normal;margin-top:12px"><strong>Підключення головного акаунта Prom</strong><p>1. Відкрийте офіційний кабінет Prom і увійдіть у головний акаунт.</p><p>2. Офіційний публічний API Prom не документує отримання відгуків про компанію та товари, потрібних цим вигрузкам. Створення API-токена поки не допоможе.</p><p>3. Вхід у браузері не передає сесію Chromium на Render. Сервер має отримати окрему захищену авторизацію; автоматичне підключення ще не реалізоване. Не надсилайте логін, пароль, токен або cookies у чат.</p><a href="https://my.prom.ua/cms/" target="_blank" rel="noopener noreferrer">Відкрити офіційний кабінет Prom ↗</a><p><strong>Статус:</strong> серверну авторизацію ще не підтверджено.</p></div><div class="status negativeDiagnosticResult" style="white-space:pre-wrap">Перевірка ще не запускалася.</div><div class="status reviewReadProbeResult" style="white-space:pre-wrap">Читання відгуків ще не перевірялося.</div><div class="status promReviewsHttpResult" style="white-space:pre-wrap">HTTP-перевірка ще не запускалася.</div><div class="status promContextJsonResult" style="white-space:pre-wrap">JSON-перевірка ще не запускалася.</div><div class="status promCompanyListResult" style="white-space:pre-wrap">POST-перевірка ще не запускалася.</div><button class="run" type="button" onclick="checkNegativeSystemHealth(this)">🩺 Перевірити стан Render (без браузера)</button><div class="status negativeSystemHealthResult" style="white-space:pre-wrap">Моніторинг ще не запускався.</div></div>'''
-for view_id in ('negative-reviews', 'negative-analytics'):
-    start = s.find('<section class="view" id="' + view_id + '">')
-    if start >= 0:
-        end = s.find('</section>', start)
-        if end >= 0:
-            s = s[:end] + negative_diagnostic_controls + s[end:]
-
-negative_diagnostic_script = '''<script>
-async function checkPromCompanyList(button){
- const out=button.closest(".card").querySelector(".promCompanyListResult");
- button.disabled=true;out.textContent="⏳ Перевіряємо POST /list, сторінки 1 і 2…";
- try{
-  const response=await fetch("/api/negative/http-company-list-probe",{cache:"no-store"});
-  if(!response.ok)throw Error("HTTP "+response.status);
-  const d=await response.json();
-  if(d.status!=="ok")throw Error(d.message||"Помилка POST-перевірки");
-  out.textContent=[
-   "POST /cms/opinions/company/list:",
-   ...(d.results||[]).map(x=>"Сторінка "+x.page_requested+": "+(x.error||("HTTP "+x.http+", "+x.content_type+", ключі ["+(x.top_level_keys||[]).join(", ")+"]"+", context ["+(x.context_keys||[]).join(", ")+"]"+", data "+(x.data_type||"—")+" ["+(x.data_keys||[]).join(", ")+"]"+", відгуків "+(x.opinions_count??"—")+", негативних "+(x.negative_count??"—")+", current_page "+(x.pagination?.current_page??"—")+", перший ID "+(x.first_opinion_id??"—")+", відбиток "+(x.response_fingerprint??"—")))),
-   ...(d.results||[]).map(x=>"Сторінка "+x.page_requested+" — HTTP-діагностика: Cloudflare challenge="+(x.cf_mitigated?"так":"ні")+", CF-Ray="+(x.cf_ray_present?"так":"ні")+", server="+(x.server_class||"—")+", CSRF-cookie="+(x.csrf_cookie_present?"є":"немає")+", CSRF-header="+(x.csrf_header_sent?(x.csrf_header_kind||"надіслано"):"не надіслано")+", WWW-Authenticate="+(x.www_authenticate_present?"є":"немає")+", redirect="+(x.redirect_present?"так":"ні")),
-   "Відповіді відрізняються: "+(d.different_responses?"✅ так":"⚠️ ні / не вдалося перевірити"),
-   d.note||""
-  ].join("\\n");
- }catch(e){out.textContent="❌ "+e.message}
- finally{button.disabled=false}
-}
-async function checkPromContextJson(button){
- const out=button.closest(".card").querySelector(".promContextJsonResult");
- button.disabled=true;out.textContent="⏳ Читаємо JSON відгуків через HTTP…";
- try{
-  const response=await fetch("/api/negative/http-context-probe",{cache:"no-store"});
-  if(!response.ok)throw Error("HTTP "+response.status);
-  const d=await response.json();
-  if(d.status!=="ok")throw Error(d.message||"Не вдалося перевірити JSON");
-  out.textContent=[
-   "JSON-відгуки Prom (без Chromium):",
-   ...(d.results||[]).map(x=>x.type+" сторінка "+x.page+": "+(x.error||("HTTP "+x.http+", JSON "+(x.json_ok?"OK":"не підтверджено")+", відгуків "+(x.opinions_count??"—")+", негативних "+(x.negative_count??"—")+", магазин ID "+(x.company_ids||[]).join(", ")+", сторінок "+(x.pagination?.num_pages??"—")))),
-   ...(d.results||[]).map(x=>x.type+" стор. "+x.page+" — структура: status="+(x.status_value??"—")+", ключі "+(x.top_level_keys||[]).join("/")+", context "+x.context_type+" ["+(x.context_keys||[]).join(", ")+"]"+", opinions="+x.opinions_type+", pagination="+x.pagination_type+", bytes="+(x.response_bytes??"—")+", code="+(x.error_code??"—")),
-   ...(d.results||[]).map(x=>x.type+" стор. "+x.page+" — pagination.current_page="+(x.pagination?.current_page??"—")+", first_opinion_id="+(x.first_opinion_id??"—")+", fingerprint="+(x.response_sha256_short??"—")),
-   "Однакова відповідь company 1/2: "+(d.company_response_same?"так":"ні"),
-   "Однакова відповідь product 1/2: "+(d.product_response_same?"так":"ні"),
-   "Пагінація сторінок 1 і 2: "+(d.pagination_verified?"✅ підтверджена":"⚠️ не підтверджена"),
-   d.note||""
-  ].join("\\n");
- }catch(e){out.textContent="❌ "+e.message}
- finally{button.disabled=false}
-}
-async function checkPromReviewsHttp(button){
- const out=button.closest(".card").querySelector(".promReviewsHttpResult");
- button.disabled=true;out.textContent="⏳ Перевіряємо HTTP-доступ без Chromium…";
- try{
-  const response=await fetch("/api/negative/http-reviews-probe",{cache:"no-store"});
-  if(!response.ok)throw Error("HTTP "+response.status);
-  const d=await response.json();
-  if(d.status!=="ok"){out.textContent="❌ "+(d.message||"Помилка HTTP-перевірки");return}
-  out.textContent=[
-   "🌐 HTTP-перевірка завершена",
-   ...(d.results||[]).map(x=>x.type+": "+(x.error||("HTTP "+x.http+", "+x.content_type+", HTML-маркери відгуків: "+(x.review_markup?"так":"ні")+", форма входу: "+(x.login_markup?"так":"ні")+", redirect: "+x.redirect))),
-   ...(d.results||[]).map(x=>{
-     const h=x.html_structure;
-     if(!h)return x.type+": структура недоступна";
-     return x.type+" — структура HTML: скриптів "+h.scripts_total+" (зовнішніх "+h.scripts_external+"), JSON-скриптів "+h.json_scripts+
-       "; Next/Nuxt/State: "+[h.next_state,h.nuxt_state,h.initial_state].map(v=>v?"так":"ні").join("/")+
-       "; згадки відгуків/API/магазину/кабінету: "+[h.review_terms,h.api_terms,h.shop_terms,h.cabinet_terms].map(v=>v?"так":"ні").join("/")+
-       (h.html_truncated?"; перевірено лише перші 120 КБ":"");
-   }),
-   ...(d.results||[]).map(x=>{
-     const h=x.html_structure||{},a=h.auth_hints||{};
-     return x.type+" — авторизація (ознаки, не підтвердження): ID магазину "+(a.shop_id_pattern?"є":"немає")+
-       ", перемикач "+(a.shop_selector?"є":"немає")+", вихід "+(a.logout_marker?"є":"немає")+
-       ", маршрут відгуків "+(a.review_route_marker?"є":"немає")+
-       "; пропущено зовнішніх скриптів "+(h.excluded_script_tags??"—")+
-       " з "+(h.external_script_hosts_count??"—")+" інших доменів";
-   }),
-   ...(d.results||[]).map(x=>{
-     const c=x.cookie_comparison||{};
-     return x.type+" — порівняння із запитом без cookies: HTTP "+(c.anonymous_http??"помилка")+
-       ", HTML "+(c.same_markup===true?"однаковий":c.same_markup===false?"відрізняється":"не вдалося порівняти")+
-       ", схожість "+(c.similarity_percent??"—")+"%";
-   }),
-   "HTML сторінок компанії та товарів: "+(d.html_identical?"однаковий":"відрізняється або порівняння недоступне"),
-   ...(d.results||[]).map(x=>{
-     const j=x.html_structure?.js_scan;
-     return j ? x.type+" — JS-файли: доступних "+j.eligible_assets+", перевірено "+j.checked+
-       ", зі згадками відгуків "+j.review_assets+
-       ", API "+j.api_assets+
-       ", fetch/axios "+j.fetch_assets+
-       ", відгуки+API "+j.review_api_assets+
-       ", помилок "+j.errors : x.type+" — JS-перевірка недоступна";
-   }),
-   "⚠️ "+d.note
-  ].join("\\n");
- }catch(e){out.textContent="❌ "+e.message}
- finally{button.disabled=false}
-}
-async function checkNegativeSystemHealth(button){
- const out=button.closest(".card").querySelector(".negativeSystemHealthResult");
- button.disabled=true;out.textContent="⏳ Отримуємо стан сервера без запуску браузера…";
- try{
-  const response=await fetch("/api/negative/system-health",{cache:"no-store"});
-  if(!response.ok)throw Error("HTTP "+response.status);
-  const d=await response.json(),m=d.memory_cgroup||{},p=d.probe||{};
-  const mb=x=>Number.isFinite(x)?(x/1048576).toFixed(0)+" МБ":"не визначено";
-  out.textContent=[
-   "Стан: "+d.status,
-   "Пам’ять контейнера: "+mb(m.used_bytes)+" / "+mb(m.limit_bytes),
-   "Пам’ять Flask: "+d.worker_rss_mb+" МБ",
-   "Chromium: "+d.chromium_count+" процесів, "+d.chromium_rss_mb+" МБ",
-   "Час роботи системи: "+Math.round((d.system_uptime_seconds||0)/60)+" хв",
-   "ID запуску системи: "+(d.instance_boot_id||"невідомо"),
-   "Останній тест: "+(p.status||"невідомо")+" / "+(p.stage||p.message||"—"),
-   "Події пам’яті: "+(m.events||"недоступні"),
-   "— Заміри останнього тесту —",
-   ...((d.probe_metrics||[]).length ? [
-     "Кількість замірів: "+d.probe_metrics.length,
-     "Пік пам’яті: "+Math.max(...d.probe_metrics.map(x=>x.memory_mb||0)).toFixed(1)+" МБ",
-     "Пік процесів Chromium: "+Math.max(...d.probe_metrics.map(x=>x.chromium||0)),
-     ...d.probe_metrics.slice(-12).map(x=>x.seconds+" с: "+(x.memory_mb??"—")+" МБ, Chromium "+x.chromium)
-   ] : ["Замірів ще немає"])
-  ].join("\\n");
- }catch(e){out.textContent="❌ Не вдалося отримати стан сервера: "+e.message}
- finally{button.disabled=false}
-}
-async function checkReviewReadProbe(button){
- const out=button.closest(".card").querySelector(".reviewReadProbeResult");
- button.disabled=true;
- out.textContent="⏳ Запускаємо окрему перевірку читання одного магазину…";
- try{
-  let response=await fetch("/api/negative/review-probe",{method:"POST"});
-  let data=await response.json();
-  if(!response.ok)throw Error(data.message||"HTTP "+response.status);
-  for(let i=0;i<45;i++){
-   await new Promise(resolve=>setTimeout(resolve,5000));
-   response=await fetch("/api/negative/review-probe/status",{cache:"no-store"});
-   if(!response.ok)throw Error("Сервер тимчасово недоступний (HTTP "+response.status+"). Не запускайте тест повторно.");
-   data=await response.json();
-   if(data.status!=="running")break;
-   out.textContent="⏳ "+(data.stage||"Перевірка триває")+"\\n"+(data.shop||"")+"\\nДані не змінюються.";
-  }
-  if(data.status==="running"){out.textContent="⚠️ Тест ще триває. Не запускайте його повторно.";return}
-  if(data.status==="error"){out.textContent="❌ "+(data.message||"Не вдалося перевірити читання");return}
-  if(data.status==="success"){out.textContent=(data.ok?"✅ Читання підтверджено":"⚠️ Читання підтверджено не повністю")+"\\nМагазин: "+(data.shop||"")+"\\n"+(data.results||[]).map(x=>(x.ok?"✅ ":"❌ ")+x.type+": "+x.message).join("\\n");return}
-  out.textContent="⚠️ Статус тесту невідомий. Не запускайте його повторно.";
- }catch(error){out.textContent="❌ "+error.message}
- finally{button.disabled=false}
-}
-function showPromConnectionGuide(button){const guide=button.closest(".card").querySelector(".promConnectionGuide");guide.style.display=guide.style.display==="none"?"block":"none";}
-async function checkNegativeConnections(button){
- const panel=button.closest(".card"),out=panel.querySelector(".negativeDiagnosticResult");
- button.disabled=true;out.textContent="⏳ Запускаємо перевірку Google Sheets і Prom...";
- try{
-  let response=await fetch("/api/negative/diagnostic",{method:"POST"});
-  let raw=await response.text(),data;
-  try{data=JSON.parse(raw)}catch(_){throw Error("HTTP "+response.status+" · "+(raw?"неочікувана відповідь":"порожня відповідь"))}
-  if(!response.ok)throw Error("HTTP "+response.status+" · "+(data.message||"Помилка сервера"));
-  for(let i=0;data.status==="running"&&i<8;i++){
-   out.textContent="⏳ Перевірка триває… "+(i*3)+" с. Дані не змінюються.";
-   await new Promise(resolve=>setTimeout(resolve,15000));
-   response=await fetch("/api/negative/diagnostic/status",{cache:"no-store"});
-   raw=await response.text();
-   if(response.status===429){out.textContent="⏳ Сервер тимчасово обмежує запити (429). Зачекайте, перевірку не запускаємо повторно.";continue}
-   try{data=JSON.parse(raw)}catch(_){throw Error("HTTP "+response.status+" · не вдалося прочитати статус")}
-  }
-  if(data.status==="running"){out.textContent="⚠️ Перевірка перевищила 2 хвилини. Останній етап: "+(data.stage||"невідомий")+"\\n"+(data.checks||[]).map(c=>(c.ok?"✅ ":"❌ ")+c.name+": "+c.message).join("\\n")+"\\nНе запускайте перевірку повторно.";return}
-  if(data.status==="idle")throw Error("Render повернув порожній стан перевірки (idle). Можливо, запити потрапили в різні процеси сервера.");
-  if(!Array.isArray(data.checks)||!data.checks.length)throw Error("Render не повернув результати перевірки. Статус: "+String(data.status||"невідомий")+".");
-  if(data.status==="error")throw Error(data.message||"Помилка перевірки");
-  out.textContent=(data.ok?"✅ Підключення працюють":"⚠️ Потрібна увага")+"\\n"+(data.checks||[]).map(c=>(c.ok?"✅ ":"❌ ")+c.name+": "+c.message).join("\\n");
- }catch(error){out.textContent="❌ "+error.message}
- finally{button.disabled=false}
-}
+# The one-click negative export is the supported workflow. Remove legacy
+# probe buttons from both negative views; they were useful during discovery
+# but now confuse the production interface.
+negative_export_fix = r'''<script>
+(function(){
+  const apiBase = '/api';
+  window.runNegative = async function(processName, statusId){
+    const el = document.getElementById(statusId);
+    if(!el) return;
+    const date = document.getElementById('negativeReviewsDate')?.value || '';
+    if(processName === 'reviews' && !date){
+      el.textContent = '❌ Виберіть дату вигрузки.';
+      return;
+    }
+    el.textContent = '⏳ Запускаємо вигрузку в тестову таблицю…';
+    const button = document.querySelector('#negative-reviews button[onclick*="runNegative"]');
+    if(button && processName === 'reviews') button.disabled = true;
+    let poll;
+    const finish = (message, failed) => {
+      if(poll) clearInterval(poll);
+      if(button) button.disabled = false;
+      el.textContent = (failed ? '❌ ' : '✅ ') + message;
+    };
+    try {
+      const response = await fetch(apiBase + '/negative/run/' + encodeURIComponent(processName), {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({since:date,until:date}),
+        cache:'no-store'
+      });
+      const raw = await response.text();
+      let data;
+      try { data = JSON.parse(raw); } catch (_) {
+        throw Error('HTTP ' + response.status + ': ' + raw.slice(0,160));
+      }
+      if(!response.ok || data.status === 'error') throw Error(data.message || 'HTTP '+response.status);
+      if(data.status !== 'started') throw Error(data.message || 'Процес не запущено');
+      el.textContent = '⏳ ' + (data.message || 'Вигрузка виконується…');
+      poll = setInterval(async () => {
+        try {
+          const statusResponse = await fetch(apiBase + '/negative/status', {cache:'no-store'});
+          if(!statusResponse.ok) throw Error('HTTP '+statusResponse.status);
+          const state = await statusResponse.json();
+          if(state.status === 'success') finish(state.message || 'Вигрузку завершено.', false);
+          else if(state.status === 'error') finish(state.message || 'Помилка вигрузки.', true);
+          else if(state.status === 'running') el.textContent = '⏳ '+(state.message || 'Вигрузка виконується…');
+        } catch (error) {
+          finish('Не вдалося перевірити стан: '+error.message+'. Перевірте тестову таблицю перед повторним запуском.', true);
+        }
+      }, 2500);
+    } catch(error) { finish(error.message, true); }
+  };
+})();
 </script>'''
-s = s.replace('</body>', negative_diagnostic_script + '</body>', 1)
+s = s.replace('</body>', negative_export_fix + '</body>', 1)
 
 pos = s.rfind('<script>')
 if pos < 0:
