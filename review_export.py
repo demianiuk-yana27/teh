@@ -226,7 +226,7 @@ def _write_reviews(book, sheet_name, reviews):
     return len(fresh)
 
 
-def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_id=None):
+def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_id=None, login_map=None):
     if not parse_date(since):
         raise ValueError("Некоректна дата початку вигрузки відгуків.")
     if until and not parse_date(until):
@@ -238,30 +238,39 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
     book = client.open_by_key(destination_spreadsheet_id or spreadsheet_id)
     sheet_names = {kind: _sheet_name(book, kind) for kind in REVIEW_URLS}
     shops = load_active_shops(spreadsheet_id)
-    browser = PromBrowser()
+    from negative_review_api import collect_shop
+    if not login_map:
+        raise RuntimeError("Немає підтвердженої карти sign-to для магазинів.")
     written = {"company": 0, "product": 0}
     collected_count = {"company": 0, "product": 0}
     skipped = 0
     incomplete = 0
-    try:
-        browser.open_cms()
-        for shop in shops:
+    for shop in shops:
+        accounts = login_map.get(str(shop.id)) or []
+        if not accounts:
+            skipped += 1
+            print(f"[{shop.name}] Немає sign-to ID; магазин пропущено.")
+            continue
+        reviews_by_type = None
+        for account in accounts:
             try:
-                browser.switch_shop(shop)
+                reviews_by_type = collect_shop(shop, account, since, until)
+                break
             except Exception as exc:
-                skipped += 1
-                print(f"[{shop.name}] Не вдалося перемкнути магазин: {exc}")
-                continue
-            for review_type in ("company", "product"):
-                try:
-                    reviews = _collect(browser, review_type, shop, since, until)
-                    collected_count[review_type] += len(reviews)
-                    written[review_type] += _write_reviews(book, sheet_names[review_type], reviews)
-                except Exception as exc:
-                    incomplete += 1
-                    print(f"[{shop.name}] {review_type}: {exc}")
-    finally:
-        browser.close()
+                print(f"[{shop.name}] API sign-to {account}: {type(exc).__name__}: {exc}")
+        if reviews_by_type is None:
+            incomplete += 1
+            continue
+        # Do not write anything from a shop unless BOTH review categories
+        # were collected successfully and company identity was checked.
+        for kind in ("company", "product"):
+            reviews = reviews_by_type[kind]
+            collected_count[kind] += len(reviews)
+            try:
+                written[kind] += _write_reviews(book, sheet_names[kind], reviews)
+            except Exception as exc:
+                incomplete += 1
+                print(f"[{shop.name}] Не вдалося записати {kind}: {exc}")
 
     return {
         "active": len(shops),
