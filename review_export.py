@@ -226,14 +226,16 @@ def _write_reviews(book, sheet_name, reviews):
     return len(fresh)
 
 
-def run_review_export(spreadsheet_id, since, until=""):
+def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_id=None):
     if not parse_date(since):
         raise ValueError("Некоректна дата початку вигрузки відгуків.")
     if until and not parse_date(until):
         raise ValueError("Некоректна дата завершення вигрузки відгуків.")
 
     client = get_client()
-    book = client.open_by_key(spreadsheet_id)
+    # Keep the live shop roster as the source of truth; only write to the
+    # isolated destination workbook while testing negative review exports.
+    book = client.open_by_key(destination_spreadsheet_id or spreadsheet_id)
     sheet_names = {kind: _sheet_name(book, kind) for kind in REVIEW_URLS}
     shops = load_active_shops(spreadsheet_id)
     browser = PromBrowser()
