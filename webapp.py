@@ -313,6 +313,7 @@ def run_negative(process_name):
 
 
 @app.route("/negative/status")
+@app.route("/negative/export-status")
 def get_negative_status():
     return jsonify(negative_status)
 
