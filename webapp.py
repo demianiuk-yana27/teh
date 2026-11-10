@@ -2001,7 +2001,32 @@ def negative_product_api_probe():
                 return {"type": "list", "count": len(value),
                         "first_item_shape": shape(value[0], depth + 1) if value else None}
             return type(value).__name__
+        company_fields = {}
+        try:
+            csrf = next((c.value for c in jar if c.name.lower() in ("csrftoken", "csrf_token")), None)
+            if csrf:
+                company_req = urllib.request.Request(
+                    "https://my.prom.ua/cms/opinions/company/list",
+                    data=json.dumps({"filters": [], "page": 1, "pageType": "portal",
+                                     "perPage": 20, "searchQuery": "",
+                                     "sortingQuery": "default"}).encode(),
+                    headers={"Accept": "application/json",
+                             "Content-Type": "application/json",
+                             "Origin": "https://my.prom.ua",
+                             "Referer": "https://my.prom.ua/cms/opinions/company",
+                             "X-CSRFToken": urllib.parse.unquote(csrf),
+                             "User-Agent": "Mozilla/5.0"})
+                with opener.open(company_req, timeout=18) as response:
+                    company_raw = response.read(800001)
+                if len(company_raw) <= 800000:
+                    company_data = json.loads(company_raw)
+                    company_opinions = company_data.get("opinions") or []
+                    if company_opinions:
+                        company_fields = shape(company_opinions[0], 0)
+        except Exception as exc:
+            company_fields = {"diagnostic_error": type(exc).__name__}
         return jsonify({"status": "ok", "http_status": status,
+                        "company_opinion_fields": company_fields,
                         "schema": shape(data),
                         "opinion_fields": shape(((data.get("context") or {}).get("opinions") or [{}])[0], 0) if isinstance(data, dict) else {},
                         "note": "Лише структура полів, без текстів відгуків і cookie."})
