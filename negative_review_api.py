@@ -99,6 +99,22 @@ def _date(value):
     return dt
 
 
+
+def _customer_review_url(opener, opinion_id, order_id):
+    """Use the same short-link API as Prom's 'Посилання на редагування' menu."""
+    if not str(opinion_id).isdigit() or not str(order_id).isdigit():
+        raise ValueError("Немає ID відгуку або замовлення для клієнтського посилання")
+    target = ("https://prom.ua/ua/opinions/edit/" + str(opinion_id)
+              + "?order_id=" + str(order_id))
+    url = ("https://my.prom.ua/cms/opinions/get_short_url?"
+           + urllib.parse.urlencode({"url": target}))
+    result = _read(opener, url)
+    short = result.get("shortUrl")
+    if not isinstance(short, str) or not short.startswith("https://prom.ua/s/"):
+        raise ValueError("Prom не повернув коректне клієнтське посилання")
+    return short
+
+
 def _candidate(opinion, kind, shop):
     rating = opinion.get("rating")
     if type(rating) is not int or rating not in (1, 2, 3):
@@ -116,10 +132,10 @@ def _candidate(opinion, kind, shop):
     if kind == "product":
         parts = [opinion.get(k) for k in ("title", "text", "pros", "cons")]
         body = "\n".join(str(x).strip() for x in parts if isinstance(x, str) and x.strip())
-        edit = ""  # Seller editOpinionUrl is NOT a customer-facing review link.
+        edit = ""
     else:
         body = str(opinion.get("comment_work") or "").strip()
-        edit = ""  # Customer-facing link requires separate verification.
+        edit = ""
     return {"type": kind, "orderId": str(order_id),
             "date": dt.strftime("%d.%m.%Y"), "rating": rating,
             "text": body, "shopName": shop.name, "shopUrl": shop.url,
@@ -176,6 +192,7 @@ def collect_shop(shop, account, since, until=""):
                 if dt and start <= dt and (end is None or dt <= end):
                     candidate = _candidate(opinion, kind, shop)
                     if candidate:
+                        candidate["editUrl"] = _customer_review_url(opener, oid, candidate["orderId"])
                         found.append(candidate)
             total = int(pagination.get("num_pages") or 1)
             if page >= total or (ordered and dates and max(dates) < start):
