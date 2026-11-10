@@ -197,8 +197,14 @@ def _write_reviews(book, sheet_name, reviews):
         match = re.fullmatch(r"Відгук\s+(\d+)", marker)
         if match:
             by_review[key + (match.group(1),)] = index
-        elif re.fullmatch(r"\d+", marker):
-            by_order[key + (marker,)] = index
+        else:
+            # Manual entries may show "№ 123", "Замовлення 123" or a
+            # HYPERLINK formula rather than a bare numeric ID.
+            match_order = re.search(r"(?:order/edit/|(?:замовлення|№)\s*№?\s*)(\d{6,12})", marker, re.I)
+            if not match_order:
+                match_order = re.search(r"\b\d{6,12}\b", marker)
+            if match_order:
+                by_order[key + (match_order.group(1) if match_order.lastindex else match_order.group(0),)] = index
 
     last = _last_data_row(existing_rows)
     append_row = last + 1
@@ -224,7 +230,8 @@ def _write_reviews(book, sheet_name, reviews):
         # Existing manager-entered fields remain untouched.
         current = (existing_rows[row - 1] + [""] * 12) if row <= len(existing_rows) else [""] * 12
         marker = order or ("Відгук " + rid)
-        if is_new or (order and str(current[3]).strip() != order) or (not order and str(current[3]).strip() != marker):
+        # Never overwrite a manager-entered identifier in an existing row.
+        if is_new or (not str(current[3]).strip()):
             requests.append({"range": f"'{sheet_name}'!D{row}", "values": [[f'=HYPERLINK("https://my.prom.ua/cms/order/edit/{order}";"{order}")' if order else marker]]})
         if is_new:
             body = f"⭐ {review['rating']}/5" + (f"\n{review['text']}" if review["text"] else "")
@@ -259,7 +266,7 @@ def _write_reviews(book, sheet_name, reviews):
     return inserted
 
 
-def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_id=None, login_map=None):
+def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_id=None, login_map=None, progress_callback=None):
     if not parse_date(since):
         raise ValueError("Некоректна дата початку вигрузки відгуків.")
     if until and not parse_date(until):
@@ -279,7 +286,10 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
     skipped = 0
     incomplete = 0
     errors = []
-    for shop in shops:
+    total_shops = len(shops)
+    for shop_number, shop in enumerate(shops, 1):
+        if progress_callback:
+            progress_callback(shop_number, total_shops, shop.name)
         accounts = login_map.get(str(shop.id)) or []
         if not accounts:
             skipped += 1
