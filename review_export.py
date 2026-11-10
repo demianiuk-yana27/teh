@@ -245,10 +245,12 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
     collected_count = {"company": 0, "product": 0}
     skipped = 0
     incomplete = 0
+    errors = []
     for shop in shops:
         accounts = login_map.get(str(shop.id)) or []
         if not accounts:
             skipped += 1
+            errors.append(f"{shop.name}: немає sign-to ID")
             print(f"[{shop.name}] Немає sign-to ID; магазин пропущено.")
             continue
         reviews_by_type = None
@@ -257,6 +259,7 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
                 reviews_by_type = collect_shop(shop, account, since, until)
                 break
             except Exception as exc:
+                errors.append(f"{shop.name}: {type(exc).__name__}: {str(exc)[:160]}")
                 print(f"[{shop.name}] API sign-to {account}: {type(exc).__name__}: {exc}")
         if reviews_by_type is None:
             incomplete += 1
@@ -270,8 +273,15 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
                 written[kind] += _write_reviews(book, sheet_names[kind], reviews)
             except Exception as exc:
                 incomplete += 1
+                errors.append(f"{shop.name}, {kind}, запис: {type(exc).__name__}: {str(exc)[:160]}")
                 print(f"[{shop.name}] Не вдалося записати {kind}: {exc}")
 
+    if not written["company"] and not written["product"]:
+        detail = "; ".join(errors[:4]) or (
+            f"Зібрано company={collected_count['company']}, product={collected_count['product']}; "
+            "нових рядків немає. Перевірте дату, фільтри та наявні записи."
+        )
+        raise RuntimeError("Тестова вигрузка: 0 записаних відгуків. " + detail)
     return {
         "active": len(shops),
         "skipped": skipped,
