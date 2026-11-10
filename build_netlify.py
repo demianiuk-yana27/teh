@@ -612,8 +612,13 @@ negative_export_fix = r'''<script>
     const el = document.getElementById(statusId);
     if(!el) return;
     const date = document.getElementById('negativeReviewsDate')?.value || '';
+    const endDate = document.getElementById('negativeReviewsDateTo')?.value || date;
     if(processName === 'reviews' && !date){
       el.textContent = '❌ Виберіть дату вигрузки.';
+      return;
+    }
+    if(processName === 'reviews' && endDate < date){
+      el.textContent = '❌ Дата «до» не може бути раніше дати «від».';
       return;
     }
     el.textContent = '⏳ Запускаємо вигрузку в тестову таблицю…';
@@ -629,7 +634,7 @@ negative_export_fix = r'''<script>
       const response = await fetch(apiBase + '/negative/run/' + encodeURIComponent(processName), {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({since:date,until:date}),
+        body:JSON.stringify({since:date,until:endDate}),
         cache:'no-store'
       });
       const raw = await response.text();
