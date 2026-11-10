@@ -297,7 +297,7 @@ def run_negative(process_name):
     until = str(data.get("until") or "").strip()
     if process_name in {"reviews", "order-check"} and not since:
         return jsonify({"status": "error", "message": "Виберіть дату."}), 400
-    if process_name == "reviews":
+    if process_name == "reviews" and not until:
         until = since
     if since and until and since > until:
         return jsonify({"status": "error", "message": "Дата початку не може бути пізнішою за дату завершення."}), 400
