@@ -102,8 +102,8 @@ def _date(value):
 
 def _customer_review_url(opener, opinion_id, order_id, kind):
     """Resolve the buyer-facing link using the review-type-specific Prom URL."""
-    if not str(opinion_id).isdigit() or not str(order_id).isdigit():
-        raise ValueError("Немає ID відгуку або замовлення для клієнтського посилання")
+    if not str(opinion_id).isdigit() or (kind == "company" and not str(order_id).isdigit()):
+        raise ValueError("Немає необхідного ID для клієнтського посилання")
     if kind == "product":
         target = "https://prom.ua/product-opinions/edit/" + str(opinion_id)
     elif kind == "company":
@@ -249,8 +249,12 @@ def collect_shop(shop, account, since, until=""):
                         # Company edit links require a real order ID; never insert
                         # an opinion ID in its place.
                         if kind == "product" or candidate["orderId"]:
-                            candidate["editUrl"] = _customer_review_url(
-                                opener, oid, candidate["orderId"], kind)
+                            try:
+                                candidate["editUrl"] = _customer_review_url(
+                                    opener, oid, candidate["orderId"], kind)
+                            except (ValueError, urllib.error.HTTPError, urllib.error.URLError) as exc:
+                                print(f"[negative-reviews] short URL unavailable for {kind} opinion {oid}: {type(exc).__name__}", flush=True)
+                                candidate["editUrl"] = ""
                         else:
                             candidate["editUrl"] = ""
                         found.append(candidate)
