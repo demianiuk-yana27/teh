@@ -194,10 +194,10 @@ def _write_reviews(book, sheet_name, reviews):
         if not date or not shop:
             continue
         key = (date.strftime("%d.%m.%Y"), shop)
-        match = re.fullmatch(r"Відгук\\s+(\\d+)", marker)
+        match = re.fullmatch(r"Відгук\s+(\d+)", marker)
         if match:
             by_review[key + (match.group(1),)] = index
-        elif re.fullmatch(r"\\d+", marker):
+        elif re.fullmatch(r"\d+", marker):
             by_order[key + (marker,)] = index
 
     last = _last_data_row(existing_rows)
@@ -224,10 +224,10 @@ def _write_reviews(book, sheet_name, reviews):
         # Existing manager-entered fields remain untouched.
         current = (existing_rows[row - 1] + [""] * 12) if row <= len(existing_rows) else [""] * 12
         marker = order or ("Відгук " + rid)
-        if is_new or str(current[3]).strip() != marker:
-            requests.append({"range": f"'{sheet_name}'!D{row}", "values": [[marker]]})
+        if is_new or (order and str(current[3]).strip() != order) or (not order and str(current[3]).strip() != marker):
+            requests.append({"range": f"'{sheet_name}'!D{row}", "values": [[f'=HYPERLINK("https://my.prom.ua/cms/order/edit/{order}";"{order}")' if order else marker]]})
         if is_new:
-            body = f"⭐ {review['rating']}/5" + (f"\\n{review['text']}" if review["text"] else "")
+            body = f"⭐ {review['rating']}/5" + (f"\n{review['text']}" if review["text"] else "")
             requests.extend([
                 {"range": f"'{sheet_name}'!G{row}", "values": [[review["date"]]]},
                 {"range": f"'{sheet_name}'!H{row}", "values": [[review["shopName"]]]},
