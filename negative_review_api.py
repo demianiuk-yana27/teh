@@ -143,6 +143,11 @@ def _order_id(opinion):
     return ""
 
 
+def _order_field_diagnostics(opinion):
+    """Log only field names, never buyer data or credentials."""
+    return sorted(k for k in opinion if any(word in k.lower() for word in ("order", "url", "link")))
+
+
 _EMOJI_NAMES = {
     "face_with_monocle": "🧐", "monocle": "🧐",
     "imp": "👿", "angry": "😠", "rage": "😡",
@@ -211,6 +216,8 @@ def _candidate(opinion, kind, shop):
     # Some company opinions have no order_id. Keep the review, using its
     # verified opinion ID as a fallback identifier (never fabricate an order).
     order_id = _order_id(opinion)
+    if not order_id:
+        print(f"[negative-reviews] {kind}: order ID unavailable; relevant API fields={_order_field_diagnostics(opinion)}", flush=True)
     review_id = str(opinion.get("id") or "").strip()
     if not review_id.isdigit():
         raise ValueError("Відгук без коректного ID")
