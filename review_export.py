@@ -184,7 +184,7 @@ def _sheet_review_date(value, expected_year):
     if parsed:
         return parsed.strftime("%d.%m.%Y")
     text = str(value or "").strip()
-    match = re.fullmatch(r"(\\d{1,2})[.](\\d{1,2})[.]?", text)
+    match = re.fullmatch(r"(\d{1,2})[.](\d{1,2})[.]?", text)
     if match:
         try:
             return datetime(int(expected_year), int(match.group(2)), int(match.group(1))).strftime("%d.%m.%Y")
@@ -193,7 +193,7 @@ def _sheet_review_date(value, expected_year):
     return ""
 
 
-def _write_reviews(book, sheet_name, reviews):
+def _write_reviews(book, sheet_name, reviews, separated_sheets=None):
     """Append only genuinely new reviews; never modify previously exported rows."""
     if not reviews:
         return 0
@@ -245,10 +245,9 @@ def _write_reviews(book, sheet_name, reviews):
     row = _last_data_row(existing_rows) + 1
     requests = []
     format_requests = []
-    previous_date = None
     peach = {"red": 252 / 255, "green": 228 / 255, "blue": 214 / 255}
     for review in fresh:
-        if previous_date is None or previous_date != review["date"]:
+        if separated_sheets is not None and sheet_name not in separated_sheets:
             format_requests.append({
                 "repeatCell": {
                     "range": {"sheetId": sheet.id, "startRowIndex": row - 1,
@@ -281,13 +280,14 @@ def _write_reviews(book, sheet_name, reviews):
             requests.append({"range": f"'{sheet_name}'!Y{row}", "values": [[review["shopUrl"]]]})
         if not review.get("deletedByBuyer") and review.get("editUrl"):
             requests.append({"range": f"'{sheet_name}'!L{row}", "values": [[review["editUrl"]]]})
-        previous_date = review["date"]
         row += 1
 
     if sheet.row_count < row - 1:
         sheet.add_rows(row - 1 - sheet.row_count)
     book.values_batch_update({"valueInputOption": "USER_ENTERED", "data": requests})
     book.batch_update({"requests": format_requests})
+    if separated_sheets is not None:
+        separated_sheets.add(sheet_name)
     print(f"[negative-reviews] sheet={sheet_name}: collected={len(reviews)}, new={len(fresh)}, existing={len(reviews)-len(fresh)}", flush=True)
     return len(fresh)
 
@@ -307,6 +307,7 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
     from negative_review_api import collect_shop
     if not login_map:
         raise RuntimeError("Немає підтвердженої карти sign-to для магазинів.")
+    separated_sheets = set()
     written = {"company": 0, "product": 0}
     collected_count = {"company": 0, "product": 0}
     skipped = 0
@@ -339,7 +340,7 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
             reviews = reviews_by_type[kind]
             collected_count[kind] += len(reviews)
             try:
-                written[kind] += _write_reviews(book, sheet_names[kind], reviews)
+                written[kind] += _write_reviews(book, sheet_names[kind], reviews, separated_sheets)
             except Exception as exc:
                 incomplete += 1
                 errors.append(f"{shop.name}, {kind}, запис: {type(exc).__name__}: {str(exc)[:160]}")
