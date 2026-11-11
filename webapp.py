@@ -2108,6 +2108,8 @@ def buyer_questions_shops_batch():
                             "shop_name": shop.name, "error": "Немає акаунта перемикання.",
                             "questions": [], "next_offset": offset + 1})
         originals = _prom_session_cookies()
+        last_stage = "перемикання магазину"
+        last_reason = "не підтверджено перемикання"
         for account in accounts:
             jar = http.cookiejar.CookieJar()
             for c in originals:
@@ -2116,12 +2118,17 @@ def buyer_questions_shops_batch():
                 domain = str(c.get("domain") or "").lower()
                 if domain.lstrip(".") != "prom.ua" and not domain.lstrip(".").endswith(".prom.ua"):
                     continue
+                expiry = c.get("expirationDate", c.get("expiry"))
+                try:
+                    expiry = int(expiry) if expiry is not None else None
+                except (TypeError, ValueError):
+                    expiry = None
                 jar.set_cookie(http.cookiejar.Cookie(
                     version=0, name=c["name"], value=c["value"], port=None,
                     port_specified=False, domain=domain, domain_specified=True,
                     domain_initial_dot=domain.startswith("."), path=str(c.get("path") or "/"),
                     path_specified=True, secure=bool(c.get("secure", False)),
-                    expires=None, discard=True, comment=None, comment_url=None,
+                    expires=expiry, discard=expiry is None, comment=None, comment_url=None,
                     rest={}, rfc2109=False))
             class NoRedirect(urllib.request.HTTPRedirectHandler):
                 def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -2139,10 +2146,14 @@ def buyer_questions_shops_batch():
                     if switched.status not in (301, 302, 303) or not (
                             location.startswith("/cms") or location.startswith("https://my.prom.ua/cms")):
                         continue
+                last_stage = "читання запитань"
                 url = ("https://my.prom.ua/cms/questions/context?page=" + str(page) +
                        "&perPage=20&need_response=need_response&sortingQuery=-activity")
                 req = urllib.request.Request(url, headers={
-                    "Accept": "application/json", "User-Agent": "Mozilla/5.0"})
+                    "Accept": "application/json, text/plain, */*",
+                    "User-Agent": "Mozilla/5.0",
+                    "Referer": "https://my.prom.ua/cms/questions",
+                    "X-Requested-With": "XMLHttpRequest"})
                 with opener.open(req, timeout=18) as response:
                     if response.status != 200:
                         raise ValueError("Prom не повернув успішну відповідь.")
@@ -2183,11 +2194,15 @@ def buyer_questions_shops_batch():
                                 "shop_name": shop.name, "questions": questions,
                                 "next_offset": offset + 1, "total_shops": len(shops),
                                 "page": page, "writes": False})
-            except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
+            except urllib.error.HTTPError as exc:
+                last_reason = "Prom HTTP " + str(exc.code)
+                continue
+            except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+                last_reason = type(exc).__name__
                 continue
         return jsonify({"status": "partial", "company_id": str(shop.id),
                         "shop_name": shop.name, "questions": [],
-                        "next_offset": offset + 1, "error": "Не вдалося прочитати запитання магазину."})
+                        "next_offset": offset + 1, "error": "Не вдалося прочитати запитання магазину.", "stage": last_stage, "reason": last_reason})
     except Exception:
         return jsonify({"status": "error", "message": "Не вдалося отримати запитання."}), 500
 
