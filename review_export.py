@@ -227,7 +227,11 @@ def _write_reviews(book, sheet_name, reviews):
         key = (review["date"], normalize_name(review["shopName"]))
         rid = str(review["reviewId"])
         order = str(review.get("orderId") or "").strip()
-        if key + (rid,) in by_review or (order and key + (order,) in by_order):
+        if not order:
+            # D must contain a real Prom order ID; never create a placeholder.
+            print(f"[negative-reviews] skip review {rid}: missing order ID", flush=True)
+            continue
+        if key + (rid,) in by_review or key + (order,) in by_order:
             continue
         by_review.add(key + (rid,))
         if order:
@@ -258,7 +262,7 @@ def _write_reviews(book, sheet_name, reviews):
         rid = str(review["reviewId"])
         body = f"⭐ {review['rating']}/5" + (f"\n{review['text']}" if review["text"] else "")
         requests.extend([
-            {"range": f"'{sheet_name}'!D{row}", "values": [[order or ("Відгук " + rid)]]},
+            {"range": f"'{sheet_name}'!D{row}", "values": [[order]]},
             {"range": f"'{sheet_name}'!G{row}", "values": [[review["date"]]]},
             {"range": f"'{sheet_name}'!H{row}", "values": [[review["shopName"]]]},
             {"range": f"'{sheet_name}'!I{row}", "values": [[body]]},
