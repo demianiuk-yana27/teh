@@ -246,8 +246,9 @@ def _write_reviews(book, sheet_name, reviews, separated_sheets=None):
     requests = []
     format_requests = []
     peach = {"red": 252 / 255, "green": 228 / 255, "blue": 214 / 255}
+    needs_separator = separated_sheets is not None and sheet_name not in separated_sheets
     for review in fresh:
-        if separated_sheets is not None and sheet_name not in separated_sheets:
+        if needs_separator:
             format_requests.append({
                 "repeatCell": {
                     "range": {"sheetId": sheet.id, "startRowIndex": row - 1,
@@ -257,6 +258,7 @@ def _write_reviews(book, sheet_name, reviews, separated_sheets=None):
                 }
             })
             row += 1
+            needs_separator = False
         order = str(review.get("orderId") or "").strip()
         rid = str(review["reviewId"])
         body = f"⭐ {review['rating']}/5" + (f"\n{review['text']}" if review["text"] else "")
