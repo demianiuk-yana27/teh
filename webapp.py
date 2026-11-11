@@ -2079,3 +2079,115 @@ def negative_product_api_probe():
                         "message": "Prom відхилив читання; жодних змін не внесено."})
     except Exception as exc:
         return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:160]})
+
+@app.route("/questions/shops-batch", methods=["POST"])
+def buyer_questions_shops_batch():
+    """Read-only, one active shop per request. No question/comment mutation."""
+    import http.cookiejar
+    import urllib.request
+    import urllib.error
+    import json
+    from negative_reviews import _prom_session_cookies, load_active_shops
+
+    data = request.get_json(silent=True) or {}
+    try:
+        offset = int(data.get("offset", 0))
+        page = int(data.get("page", 1))
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "Некоректна сторінка або offset."}), 400
+    if not 0 <= offset <= 1000 or not 1 <= page <= 50:
+        return jsonify({"status": "error", "message": "Перевищено ліміт сторінок."}), 400
+    try:
+        shops = list({str(x.id): x for x in load_active_shops(_sheet_id())}.values())
+        if offset >= len(shops):
+            return jsonify({"status": "ok", "done": True, "total_shops": len(shops), "questions": []})
+        shop = shops[offset]
+        accounts = _positive_login_map().get(str(shop.id), [])
+        if not accounts:
+            return jsonify({"status": "partial", "company_id": str(shop.id),
+                            "shop_name": shop.name, "error": "Немає акаунта перемикання.",
+                            "questions": [], "next_offset": offset + 1})
+        originals = _prom_session_cookies()
+        for account in accounts:
+            jar = http.cookiejar.CookieJar()
+            for c in originals:
+                if not isinstance(c, dict) or not isinstance(c.get("name"), str) or not isinstance(c.get("value"), str):
+                    continue
+                domain = str(c.get("domain") or "").lower()
+                if domain.lstrip(".") != "prom.ua" and not domain.lstrip(".").endswith(".prom.ua"):
+                    continue
+                jar.set_cookie(http.cookiejar.Cookie(
+                    version=0, name=c["name"], value=c["value"], port=None,
+                    port_specified=False, domain=domain, domain_specified=True,
+                    domain_initial_dot=domain.startswith("."), path=str(c.get("path") or "/"),
+                    path_specified=True, secure=bool(c.get("secure", False)),
+                    expires=None, discard=True, comment=None, comment_url=None,
+                    rest={}, rfc2109=False))
+            class NoRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, req, fp, code, msg, headers, newurl):
+                    return None
+            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect())
+            try:
+                try:
+                    switched = opener.open(urllib.request.Request(
+                        "https://my.prom.ua/remote/auth/sign-to/" + account,
+                        headers={"User-Agent": "Mozilla/5.0"}), timeout=12)
+                except urllib.error.HTTPError as exc:
+                    switched = exc
+                with switched:
+                    location = switched.headers.get("Location", "")
+                    if switched.status not in (301, 302, 303) or not (
+                            location.startswith("/cms") or location.startswith("https://my.prom.ua/cms")):
+                        continue
+                url = ("https://my.prom.ua/cms/questions/context?page=" + str(page) +
+                       "&perPage=20&need_response=need_response&sortingQuery=-activity")
+                req = urllib.request.Request(url, headers={
+                    "Accept": "application/json", "User-Agent": "Mozilla/5.0"})
+                with opener.open(req, timeout=18) as response:
+                    if response.status != 200:
+                        raise ValueError("Prom не повернув успішну відповідь.")
+                    result = json.loads(response.read(1000000))
+                # Schema verification: refuse to invent or silently omit questions.
+                candidates = result if isinstance(result, list) else (
+                    result.get("questions") or result.get("items") or
+                    (result.get("data") or {}).get("questions")
+                    if isinstance(result, dict) and isinstance(result.get("data"), dict)
+                    else (result.get("questions") or result.get("items")) if isinstance(result, dict) else None)
+                if not isinstance(candidates, list):
+                    return jsonify({"status": "schema_unknown", "company_id": str(shop.id),
+                                    "shop_name": shop.name, "top_level_keys": list(result)[:20] if isinstance(result, dict) else [],
+                                    "questions": [], "message": "Потрібно уточнити структуру відповіді Prom."})
+                questions = []
+                for item in candidates:
+                    if not isinstance(item, dict) or not str(item.get("id") or "").isdigit():
+                        continue
+                    product = item.get("product") or {}
+                    author = item.get("author") or {}
+                    if not isinstance(product, dict): product = {}
+                    if not isinstance(author, dict): author = {}
+                    questions.append({
+                        "id": str(item["id"]), "company_id": str(shop.id), "shop_name": shop.name,
+                        "text": str(item.get("text") or "")[:3000],
+                        "date": str(item.get("dateCreated") or ""),
+                        "status": str(item.get("statusText") or ""),
+                        "can_comment": item.get("canBeCommented") is True,
+                        "comments_count": item.get("commentsCount"),
+                        "author": str(author.get("fullName") or ""),
+                        "product_id": str(product.get("id") or ""),
+                        "product_name": str(product.get("name") or ""),
+                        "product_url": str(product.get("url") or ""),
+                        "product_image": str(product.get("thumbnailUrl") or ""),
+                        "product_sku": str(product.get("sku") or ""),
+                    })
+                return jsonify({"status": "ok", "company_id": str(shop.id),
+                                "shop_name": shop.name, "questions": questions,
+                                "next_offset": offset + 1, "total_shops": len(shops),
+                                "page": page, "writes": False})
+            except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
+                continue
+        return jsonify({"status": "partial", "company_id": str(shop.id),
+                        "shop_name": shop.name, "questions": [],
+                        "next_offset": offset + 1, "error": "Не вдалося прочитати запитання магазину."})
+    except Exception:
+        return jsonify({"status": "error", "message": "Не вдалося отримати запитання."}), 500
+
