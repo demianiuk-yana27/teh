@@ -180,7 +180,7 @@ def _last_data_row(values):
     last = 2
     for idx, row in enumerate(values[2:], start=3):
         padded = row + [""] * (12 - len(row))
-        if any(str(padded[col]).strip() for col in (3, 6, 7, 8, 11)):
+        if any(str(padded[col]).strip() for col in (3, 4, 6, 7, 8, 11)):
             last = idx
     return last
 
@@ -217,7 +217,7 @@ def _write_reviews(book, sheet_name, reviews):
         if previous_date is None or previous_date != review["date"]:
             separator_rows.append(row)
             row += 1
-        text = f"⭐ {review['rating']}/5" + (f"\\n{review['text']}" if review["text"] else "")
+        text = f"⭐ {review['rating']}/5" + (f"\n{review['text']}" if review["text"] else "")
         requests.extend([
             {"range": f"'{sheet_name}'!E{row}", "values": [[review["orderId"]]]},
             {"range": f"'{sheet_name}'!G{row}", "values": [[review["date"]]]},
