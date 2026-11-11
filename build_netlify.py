@@ -74,8 +74,6 @@ s = s.replace('</main>', '<section class="view" id="ttn"><div class="pagehead"><
 
 
 # Buyer questions: manager-approved reply workspace, no automatic publication.
-s = s.replace('data-view="positive-reviews">• Позитивні відгуки</div>',
-              'data-view="positive-reviews">• Позитивні відгуки</div><div class="sub" data-view="buyer-questions">• Запитання покупців</div>', 1)
 questions_html = """<section class="view" id="buyer-questions">
 <div class="pagehead"><div class="pageicon">💬</div><div><h2>Запитання покупців</h2><p>Підготовка відповідей із перевіркою менеджером</p></div></div>
 <div class="card" style="max-width:1080px">
@@ -183,6 +181,8 @@ s = s.replace('</body>', questions_script + '</body>', 1)
 # Positive reviews: isolated read-only preview under Operational Managers.
 s = s.replace('data-view="dorobky">• Доробки</div>',
               'data-view="dorobky">• Доробки</div><div class="sub" data-view="positive-reviews">• Позитивні відгуки</div>', 1)
+s = s.replace('data-view="positive-reviews">• Позитивні відгуки</div>',
+              'data-view="positive-reviews">• Позитивні відгуки</div><div class="sub" data-view="buyer-questions">• Запитання покупців</div>', 1)
 s = s.replace('data-target-view="dorobky"><span',
               'data-target-view="dorobky"><span', 1)
 positive_html = """<section class="view" id="positive-reviews"><div class="pagehead"><div class="pageicon">⭐</div><div><h2>Позитивні відгуки</h2><p>Попередній перегляд і виключення перед автоматичними відповідями</p></div></div>
