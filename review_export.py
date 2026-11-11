@@ -48,17 +48,24 @@ def _sheet_name(book, review_type):
     )
 
 
+def _review_key(date, shop, order):
+    """Stable key for both company and product reviews (one per order/shop/day)."""
+    parsed = parse_date(date)
+    number = re.search(r"\d+", str(order or ""))
+    if not parsed or not normalize_name(shop) or not number:
+        return None
+    return (parsed.strftime("%d.%m.%Y"), normalize_name(shop), number.group(0))
+
+
 def _existing_keys(sheet, dates):
     keys = set()
+    # The order number is in column E, not D (D is the Prom listing ID).
+    # Read the entire table: repeated imports and older rows must be detected.
     for row in sheet.get("A:Y")[2:]:
         padded = row + [""] * (25 - len(row))
-        date_value = parse_date(padded[6])
-        shop = str(padded[7]).strip()
-        order = re.search(r"\d+", str(padded[3] or ""))
-        if date_value and shop and order:
-            date_text = date_value.strftime("%d.%m.%Y")
-            if date_text in dates:
-                keys.add((date_text, normalize_name(shop), order.group(0)))
+        key = _review_key(padded[6], padded[7], padded[4])
+        if key and key[0] in dates:
+            keys.add(key)
     return keys
 
 
@@ -184,7 +191,14 @@ def _write_reviews(book, sheet_name, reviews):
     sheet = book.worksheet(sheet_name)
     dates = {item["date"] for item in reviews}
     existing = _existing_keys(sheet, dates)
-    fresh = [item for item in reviews if (item["date"], normalize_name(item["shopName"]), item["orderId"]) not in existing]
+    # Protect against both pre-existing rows and duplicates in the current batch.
+    fresh = []
+    for item in reviews:
+        key = _review_key(item["date"], item["shopName"], item["orderId"])
+        if not key or key in existing:
+            continue
+        existing.add(key)
+        fresh.append(item)
     if not fresh:
         return 0
     fresh.sort(key=lambda x: (_date_number(x["date"]), normalize_name(x["shopName"]), x["orderId"]))
@@ -194,15 +208,18 @@ def _write_reviews(book, sheet_name, reviews):
     previous_date = None
     requests = []
     link_requests = []
+    separator_rows = []
     sheet_id = sheet.id
 
     for review in fresh:
-        if previous_date and previous_date != review["date"]:
-            sheet.format(f"A{row}:L{row}", {"backgroundColor": {"red": 1, "green": 0.9, "blue": 0.7}})
+        # Separate every new export batch from previously exported entries.
+        # Within this batch, also separate different review dates.
+        if previous_date is None or previous_date != review["date"]:
+            separator_rows.append(row)
             row += 1
-        text = f"⭐ {review['rating']}/5" + (f"\n{review['text']}" if review["text"] else "")
+        text = f"⭐ {review['rating']}/5" + (f"\\n{review['text']}" if review["text"] else "")
         requests.extend([
-            {"range": f"'{sheet_name}'!D{row}", "values": [[review["orderId"]]]},
+            {"range": f"'{sheet_name}'!E{row}", "values": [[review["orderId"]]]},
             {"range": f"'{sheet_name}'!G{row}", "values": [[review["date"]]]},
             {"range": f"'{sheet_name}'!H{row}", "values": [[review["shopName"]]]},
             {"range": f"'{sheet_name}'!I{row}", "values": [[text]]},
@@ -212,13 +229,35 @@ def _write_reviews(book, sheet_name, reviews):
             requests.append({"range": f"'{sheet_name}'!Y{row}", "values": [[review["shopUrl"]]]})
         link_requests.append({
             "repeatCell": {
-                "range": {"sheetId": sheet_id, "startRowIndex": row - 1, "endRowIndex": row, "startColumnIndex": 3, "endColumnIndex": 4},
+                "range": {"sheetId": sheet_id, "startRowIndex": row - 1, "endRowIndex": row, "startColumnIndex": 4, "endColumnIndex": 5},
                 "cell": {"userEnteredFormat": {"textFormat": {"link": {"uri": f"https://my.prom.ua/cms/order/edit/{review['orderId']}"}}}},
                 "fields": "userEnteredFormat.textFormat.link",
             }
         })
         previous_date = review["date"]
         row += 1
+
+    # Use only the actual table columns; keep existing rows and manager edits intact.
+    if sheet.row_count < row - 1:
+        sheet.add_rows(row - 1 - sheet.row_count)
+
+    # A separate, unmerged, blank peach-colored row in columns A:L.
+    # Only created if there is at least one genuinely new review.
+    peach = {"red": 252 / 255, "green": 228 / 255, "blue": 214 / 255}
+    for separator_row in separator_rows:
+        link_requests.append({
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": separator_row - 1,
+                    "endRowIndex": separator_row,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": 12,
+                },
+                "cell": {"userEnteredFormat": {"backgroundColor": peach}},
+                "fields": "userEnteredFormat.backgroundColor",
+            }
+        })
 
     book.values_batch_update({"valueInputOption": "USER_ENTERED", "data": requests})
     if link_requests:
