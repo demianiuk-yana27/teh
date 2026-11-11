@@ -73,6 +73,56 @@ s = s.replace('data-view="dorobky">• Доробки</div>', 'data-view="dorobk
 s = s.replace('</main>', '<section class="view" id="ttn"><div class="pagehead"><div class="pageicon">📦</div><div><h2>Зміни з ТТН</h2><p>Неопрацьовані запити, листи та передача Богдану.</p></div></div><div id="ttnApp"></div></section></main>', 1)
 
 
+# Buyer questions: manager-approved reply workspace, no automatic publication.
+s = s.replace('data-view="positive-reviews">• Позитивні відгуки</div>',
+              'data-view="positive-reviews">• Позитивні відгуки</div><div class="sub" data-view="buyer-questions">• Запитання покупців</div>', 1)
+questions_html = """<section class="view" id="buyer-questions">
+<div class="pagehead"><div class="pageicon">💬</div><div><h2>Запитання покупців</h2><p>Підготовка відповідей із перевіркою менеджером</p></div></div>
+<div class="card" style="max-width:1080px">
+<h3>💬 Робоче місце менеджера</h3>
+<p style="color:#64748b">Перший етап: безпечна підготовка та редагування чернеток. Підключення автоматичного збору з Prom і публікації ще не активоване. Жодна відповідь не надсилається без підтвердження.</p>
+<label for="buyerShop">Магазин</label><input id="buyerShop" placeholder="Назва магазину" style="display:block;width:100%;max-width:500px;margin:8px 0 16px;padding:10px">
+<label for="buyerProduct">Назва товару</label><input id="buyerProduct" placeholder="Назва товару" style="display:block;width:100%;max-width:650px;margin:8px 0 16px;padding:10px">
+<label for="buyerUrl">Посилання на товар</label><input id="buyerUrl" type="url" placeholder="https://..." style="display:block;width:100%;max-width:650px;margin:8px 0 16px;padding:10px">
+<label for="buyerFacts">Підтверджені характеристики товару</label><textarea id="buyerFacts" rows="4" placeholder="Тільки перевірені характеристики — без припущень" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
+<label for="buyerQuestion">Запитання покупця</label><textarea id="buyerQuestion" rows="3" placeholder="Вставте запитання покупця" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
+<button class="run" type="button" onclick="buyerPrepareDraft()">📝 Підготувати безпечну чернетку</button>
+<div id="buyerDraftStatus" class="status" style="white-space:pre-wrap"></div>
+<label for="buyerDraft">Відповідь менеджера (можна редагувати)</label><textarea id="buyerDraft" rows="5" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
+<button class="run" type="button" onclick="buyerSaveDraft()" style="background:#0f766e">💾 Зберегти чернетку в браузері</button>
+<button class="run" type="button" onclick="buyerCopyDraft()" style="background:#475569">📋 Копіювати відповідь</button>
+<p style="color:#64748b;font-size:13px">Автоматична генерація ШІ та відправлення через Prom стануть доступними після перевірки інтеграції. Наразі чернетка складається лише з підтверджених фактів.</p>
+</div></section>"""
+s = s.replace('</main>', questions_html + '</main>', 1)
+questions_script = """<script>
+(function(){
+ const ids=['buyerShop','buyerProduct','buyerUrl','buyerFacts','buyerQuestion','buyerDraft'];
+ const key='teh-buyer-questions-draft-v1';
+ function status(message){document.getElementById('buyerDraftStatus').textContent=message;}
+ window.buyerPrepareDraft=function(){
+   const facts=document.getElementById('buyerFacts').value.trim();
+   const question=document.getElementById('buyerQuestion').value.trim();
+   if(!question){status('⚠️ Спочатку введіть запитання покупця.');return;}
+   if(!facts){status('⚠️ Немає перевірених характеристик. Не будемо вигадувати відповідь.');return;}
+   document.getElementById('buyerDraft').value='Добрий день! Дякуємо за запитання. За підтвердженою інформацією про товар: '+facts+'. Якщо потрібно уточнити інші характеристики, будь ласка, напишіть нам. Гарного дня!';
+   status('📝 Чернетку підготовлено з указаних характеристик. Перевірте, чи відповідає вона саме на запитання покупця, та відредагуйте перед використанням.');
+ };
+ window.buyerSaveDraft=function(){
+   try{localStorage.setItem(key,JSON.stringify(Object.fromEntries(ids.map(id=>[id,document.getElementById(id).value]))));status('✅ Чернетку збережено лише у цьому браузері.');}
+   catch(e){status('❌ Не вдалося зберегти чернетку: '+e.message);}
+ };
+ window.buyerCopyDraft=async function(){
+   const value=document.getElementById('buyerDraft').value.trim();
+   if(!value){status('⚠️ Чернетка порожня.');return;}
+   try{await navigator.clipboard.writeText(value);status('✅ Скопійовано. Відправлення в Prom виконується вручну.');}
+   catch(e){status('⚠️ Копіювання недоступне. Виділіть текст вручну.');}
+ };
+ function restore(){try{const data=JSON.parse(localStorage.getItem(key)||'{}');for(const id of ids)if(typeof data[id]==='string')document.getElementById(id).value=data[id];}catch(e){}}
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',restore);else restore();
+})();
+</script>"""
+s = s.replace('</body>', questions_script + '</body>', 1)
+
 # Positive reviews: isolated read-only preview under Operational Managers.
 s = s.replace('data-view="dorobky">• Доробки</div>',
               'data-view="dorobky">• Доробки</div><div class="sub" data-view="positive-reviews">• Позитивні відгуки</div>', 1)
