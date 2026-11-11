@@ -346,12 +346,11 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
                 errors.append(f"{shop.name}, {kind}, запис: {type(exc).__name__}: {str(exc)[:160]}")
                 print(f"[{shop.name}] Не вдалося записати {kind}: {exc}")
 
-    if not written["company"] and not written["product"]:
-        detail = "; ".join(errors[:4]) or (
-            f"Зібрано company={collected_count['company']}, product={collected_count['product']}; "
-            "нових рядків немає. Перевірте дату, фільтри та наявні записи."
-        )
-        raise RuntimeError("Тестова вигрузка: 0 записаних відгуків. " + detail)
+    # A clean repeat run with zero new reviews is a successful no-op.
+    # Keep collection failures visible rather than reporting a false success.
+    if not written["company"] and not written["product"] and (incomplete or skipped):
+        detail = "; ".join(errors[:4]) or "Не всі магазини перевірено."
+        raise RuntimeError("Тестова вигрузка завершилась із неповними перевірками. " + detail)
     return {
         "active": len(shops),
         "skipped": skipped,
