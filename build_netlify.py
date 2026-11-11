@@ -79,6 +79,11 @@ s = s.replace('data-view="positive-reviews">• Позитивні відгук�
 questions_html = """<section class="view" id="buyer-questions">
 <div class="pagehead"><div class="pageicon">💬</div><div><h2>Запитання покупців</h2><p>Підготовка відповідей із перевіркою менеджером</p></div></div>
 <div class="card" style="max-width:1080px">
+<h3>💬 Запитання з Prom</h3>
+<p style="color:#64748b">Тестовий режим читання. Завантаження не публікує відповіді.</p>
+<button class="run" type="button" onclick="buyerLoadQuestions()">🔄 Завантажити запитання магазинів</button>
+<div id="buyerQuestionsStatus" role="status" style="margin:12px 0;white-space:pre-wrap"></div>
+<div id="buyerQuestionsList" style="display:grid;gap:12px;margin:12px 0 24px"></div>
 <h3>💬 Робоче місце менеджера</h3>
 <p style="color:#64748b">Перший етап: безпечна підготовка та редагування чернеток. Підключення автоматичного збору з Prom і публікації ще не активоване. Жодна відповідь не надсилається без підтвердження.</p>
 <label for="buyerShop">Магазин</label><input id="buyerShop" placeholder="Назва магазину" style="display:block;width:100%;max-width:500px;margin:8px 0 16px;padding:10px">
@@ -95,6 +100,58 @@ questions_html = """<section class="view" id="buyer-questions">
 </div></section>"""
 s = s.replace('</main>', questions_html + '</main>', 1)
 questions_script = """<script>
+(function(){
+ window.buyerLoadQuestions=async function(){
+   const output=document.getElementById('buyerQuestionsList');
+   const status=document.getElementById('buyerQuestionsStatus');
+   output.replaceChildren();
+   status.textContent='⏳ Завантажуємо запитання…';
+   const seen=new Set();let count=0, failures=0, shops=0;
+   try{
+     for(let offset=0;offset<150;offset++){
+       const response=await fetch('/api/questions/shops-batch',{method:'POST',
+         headers:{'Content-Type':'application/json'},body:JSON.stringify({offset,page:1}),cache:'no-store'});
+       const data=await response.json();
+       if(!response.ok || data.status==='error')throw Error(data.message||'HTTP '+response.status);
+       if(data.done)break;
+       shops++;
+       if(data.status!=='ok')failures++;
+       for(const q of (data.questions||[])){
+         const key=q.company_id+':'+q.id;
+         if(seen.has(key))continue;
+         seen.add(key);count++;
+         const card=document.createElement('article');
+         card.style.cssText='border:1px solid #dbe5f1;border-radius:12px;padding:14px;background:white';
+         const heading=document.createElement('strong');
+         heading.textContent=(q.shop_name||'Магазин')+' · '+(q.product_name||'Товар');
+         card.append(heading);
+         const p=document.createElement('p');p.textContent=q.text||'';card.append(p);
+         const meta=document.createElement('p');
+         meta.style.color='#64748b';
+         meta.textContent=(q.author||'Покупець')+' · '+(q.date||'')+' · '+(q.status||'');
+         card.append(meta);
+         const button=document.createElement('button');
+         button.type='button';button.textContent='📝 Відкрити в редакторі';
+         button.addEventListener('click',()=>{
+           document.getElementById('buyerShop').value=q.shop_name||'';
+           document.getElementById('buyerProduct').value=q.product_name||'';
+           document.getElementById('buyerUrl').value=q.product_url||'';
+           document.getElementById('buyerQuestion').value=q.text||'';
+           document.getElementById('buyerFacts').value='';
+           document.getElementById('buyerDraft').value='';
+           document.getElementById('buyerDraftStatus').textContent='Додайте перевірені характеристики товару перед підготовкою чернетки.';
+           document.getElementById('buyerQuestion').scrollIntoView({behavior:'smooth',block:'center'});
+         });
+         card.append(button);output.append(card);
+       }
+       status.textContent='⏳ Магазинів перевірено: '+shops+'; запитань: '+count+'; неповних перевірок: '+failures;
+       if(shops>=data.total_shops)break;
+     }
+     status.textContent='✅ Перевірено магазинів: '+shops+'; знайдено запитань: '+count+'; неповних перевірок: '+failures+'. Відповіді не відправлялись.';
+   }catch(e){status.textContent='⚠️ Збір зупинено: '+e.message+'. Перевірено магазинів: '+shops+'; неповних перевірок: '+failures;}
+ };
+})();
+</script><script>
 (function(){
  const ids=['buyerShop','buyerProduct','buyerUrl','buyerFacts','buyerQuestion','buyerDraft'];
  const key='teh-buyer-questions-draft-v1';
