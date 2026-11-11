@@ -113,7 +113,15 @@ questions_script = """<script>
        if(!response.ok || data.status==='error')throw Error(data.message||'HTTP '+response.status);
        if(data.done)break;
        shops++;
-       if(data.status!=='ok')failures++;
+       if(data.status!=='ok'){
+         failures++;
+         if(failures<=5){
+           const warning=document.createElement('p');
+           warning.style.cssText='color:#9a3412;font-size:13px;margin:4px 0';
+           warning.textContent='⚠️ '+(data.shop_name||'Магазин')+': '+(data.message||data.error||data.status)+' ('+(data.stage||'перевірка')+'; '+(data.reason||'без деталей')+')';
+           output.append(warning);
+         }
+       }
        for(const q of (data.questions||[])){
          const key=q.company_id+':'+q.id;
          if(seen.has(key))continue;
