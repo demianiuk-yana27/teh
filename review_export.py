@@ -213,13 +213,9 @@ def _write_reviews(book, sheet_name, reviews):
         review_match = re.fullmatch(r"Відгук\s+(\d+)", marker, re.I)
         if review_match:
             by_review.add(key + (review_match.group(1),))
-        # E is the order number; D is the Prom ID / legacy review marker.
-        order_text = str(padded[4] or "").strip()
-        order_match = re.search(r"(?:order/edit/|(?:замовлення|№)\s*№?\s*)(\d{6,12})", order_text, re.I)
-        if not order_match:
-            order_match = re.search(r"\b\d{6,12}\b", order_text)
-        if not order_match and not review_match:
-            # Compatibility with older exports that wrote an order ID in D.
+        # D is the Prom identifier; E is a phone number, never an order ID.
+        order_match = None
+        if not review_match:
             order_match = re.search(r"(?:order/edit/|(?:замовлення|№)\s*№?\s*)(\d{6,12})", marker, re.I)
             if not order_match:
                 order_match = re.search(r"\b\d{6,12}\b", marker)
@@ -262,17 +258,16 @@ def _write_reviews(book, sheet_name, reviews):
         rid = str(review["reviewId"])
         body = f"⭐ {review['rating']}/5" + (f"\n{review['text']}" if review["text"] else "")
         requests.extend([
-            {"range": f"'{sheet_name}'!D{row}", "values": [["Відгук " + rid]]},
+            {"range": f"'{sheet_name}'!D{row}", "values": [[order or ("Відгук " + rid)]]},
             {"range": f"'{sheet_name}'!G{row}", "values": [[review["date"]]]},
             {"range": f"'{sheet_name}'!H{row}", "values": [[review["shopName"]]]},
             {"range": f"'{sheet_name}'!I{row}", "values": [[body]]},
         ])
         if order:
-            requests.append({"range": f"'{sheet_name}'!E{row}", "values": [[order]]})
             format_requests.append({
                 "repeatCell": {
                     "range": {"sheetId": sheet.id, "startRowIndex": row - 1,
-                              "endRowIndex": row, "startColumnIndex": 4, "endColumnIndex": 5},
+                              "endRowIndex": row, "startColumnIndex": 3, "endColumnIndex": 4},
                     "cell": {"userEnteredFormat": {"textFormat": {"link": {
                         "uri": f"https://my.prom.ua/cms/order/edit/{order}"}}}},
                     "fields": "userEnteredFormat.textFormat.link",
