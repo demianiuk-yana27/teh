@@ -155,12 +155,13 @@ questions_script = """<script>
          const button=document.createElement('button');
          button.type='button';button.textContent='📝 Відкрити в редакторі';
          button.addEventListener('click',()=>{
+           selectedBuyerCompany=String(q.company_id||'');
            document.getElementById('buyerShop').value=q.shop_name||'';
            document.getElementById('buyerProduct').value=q.product_name||'';
            document.getElementById('buyerUrl').value=q.product_url||'';
            document.getElementById('buyerQuestion').value=q.text||'';
            document.getElementById('buyerFacts').value='';
-           document.getElementById('buyerFactsStatus').textContent='Якщо посилання веде на my.prom.ua/cms, відкрийте публічну сторінку товару або додайте факти вручну.';
+           document.getElementById('buyerFactsStatus').textContent='Натисніть «Знайти характеристики товару» для отримання даних із Prom.';
            document.getElementById('buyerDraft').value='';
            document.getElementById('buyerDraftStatus').textContent='Додайте перевірені характеристики товару перед підготовкою чернетки.';
            document.getElementById('buyerQuestion').scrollIntoView({behavior:'smooth',block:'center'});
@@ -193,14 +194,17 @@ questions_script = """<script>
  const ids=['buyerShop','buyerProduct','buyerUrl','buyerFacts','buyerQuestion','buyerDraft'];
  const key='teh-buyer-questions-draft-v1';
  function status(message){document.getElementById('buyerDraftStatus').textContent=message;}
+ let selectedBuyerCompany='';
  window.buyerFetchFacts=async function(){
    const url=document.getElementById('buyerUrl').value.trim();
    const out=document.getElementById('buyerFactsStatus');
    if(!url){out.textContent='⚠️ Спочатку додайте посилання на товар.';return;}
-   out.textContent='⏳ Шукаємо дані на публічній сторінці Prom…';
+   out.textContent='⏳ Отримуємо характеристики товару з Prom…';
+   const match=url.match(/\/product\/edit\/(\d+)/);
+   const cms=!!match && !!selectedBuyerCompany;
    try{
-     const res=await fetch('/api/questions/product-facts',{method:'POST',
-       headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+     const res=await fetch(cms?'/api/questions/product-context':'/api/questions/product-facts',{method:'POST',
+       headers:{'Content-Type':'application/json'},body:JSON.stringify(cms?{company_id:selectedBuyerCompany,product_id:match[1]}:{url})});
      const data=await res.json();
      if(!res.ok || data.status!=='ok')throw Error(data.message||'Не вдалося знайти характеристики.');
      document.getElementById('buyerFacts').value=data.facts;
