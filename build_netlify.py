@@ -88,6 +88,7 @@ questions_html = """<section class="view" id="buyer-questions">
 <label for="buyerProduct">Назва товару</label><input id="buyerProduct" placeholder="Назва товару" style="display:block;width:100%;max-width:650px;margin:8px 0 16px;padding:10px">
 <label for="buyerUrl">Посилання на товар</label><input id="buyerUrl" type="url" placeholder="https://..." style="display:block;width:100%;max-width:650px;margin:8px 0 16px;padding:10px">
 <label for="buyerFacts">Підтверджені характеристики товару</label><button class="run" type="button" onclick="buyerFetchFacts()" style="background:#0f766e;margin:6px 0">🔎 Знайти характеристики товару</button><div id="buyerFactsStatus" role="status" style="font-size:13px;color:#475569;margin:6px 0"></div><textarea id="buyerFacts" rows="4" placeholder="Тільки перевірені характеристики — без припущень" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
+<button class="run" type="button" onclick="buyerWebResearch()" style="background:#475569;margin:4px 0 10px">🌐 Пошукати в інтернеті</button><div id="buyerWebResults" role="status" style="margin:8px 0 16px;white-space:normal"></div>
 <label for="buyerQuestion">Запитання покупця</label><textarea id="buyerQuestion" rows="3" placeholder="Вставте запитання покупця" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
 <button class="run" type="button" onclick="buyerGenerateAI()">🤖 Згенерувати ШІ-відповідь</button> <button class="run" type="button" onclick="buyerPrepareDraft()" style="background:#64748b">📝 Шаблон без ШІ</button>
 <div id="buyerDraftStatus" class="status" style="white-space:pre-wrap"></div>
@@ -161,6 +162,7 @@ questions_script = """<script>
            document.getElementById('buyerUrl').value=q.product_url||'';
            document.getElementById('buyerQuestion').value=q.text||'';
            document.getElementById('buyerFacts').value='';
+           document.getElementById('buyerWebResults').replaceChildren();
            document.getElementById('buyerFactsStatus').textContent='Натисніть «Знайти характеристики товару» для отримання даних із Prom.';
            document.getElementById('buyerDraft').value='';
            document.getElementById('buyerDraftStatus').textContent='Додайте перевірені характеристики товару перед підготовкою чернетки.';
@@ -210,6 +212,38 @@ questions_script = """<script>
      document.getElementById('buyerFacts').value=data.facts;
      out.textContent='✅ Дані отримано з '+(cms?'кабінету Prom':'публічної сторінки')+'. Перевірте їх перед генерацією.';
    }catch(e){out.textContent='⚠️ '+e.message;}
+ };
+ window.buyerWebResearch=async function(){
+   const product=document.getElementById('buyerProduct').value.trim();
+   const question=document.getElementById('buyerQuestion').value.trim();
+   const out=document.getElementById('buyerWebResults');
+   out.replaceChildren();
+   if(!product||!question){out.textContent='⚠️ Потрібні назва товару й запитання.';return;}
+   out.textContent='⏳ Шукаємо публічні джерела без платних API…';
+   try{
+     const response=await fetch('/api/questions/web-research',{method:'POST',
+       headers:{'Content-Type':'application/json'},body:JSON.stringify({product,question})});
+     const data=await response.json();
+     out.replaceChildren();
+     const notice=document.createElement('p');
+     notice.textContent='⚠️ '+(data.message||'Дані з інтернету не підтверджені для цього товару.');
+     out.append(notice);
+     if(!Array.isArray(data.sources))return;
+     for(const source of data.sources){
+       const card=document.createElement('div');
+       card.style.cssText='border:1px solid #cbd5e1;border-radius:8px;padding:10px;margin:8px 0';
+       const link=document.createElement('a');
+       link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';
+       link.textContent=source.title||source.url;
+       card.append(link);
+       const snippet=document.createElement('p');
+       snippet.textContent=source.snippet||'Перегляньте джерело для перевірки характеристик.';
+       card.append(snippet);
+       const label=document.createElement('small');
+       label.textContent='НЕПІДТВЕРДЖЕНО — перевірте точну модель; орієнтовні значення не є характеристиками цього товару.';
+       card.append(label);out.append(card);
+     }
+   }catch(e){out.textContent='⚠️ Безкоштовний пошук недоступний: '+e.message;}
  };
  window.buyerGenerateAI=async function(){
    const question=document.getElementById('buyerQuestion').value.trim();
