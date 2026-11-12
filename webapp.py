@@ -2574,6 +2574,28 @@ def buyer_questions_web_research():
                 self.capture = None
 
     query = product + " " + question
+    def rss_fallback():
+        """Try public Bing RSS; results remain unverified and are never sent to Gemini."""
+        import xml.etree.ElementTree as ET
+        rss_url = "https://www.bing.com/search?format=rss&q=" + urllib.parse.quote(query)
+        req = urllib.request.Request(rss_url, headers={
+            "User-Agent": "Mozilla/5.0", "Accept": "application/rss+xml, application/xml"})
+        with urllib.request.urlopen(req, timeout=12) as response:
+            xml = response.read(220000)
+        root = ET.fromstring(xml)
+        items = []
+        for node in root.findall("./channel/item")[:5]:
+            link = (node.findtext("link") or "").strip()
+            parsed = urllib.parse.urlsplit(link)
+            if parsed.scheme != "https" or not parsed.hostname:
+                continue
+            items.append({
+                "title": (node.findtext("title") or "").strip()[:180],
+                "url": link[:1200],
+                "snippet": re.sub(r"<[^>]*>", "", node.findtext("description") or "").strip()[:450]
+            })
+        return items
+
     url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
     try:
         req = urllib.request.Request(url, headers={
@@ -2610,9 +2632,22 @@ def buyer_questions_web_research():
             if len(sources) >= 5:
                 break
         if not sources:
-            return jsonify({"status": "unavailable", "message": "Безкоштовний пошук не повернув джерел. Не робіть припущень про характеристики.", "sources": []})
+            try:
+                sources = rss_fallback()
+            except (urllib.error.URLError, TimeoutError, ValueError, OSError, __import__("xml.etree.ElementTree", fromlist=["ParseError"]).ParseError):
+                app.logger.warning("Public web research: both providers unavailable")
+        if not sources:
+            return jsonify({"status": "unavailable", "message": "Обидва безкоштовні пошуковики не повернули джерел. Спробуйте пізніше.", "sources": []})
         return jsonify({"status": "ok", "sources": sources, "classification": "unverified",
                         "message": "Це результати стороннього пошуку, не підтверджені характеристики вашого товару. Перевірте модель і джерела вручну.",
                         "published": False})
     except (urllib.error.URLError, TimeoutError, ValueError, OSError):
-        return jsonify({"status": "unavailable", "message": "Безкоштовний пошук зараз недоступний. Спробуйте пізніше.", "sources": []}), 503
+        try:
+            sources = rss_fallback()
+            if sources:
+                return jsonify({"status": "ok", "sources": sources, "classification": "unverified",
+                                "message": "Резервний безкоштовний пошук: сторонні джерела, характеристики не підтверджені. Перевірте точну модель.",
+                                "published": False})
+        except Exception as fallback_error:
+            app.logger.warning("Public web research fallback failed: %s", type(fallback_error).__name__)
+        return jsonify({"status": "unavailable", "message": "Обидва безкоштовні пошуковики зараз недоступні. Спробуйте пізніше.", "sources": []}), 503
