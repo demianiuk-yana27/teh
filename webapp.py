@@ -2286,6 +2286,35 @@ def buyer_questions_ai_draft():
     except urllib.error.HTTPError as exc:
         app.logger.warning("Gemini API HTTP %s for model %s", exc.code, model)
         if exc.code == 404:
+            # Try a lower-cost model reported by the provider before diagnostics.
+            # Never publish the draft automatically.
+            if model == "gemini-2.5-flash":
+                fallback_model = "gemini-flash-lite-latest"
+                fallback_req = urllib.request.Request(
+                    "https://generativelanguage.googleapis.com/v1beta/models/" +
+                    fallback_model + ":generateContent",
+                    data=payload, method="POST",
+                    headers={"x-goog-api-key": key, "Content-Type": "application/json"})
+                try:
+                    with urllib.request.urlopen(fallback_req, timeout=30) as response:
+                        fallback_result = json.load(response)
+                    fallback_candidates = fallback_result.get("candidates") or []
+                    fallback_parts = ((fallback_candidates[0].get("content") or {}).get("parts") or []) if fallback_candidates else []
+                    fallback_draft = "\n".join(
+                        part.get("text", "") for part in fallback_parts if isinstance(part, dict)
+                    ).strip()
+                    if fallback_draft:
+                        return jsonify({"status": "ok", "draft": fallback_draft,
+                                        "model": fallback_model, "published": False})
+                except urllib.error.HTTPError as fallback_error:
+                    app.logger.warning("Gemini fallback HTTP %s for model %s",
+                                       fallback_error.code, fallback_model)
+                    if fallback_error.code == 429:
+                        return jsonify({"status": "limit",
+                                        "message": "Досягнуто ліміту безкоштовних запитів Gemini. Спробуйте пізніше."}), 429
+                except (urllib.error.URLError, TimeoutError, ValueError) as fallback_error:
+                    app.logger.warning("Gemini fallback unavailable: %s",
+                                       type(fallback_error).__name__)
             # Discover models visible to this key; never expose the key or raw provider error.
             try:
                 list_req = urllib.request.Request(
