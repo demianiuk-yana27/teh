@@ -239,7 +239,7 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
                 destination_spreadsheet_id="16BqyyMUyTNiQaibRVyd-qXzo_XdAzxCvURPfBtGoiJg",
                 login_map=login_map, progress_callback=update_shop_progress)
             message = (
-                "🧪 Тестова вигрузка (копія таблиці). "
+                "✅ Результат вигрузки. "
                 f"Знайдено: компанія — {result['collected_company']}, товари — {result['collected_product']}; "
                 f"додано нових: компанія — {result['written_company']}, товари — {result['written_product']} "
                 f"(разом {result['written']}); "
