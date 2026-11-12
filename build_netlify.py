@@ -83,7 +83,7 @@ questions_html = """<section class="view" id="buyer-questions">
 <div id="buyerQuestionsStatus" role="status" style="margin:12px 0;white-space:pre-wrap"></div>
 <div id="buyerQuestionsList" style="display:grid;gap:12px;margin:12px 0 24px"></div>
 <h3>💬 Робоче місце менеджера</h3>
-<p style="color:#64748b">Перший етап: безпечна підготовка та редагування чернеток. Підключення автоматичного збору з Prom і публікації ще не активоване. Жодна відповідь не надсилається без підтвердження.</p>
+<p style="color:#64748b">Запитання завантажуються з Prom. Чернетки редагуються менеджером; автоматична публікація поки вимкнена.</p>
 <label for="buyerShop">Магазин</label><input id="buyerShop" placeholder="Назва магазину" style="display:block;width:100%;max-width:500px;margin:8px 0 16px;padding:10px">
 <label for="buyerProduct">Назва товару</label><input id="buyerProduct" placeholder="Назва товару" style="display:block;width:100%;max-width:650px;margin:8px 0 16px;padding:10px">
 <label for="buyerUrl">Посилання на товар</label><input id="buyerUrl" type="url" placeholder="https://..." style="display:block;width:100%;max-width:650px;margin:8px 0 16px;padding:10px">
@@ -131,6 +131,22 @@ questions_script = """<script>
          const heading=document.createElement('strong');
          heading.textContent=(q.shop_name||'Магазин')+' · '+(q.product_name||'Товар');
          card.append(heading);
+         const details=document.createElement('div');
+         details.style.cssText='display:flex;gap:12px;align-items:center;margin-top:10px;flex-wrap:wrap';
+         if(q.product_image && /^https:\\/\\//.test(q.product_image)){
+           const image=document.createElement('img');
+           image.src=q.product_image;image.alt=q.product_name||'Фото товару';
+           image.loading='lazy';image.referrerPolicy='no-referrer';
+           image.style.cssText='width:76px;height:76px;object-fit:contain;border:1px solid #e2e8f0;border-radius:8px';
+           details.append(image);
+         }
+         if(q.product_url && /^https:\\/\\/i.test(q.product_url)){
+           const link=document.createElement('a');
+           link.href=q.product_url;link.target='_blank';link.rel='noopener noreferrer';
+           link.textContent='🔗 Переглянути товар і характеристики';
+           details.append(link);
+         }
+         if(details.childNodes.length)card.append(details);
          const p=document.createElement('p');p.textContent=q.text||'';card.append(p);
          const meta=document.createElement('p');
          meta.style.color='#64748b';
@@ -148,7 +164,21 @@ questions_script = """<script>
            document.getElementById('buyerDraftStatus').textContent='Додайте перевірені характеристики товару перед підготовкою чернетки.';
            document.getElementById('buyerQuestion').scrollIntoView({behavior:'smooth',block:'center'});
          });
-         card.append(button);output.append(card);
+         card.append(button);
+         const mark=document.createElement('button');
+         mark.type='button';mark.style.marginLeft='10px';
+         const storageKey='teh-buyer-reviewed:'+key;
+         let reviewed=false;
+         try{reviewed=localStorage.getItem(storageKey)==='1';}catch(e){}
+         function renderMark(){mark.textContent=reviewed?'↩️ Повернути в роботу':'✓ Позначити опрацьованим';card.style.opacity=reviewed?'0.65':'1';}
+         renderMark();
+         mark.addEventListener('click',()=>{
+           reviewed=!reviewed;
+           try{if(reviewed)localStorage.setItem(storageKey,'1');else localStorage.removeItem(storageKey);}
+           catch(e){reviewed=!reviewed;alert('Не вдалося зберегти позначку в браузері.');}
+           renderMark();
+         });
+         card.append(mark);output.append(card);
        }
        status.textContent='⏳ Магазинів перевірено: '+shops+'; запитань: '+count+'; неповних перевірок: '+failures;
        if(shops>=data.total_shops)break;
