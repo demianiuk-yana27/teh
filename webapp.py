@@ -2573,7 +2573,23 @@ def buyer_questions_web_research():
                 self.current = None
                 self.capture = None
 
-    query = product + " " + question
+    # Search for the core product rather than a long slash-separated catalog title.
+    core_product = product.split("/")[0].strip()[:110]
+    query = core_product + " " + question
+    stopwords = {"для", "або", "та", "або", "при", "про", "яка", "який", "яке",
+                 "білий", "біла", "чорний", "чорна", "акумуляторний",
+                 "якая", "какая", "какой", "висота", "высота", "ножки", "ніжки"}
+    tokens = [word for word in re.findall(r"[\\w\\d]+", core_product.lower(), re.UNICODE)
+              if len(word) >= 5 and word not in stopwords]
+    def relevant(items):
+        matched = []
+        for item in items:
+            content = (item.get("title", "") + " " + item.get("snippet", "")).lower()
+            hits = sum(1 for word in set(tokens) if word in content or
+                       (len(word) >= 7 and word[:5] in content))
+            if hits >= min(2, len(set(tokens))) and hits > 0:
+                matched.append(item)
+        return matched[:5]
     def rss_fallback():
         """Try public Bing RSS; results remain unverified and are never sent to Gemini."""
         import xml.etree.ElementTree as ET
@@ -2594,7 +2610,7 @@ def buyer_questions_web_research():
                 "url": link[:1200],
                 "snippet": re.sub(r"<[^>]*>", "", node.findtext("description") or "").strip()[:450]
             })
-        return items
+        return relevant(items)
 
     url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
     try:
@@ -2631,13 +2647,14 @@ def buyer_questions_web_research():
                             "snippet": re.sub(r"\\s+", " ", item["snippet"]).strip()[:450]})
             if len(sources) >= 5:
                 break
+        sources = relevant(sources)
         if not sources:
             try:
                 sources = rss_fallback()
             except (urllib.error.URLError, TimeoutError, ValueError, OSError, __import__("xml.etree.ElementTree", fromlist=["ParseError"]).ParseError):
                 app.logger.warning("Public web research: both providers unavailable")
         if not sources:
-            return jsonify({"status": "unavailable", "message": "Обидва безкоштовні пошуковики не повернули джерел. Спробуйте пізніше.", "sources": []})
+            return jsonify({"status": "unavailable", "message": "Не знайдено джерел, що відповідають назві товару. Спробуйте уточнити модель або перевірити характеристики вручну.", "sources": []})
         return jsonify({"status": "ok", "sources": sources, "classification": "unverified",
                         "message": "Це результати стороннього пошуку, не підтверджені характеристики вашого товару. Перевірте модель і джерела вручну.",
                         "published": False})
