@@ -2345,3 +2345,88 @@ def buyer_questions_ai_draft():
         app.logger.warning("Buyer questions Gemini unavailable: %s", type(exc).__name__)
         return jsonify({"status": "error", "message": "Не вдалося підготувати ШІ-чернетку. Спробуйте пізніше."}), 502
 
+
+@app.route("/questions/product-facts", methods=["POST"])
+def buyer_questions_product_facts():
+    """Read public Prom product page only; never fetch arbitrary URLs or private CMS."""
+    import html
+    import json
+    import re
+    import urllib.parse
+    import urllib.request
+    import urllib.error
+    from html.parser import HTMLParser
+
+    data = request.get_json(silent=True) or {}
+    url = str(data.get("url") or "").strip()
+    parsed = urllib.parse.urlsplit(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not (host == "prom.ua" or host.endswith(".prom.ua")) or host == "my.prom.ua" or parsed.username or parsed.password or parsed.port not in (None, 443):
+        return jsonify({"status": "manual", "message": "Це не публічна сторінка товару Prom. Відкрийте товар у магазині та скопіюйте перевірені характеристики вручну."}), 422
+
+    class ProductParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.title = ""
+            self.description = ""
+            self.properties = []
+            self.in_title = False
+            self.jsonld = False
+            self.ld_buffer = []
+        def handle_starttag(self, tag, attrs):
+            props = dict(attrs)
+            if tag == "title":
+                self.in_title = True
+            if tag == "meta":
+                name = (props.get("name") or props.get("property") or "").lower()
+                if name in ("description", "og:description"):
+                    value = props.get("content") or ""
+                    if len(value) > len(self.description):
+                        self.description = value
+            if tag == "script" and props.get("type") == "application/ld+json":
+                self.jsonld = True
+                self.ld_buffer = []
+        def handle_endtag(self, tag):
+            if tag == "title":
+                self.in_title = False
+            if tag == "script" and self.jsonld:
+                self.jsonld = False
+                try:
+                    doc = json.loads("".join(self.ld_buffer))
+                    docs = doc if isinstance(doc, list) else [doc]
+                    for entry in docs:
+                        if not isinstance(entry, dict):
+                            continue
+                        if entry.get("@type") in ("Product", ["Product"]):
+                            for prop in entry.get("additionalProperty", [])[:30]:
+                                if isinstance(prop, dict) and prop.get("name") and prop.get("value"):
+                                    self.properties.append(str(prop["name"]) + ": " + str(prop["value"]))
+                except (ValueError, TypeError):
+                    pass
+        def handle_data(self, value):
+            if self.in_title:
+                self.title += value
+            if self.jsonld:
+                self.ld_buffer.append(value)
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"})
+        opener = urllib.request.build_opener(NoRedirect())
+        with opener.open(req, timeout=12) as response:
+            if response.status != 200 or "text/html" not in response.headers.get("Content-Type", ""):
+                raise ValueError("not HTML")
+            page = response.read(400000).decode("utf-8", errors="replace")
+        parser = ProductParser()
+        parser.feed(page)
+        facts = "\n".join(parser.properties)
+        if not facts and parser.description:
+            facts = "Опис продавця: " + html.unescape(parser.description)
+        if not facts:
+            return jsonify({"status": "manual", "message": "На публічній сторінці не знайдено перевірених характеристик. Додайте їх вручну."}), 422
+        return jsonify({"status": "ok", "facts": re.sub(r"\\s+", " ", facts).strip()[:4000],
+                        "source_url": url, "source": "public_product_page", "published": False})
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, OSError):
+        return jsonify({"status": "manual", "message": "Не вдалося прочитати публічну сторінку товару. Додайте характеристики вручну."}), 422
