@@ -2430,3 +2430,104 @@ def buyer_questions_product_facts():
                         "source_url": url, "source": "public_product_page", "published": False})
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, OSError):
         return jsonify({"status": "manual", "message": "Не вдалося прочитати публічну сторінку товару. Додайте характеристики вручну."}), 422
+
+@app.route("/questions/product-context", methods=["POST"])
+def buyer_questions_product_context():
+    """Read-only product facts from the selected shop's authenticated Prom CMS."""
+    import http.cookiejar
+    import json
+    import re
+    import urllib.request
+    import urllib.error
+    from negative_reviews import _prom_session_cookies, load_active_shops
+
+    data = request.get_json(silent=True) or {}
+    company_id = str(data.get("company_id") or "").strip()
+    product_id = str(data.get("product_id") or "").strip()
+    if not company_id.isdigit() or not product_id.isdigit() or len(company_id) > 12 or len(product_id) > 15:
+        return jsonify({"status": "error", "message": "Оберіть запитання з переліку магазину."}), 400
+    try:
+        shops = {str(shop.id): shop for shop in load_active_shops(_sheet_id())}
+        if company_id not in shops:
+            return jsonify({"status": "error", "message": "Магазин неактивний."}), 403
+        accounts = _positive_login_map().get(company_id, [])
+        if not accounts:
+            return jsonify({"status": "manual", "message": "Для магазину не налаштовано перемикання акаунта."}), 422
+        originals = _prom_session_cookies()
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+        for account in accounts:
+            jar = http.cookiejar.CookieJar()
+            for c in originals:
+                if not isinstance(c, dict) or not isinstance(c.get("name"), str) or not isinstance(c.get("value"), str):
+                    continue
+                domain = str(c.get("domain") or "").lower()
+                if domain.lstrip(".") != "prom.ua" and not domain.lstrip(".").endswith(".prom.ua"):
+                    continue
+                expiry = c.get("expirationDate", c.get("expiry"))
+                try:
+                    expiry = int(expiry) if expiry is not None else None
+                except (TypeError, ValueError):
+                    expiry = None
+                jar.set_cookie(http.cookiejar.Cookie(
+                    version=0, name=c["name"], value=c["value"], port=None,
+                    port_specified=False, domain=domain, domain_specified=True,
+                    domain_initial_dot=domain.startswith("."), path=str(c.get("path") or "/"),
+                    path_specified=True, secure=bool(c.get("secure", False)),
+                    expires=expiry, discard=expiry is None, comment=None, comment_url=None,
+                    rest={}, rfc2109=False))
+            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect())
+            try:
+                try:
+                    switched = opener.open(urllib.request.Request(
+                        "https://my.prom.ua/remote/auth/sign-to/" + account,
+                        headers={"User-Agent": "Mozilla/5.0"}), timeout=12)
+                except urllib.error.HTTPError as exc:
+                    switched = exc
+                with switched:
+                    location = switched.headers.get("Location", "")
+                    if switched.status not in (301, 302, 303) or not (
+                            location.startswith("/cms") or location.startswith("https://my.prom.ua/cms")):
+                        continue
+                req = urllib.request.Request(
+                    "https://my.prom.ua/cms/product/v2/edit/" + product_id + "/context",
+                    headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0",
+                             "Referer": "https://my.prom.ua/cms/product/edit/" + product_id,
+                             "X-Requested-With": "XMLHttpRequest"})
+                with opener.open(req, timeout=18) as response:
+                    if response.status != 200:
+                        continue
+                    payload = json.loads(response.read(500000))
+                if payload.get("status") != "success":
+                    continue
+                product = payload.get("context") or {}
+                if str(product.get("id")) != product_id:
+                    continue
+                name = product.get("name") or {}
+                description = product.get("description_text") or {}
+                facts = []
+                if isinstance(name, dict) and name.get("uk"):
+                    facts.append("Товар: " + str(name["uk"]))
+                if isinstance(description, dict) and description.get("uk"):
+                    facts.append("Опис і характеристики продавця:\n" + str(description["uk"]).strip()[:5000])
+                for spec in (product.get("specs") or [])[:30]:
+                    if isinstance(spec, dict):
+                        title = spec.get("name") or spec.get("title")
+                        value = spec.get("value")
+                        if isinstance(title, dict):
+                            title = title.get("uk")
+                        if isinstance(value, dict):
+                            value = value.get("uk")
+                        if title and value:
+                            facts.append(str(title) + ": " + str(value))
+                if not facts:
+                    continue
+                return jsonify({"status": "ok", "facts": "\n".join(facts)[:6500],
+                                "source": "prom_cms", "published": False})
+            except (urllib.error.URLError, TimeoutError, ValueError, OSError, KeyError, TypeError):
+                continue
+        return jsonify({"status": "manual", "message": "Prom не повернув дані товару для цього магазину. Додайте характеристики вручну."}), 422
+    except Exception:
+        app.logger.exception("Read-only product context lookup failed")
+        return jsonify({"status": "error", "message": "Помилка отримання характеристик товару."}), 502
