@@ -2531,3 +2531,88 @@ def buyer_questions_product_context():
     except Exception:
         app.logger.exception("Read-only product context lookup failed")
         return jsonify({"status": "error", "message": "Помилка отримання характеристик товару."}), 502
+
+@app.route("/questions/web-research", methods=["POST"])
+def buyer_questions_web_research():
+    """Free, read-only public search snippets. No paid API or AI grounding."""
+    import html
+    import re
+    import urllib.parse
+    import urllib.request
+    import urllib.error
+    from html.parser import HTMLParser
+
+    data = request.get_json(silent=True) or {}
+    product = str(data.get("product") or "").strip()[:180]
+    question = str(data.get("question") or "").strip()[:180]
+    if not product or not question:
+        return jsonify({"status": "error", "message": "Вкажіть товар і запитання."}), 400
+
+    class SearchParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.results = []
+            self.current = None
+            self.capture = None
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            classes = attrs.get("class", "").split()
+            if tag == "a" and "result__a" in classes:
+                self.current = {"title": "", "url": attrs.get("href", ""), "snippet": ""}
+                self.capture = "title"
+            elif "result__snippet" in classes and self.current is not None:
+                self.capture = "snippet"
+        def handle_data(self, data):
+            if self.current is not None and self.capture:
+                self.current[self.capture] += data
+        def handle_endtag(self, tag):
+            if tag == "a" and self.current is not None and self.capture == "title":
+                self.capture = None
+            if tag in ("div", "article") and self.current is not None and self.current["title"]:
+                self.results.append(self.current)
+                self.current = None
+                self.capture = None
+
+    query = product + " " + question
+    url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; ProductResearch/1.0)",
+            "Accept": "text/html"})
+        with urllib.request.urlopen(req, timeout=12) as response:
+            if response.status != 200:
+                raise ValueError("search unavailable")
+            body = response.read(350000).decode("utf-8", errors="replace")
+        parser = SearchParser()
+        parser.feed(body)
+        # Final result may not be followed by a closing container.
+        if parser.current and parser.current.get("title"):
+            parser.results.append(parser.current)
+        sources = []
+        seen = set()
+        for item in parser.results:
+            href = html.unescape(item["url"])
+            target = urllib.parse.urlsplit(href)
+            if target.path.startswith("/l/"):
+                params = urllib.parse.parse_qs(target.query)
+                href = params.get("uddg", [""])[0]
+                target = urllib.parse.urlsplit(href)
+            if target.scheme not in ("http", "https") or not target.hostname:
+                continue
+            if target.hostname.lower() in ("localhost", "127.0.0.1") or target.username or target.password:
+                continue
+            if href in seen:
+                continue
+            seen.add(href)
+            sources.append({"title": re.sub(r"\\s+", " ", item["title"]).strip()[:180],
+                            "url": href[:1200],
+                            "snippet": re.sub(r"\\s+", " ", item["snippet"]).strip()[:450]})
+            if len(sources) >= 5:
+                break
+        if not sources:
+            return jsonify({"status": "unavailable", "message": "Безкоштовний пошук не повернув джерел. Не робіть припущень про характеристики.", "sources": []})
+        return jsonify({"status": "ok", "sources": sources, "classification": "unverified",
+                        "message": "Це результати стороннього пошуку, не підтверджені характеристики вашого товару. Перевірте модель і джерела вручну.",
+                        "published": False})
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return jsonify({"status": "unavailable", "message": "Безкоштовний пошук зараз недоступний. Спробуйте пізніше.", "sources": []}), 503
