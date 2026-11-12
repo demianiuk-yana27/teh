@@ -236,7 +236,7 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
                 })
             result = run_review_export(
                 sheet_id, since, until,
-                destination_spreadsheet_id="1HDuSqgb2cQpXzkxOK9GJTFQaomO4uHnNsFJzok9DjYc",
+                destination_spreadsheet_id="16BqyyMUyTNiQaibRVyd-qXzo_XdAzxCvURPfBtGoiJg",
                 login_map=login_map, progress_callback=update_shop_progress)
             message = (
                 "🧪 Тестова вигрузка (копія таблиці). "
