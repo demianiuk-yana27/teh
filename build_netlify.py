@@ -89,12 +89,12 @@ questions_html = """<section class="view" id="buyer-questions">
 <label for="buyerUrl">Посилання на товар</label><input id="buyerUrl" type="url" placeholder="https://..." style="display:block;width:100%;max-width:650px;margin:8px 0 16px;padding:10px">
 <label for="buyerFacts">Підтверджені характеристики товару</label><textarea id="buyerFacts" rows="4" placeholder="Тільки перевірені характеристики — без припущень" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
 <label for="buyerQuestion">Запитання покупця</label><textarea id="buyerQuestion" rows="3" placeholder="Вставте запитання покупця" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
-<button class="run" type="button" onclick="buyerPrepareDraft()">📝 Підготувати безпечну чернетку</button>
+<button class="run" type="button" onclick="buyerGenerateAI()">🤖 Згенерувати ШІ-відповідь</button> <button class="run" type="button" onclick="buyerPrepareDraft()" style="background:#64748b">📝 Шаблон без ШІ</button>
 <div id="buyerDraftStatus" class="status" style="white-space:pre-wrap"></div>
 <label for="buyerDraft">Відповідь менеджера (можна редагувати)</label><textarea id="buyerDraft" rows="5" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
 <button class="run" type="button" onclick="buyerSaveDraft()" style="background:#0f766e">💾 Зберегти чернетку в браузері</button>
 <button class="run" type="button" onclick="buyerCopyDraft()" style="background:#475569">📋 Копіювати відповідь</button>
-<p style="color:#64748b;font-size:13px">Автоматична генерація ШІ та відправлення через Prom стануть доступними після перевірки інтеграції. Наразі чернетка складається лише з підтверджених фактів.</p>
+<p style="color:#64748b;font-size:13px">ШІ-чернетка доступна після налаштування ключа на сервері. Автоматичне отримання характеристик та відправлення в Prom ще не підключені.</p>
 </div></section>"""
 s = s.replace('</main>', questions_html + '</main>', 1)
 questions_script = """<script>
@@ -192,6 +192,22 @@ questions_script = """<script>
  const ids=['buyerShop','buyerProduct','buyerUrl','buyerFacts','buyerQuestion','buyerDraft'];
  const key='teh-buyer-questions-draft-v1';
  function status(message){document.getElementById('buyerDraftStatus').textContent=message;}
+ window.buyerGenerateAI=async function(){
+   const question=document.getElementById('buyerQuestion').value.trim();
+   const facts=document.getElementById('buyerFacts').value.trim();
+   const product=document.getElementById('buyerProduct').value.trim();
+   if(!question || !facts){status('⚠️ Вкажіть запитання і перевірені характеристики товару.');return;}
+   status('⏳ ШІ готує чернетку…');
+   try{
+     const response=await fetch('/api/questions/ai-draft',{method:'POST',
+       headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({question,facts,product})});
+     const data=await response.json();
+     if(!response.ok || data.status!=='ok')throw Error(data.message||'Помилка генерації');
+     document.getElementById('buyerDraft').value=data.draft;
+     status('✅ ШІ-чернетка готова. Перевірте всі факти та відредагуйте перед відправленням у Prom.');
+   }catch(e){status('⚠️ '+e.message);}
+ };
  window.buyerPrepareDraft=function(){
    const facts=document.getElementById('buyerFacts').value.trim();
    const question=document.getElementById('buyerQuestion').value.trim();
