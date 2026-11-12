@@ -2284,7 +2284,31 @@ def buyer_questions_ai_draft():
             raise ValueError("empty Gemini draft")
         return jsonify({"status": "ok", "draft": draft, "published": False})
     except urllib.error.HTTPError as exc:
-        app.logger.warning("Gemini API HTTP %s", exc.code)
+        app.logger.warning("Gemini API HTTP %s for model %s", exc.code, model)
+        if exc.code == 404:
+            # Discover models visible to this key; never expose the key or raw provider error.
+            try:
+                list_req = urllib.request.Request(
+                    "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100",
+                    headers={"x-goog-api-key": key})
+                with urllib.request.urlopen(list_req, timeout=12) as response:
+                    catalog = json.load(response)
+                available = [
+                    item.get("name", "").removeprefix("models/")
+                    for item in catalog.get("models", [])
+                    if "generateContent" in item.get("supportedGenerationMethods", [])
+                ]
+                app.logger.warning("Gemini model unavailable; accessible generateContent models: %s", available[:20])
+                return jsonify({
+                    "status": "model_unavailable",
+                    "message": "Модель " + model + " недоступна для цього ключа. Доступні моделі: " +
+                               (", ".join(available[:8]) if available else "не знайдено") +
+                               ". Надішліть цей текст без API-ключа."
+                }), 502
+            except (urllib.error.URLError, TimeoutError, ValueError) as catalog_error:
+                app.logger.warning("Gemini model discovery failed: %s", type(catalog_error).__name__)
+                return jsonify({"status": "model_unavailable",
+                                "message": "Gemini повернув HTTP 404. Не вдалося отримати список доступних моделей."}), 502
         if exc.code == 429:
             return jsonify({"status": "limit", "message": "Досягнуто ліміту Gemini. Спробуйте пізніше або використайте шаблон."}), 429
         return jsonify({"status": "error", "message": "Gemini не зміг підготувати відповідь (HTTP " + str(exc.code) + "). Перевірте ключ і доступність моделі."}), 502
