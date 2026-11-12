@@ -2159,15 +2159,43 @@ def buyer_questions_shops_batch():
                         raise ValueError("Prom не повернув успішну відповідь.")
                     result = json.loads(response.read(1000000))
                 # Schema verification: refuse to invent or silently omit questions.
-                candidates = result if isinstance(result, list) else (
-                    result.get("questions") or result.get("items") or
-                    (result.get("data") or {}).get("questions")
-                    if isinstance(result, dict) and isinstance(result.get("data"), dict)
-                    else (result.get("questions") or result.get("items")) if isinstance(result, dict) else None)
+                # Prom may wrap the list in pagination/context containers.
+                # Discover only arrays of question-shaped objects, not unrelated product lists.
+                def question_list(value, depth=0):
+                    if depth > 5:
+                        return None
+                    if isinstance(value, list):
+                        if not value:
+                            return value
+                        if any(isinstance(x, dict) and
+                               "id" in x and "text" in x and "product" in x for x in value):
+                            return value
+                        return None
+                    if not isinstance(value, dict):
+                        return None
+                    for key in ("questions", "items", "results", "content", "list", "data", "context", "payload"):
+                        if key in value:
+                            found = question_list(value[key], depth + 1)
+                            if found is not None:
+                                return found
+                    for value_part in value.values():
+                        if isinstance(value_part, (dict, list)):
+                            found = question_list(value_part, depth + 1)
+                            if found is not None:
+                                return found
+                    return None
+
+                candidates = question_list(result)
                 if not isinstance(candidates, list):
                     return jsonify({"status": "schema_unknown", "company_id": str(shop.id),
-                                    "shop_name": shop.name, "top_level_keys": list(result)[:20] if isinstance(result, dict) else [],
-                                    "questions": [], "message": "Потрібно уточнити структуру відповіді Prom."})
+                                    "shop_name": shop.name,
+                                    "top_level_keys": list(result)[:20] if isinstance(result, dict) else [],
+                                    "questions": [],
+                                    "message": "Структура відповіді Prom ще не розпізнана.",
+                                    "stage": "структура JSON",
+                                    "reason": "Ключі верхнього рівня: " +
+                                              ", ".join(list(result)[:12]) if isinstance(result, dict)
+                                              else "Тип відповіді: " + type(result).__name__})
                 questions = []
                 for item in candidates:
                     if not isinstance(item, dict) or not str(item.get("id") or "").isdigit():
