@@ -133,14 +133,14 @@ questions_script = """<script>
          card.append(heading);
          const details=document.createElement('div');
          details.style.cssText='display:flex;gap:12px;align-items:center;margin-top:10px;flex-wrap:wrap';
-         if(q.product_image && /^https:\\/\\//.test(q.product_image)){
+         if(q.product_image && q.product_image.startsWith('https://')){
            const image=document.createElement('img');
            image.src=q.product_image;image.alt=q.product_name||'Фото товару';
            image.loading='lazy';image.referrerPolicy='no-referrer';
            image.style.cssText='width:76px;height:76px;object-fit:contain;border:1px solid #e2e8f0;border-radius:8px';
            details.append(image);
          }
-         if(q.product_url && /^https:\\/\\/i.test(q.product_url)){
+         if(q.product_url && q.product_url.startsWith('https://')){
            const link=document.createElement('a');
            link.href=q.product_url;link.target='_blank';link.rel='noopener noreferrer';
            link.textContent='🔗 Переглянути товар і характеристики';
