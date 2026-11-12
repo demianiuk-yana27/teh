@@ -87,14 +87,14 @@ questions_html = """<section class="view" id="buyer-questions">
 <label for="buyerShop">Магазин</label><input id="buyerShop" placeholder="Назва магазину" style="display:block;width:100%;max-width:500px;margin:8px 0 16px;padding:10px">
 <label for="buyerProduct">Назва товару</label><input id="buyerProduct" placeholder="Назва товару" style="display:block;width:100%;max-width:650px;margin:8px 0 16px;padding:10px">
 <label for="buyerUrl">Посилання на товар</label><input id="buyerUrl" type="url" placeholder="https://..." style="display:block;width:100%;max-width:650px;margin:8px 0 16px;padding:10px">
-<label for="buyerFacts">Підтверджені характеристики товару</label><textarea id="buyerFacts" rows="4" placeholder="Тільки перевірені характеристики — без припущень" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
+<label for="buyerFacts">Підтверджені характеристики товару</label><button class="run" type="button" onclick="buyerFetchFacts()" style="background:#0f766e;margin:6px 0">🔎 Знайти характеристики товару</button><div id="buyerFactsStatus" role="status" style="font-size:13px;color:#475569;margin:6px 0"></div><textarea id="buyerFacts" rows="4" placeholder="Тільки перевірені характеристики — без припущень" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
 <label for="buyerQuestion">Запитання покупця</label><textarea id="buyerQuestion" rows="3" placeholder="Вставте запитання покупця" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
 <button class="run" type="button" onclick="buyerGenerateAI()">🤖 Згенерувати ШІ-відповідь</button> <button class="run" type="button" onclick="buyerPrepareDraft()" style="background:#64748b">📝 Шаблон без ШІ</button>
 <div id="buyerDraftStatus" class="status" style="white-space:pre-wrap"></div>
 <label for="buyerDraft">Відповідь менеджера (можна редагувати)</label><textarea id="buyerDraft" rows="5" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
 <button class="run" type="button" onclick="buyerSaveDraft()" style="background:#0f766e">💾 Зберегти чернетку в браузері</button>
 <button class="run" type="button" onclick="buyerCopyDraft()" style="background:#475569">📋 Копіювати відповідь</button>
-<p style="color:#64748b;font-size:13px">ШІ-чернетка доступна після налаштування ключа на сервері. Автоматичне отримання характеристик та відправлення в Prom ще не підключені.</p>
+<p style="color:#64748b;font-size:13px">ШІ-чернетка доступна після налаштування ключа на сервері. Пошук характеристик працює для публічних сторінок Prom. Посилання на внутрішній редактор my.prom.ua/cms не читаються. Відправлення в Prom не підключене.</p>
 </div></section>"""
 s = s.replace('</main>', questions_html + '</main>', 1)
 questions_script = """<script>
@@ -160,6 +160,7 @@ questions_script = """<script>
            document.getElementById('buyerUrl').value=q.product_url||'';
            document.getElementById('buyerQuestion').value=q.text||'';
            document.getElementById('buyerFacts').value='';
+           document.getElementById('buyerFactsStatus').textContent='Якщо посилання веде на my.prom.ua/cms, відкрийте публічну сторінку товару або додайте факти вручну.';
            document.getElementById('buyerDraft').value='';
            document.getElementById('buyerDraftStatus').textContent='Додайте перевірені характеристики товару перед підготовкою чернетки.';
            document.getElementById('buyerQuestion').scrollIntoView({behavior:'smooth',block:'center'});
@@ -192,6 +193,20 @@ questions_script = """<script>
  const ids=['buyerShop','buyerProduct','buyerUrl','buyerFacts','buyerQuestion','buyerDraft'];
  const key='teh-buyer-questions-draft-v1';
  function status(message){document.getElementById('buyerDraftStatus').textContent=message;}
+ window.buyerFetchFacts=async function(){
+   const url=document.getElementById('buyerUrl').value.trim();
+   const out=document.getElementById('buyerFactsStatus');
+   if(!url){out.textContent='⚠️ Спочатку додайте посилання на товар.';return;}
+   out.textContent='⏳ Шукаємо дані на публічній сторінці Prom…';
+   try{
+     const res=await fetch('/api/questions/product-facts',{method:'POST',
+       headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+     const data=await res.json();
+     if(!res.ok || data.status!=='ok')throw Error(data.message||'Не вдалося знайти характеристики.');
+     document.getElementById('buyerFacts').value=data.facts;
+     out.textContent='✅ Дані отримано з публічної сторінки. Перевірте їх перед генерацією.';
+   }catch(e){out.textContent='⚠️ '+e.message;}
+ };
  window.buyerGenerateAI=async function(){
    const question=document.getElementById('buyerQuestion').value.trim();
    const facts=document.getElementById('buyerFacts').value.trim();
