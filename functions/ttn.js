@@ -10,7 +10,7 @@ export async function onRequest({request,env,data}){
  if(action==='process'){
   const body=await request.json().catch(()=>null);
   if(!body||!Number.isInteger(body.row)||body.row<2||!['send','bogdan','return','impossible'].includes(body.operation)||!['Яна','Наталя'].includes(body.manager))return reply({error:'Некоректні дані'},400);
-  payload={...payload,row:body.row,operation:body.operation,manager:body.manager,detail:String(body.detail||'').slice(0,1000)};
+  payload={...payload,row:body.row,operation:body.operation,manager:body.manager,detail:String(body.detail||'').slice(0,1000),type:String(body.type||'').slice(0,100)};
   if(body.operation==='impossible'&&!payload.detail.trim())return reply({error:'Вкажіть причину неможливості виконання'},400);
  }
  try{
