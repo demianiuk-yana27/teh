@@ -373,7 +373,8 @@ async function positiveLoadShared(){
  const [templates,journal]=await Promise.all([
    operationsStore('positive_templates'),operationsStore('positive_journal')
  ]);
- positiveSharedJournal=journal.items||{};positiveSharedReady=true;
+ let local={};try{local=JSON.parse(localStorage.getItem('teh-positive-journal-v1')||'{}')}catch(e){}
+ positiveSharedJournal={...(journal.items||{}),...local};positiveSharedReady=true;
  const saved=templates.items?.default;
  if(Array.isArray(saved))document.getElementById('positiveTemplates').value=saved.join('\\n');
  positiveShowJournal();
@@ -666,7 +667,10 @@ function positiveExportJournal(){
  const blob=new Blob([JSON.stringify(positiveJournalRead(),null,2)],{type:'application/json'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='positive-reply-journal.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-function positiveJournalWrite(journal){positiveSharedJournal=journal;return positiveSharedReady}
+function positiveJournalWrite(journal){
+ try{localStorage.setItem(positiveJournalKey(),JSON.stringify(journal));positiveSharedJournal=journal;return true}
+ catch(e){return false}
+}
 function positiveStopQueue(){positiveQueueStop=true;const el=document.getElementById('positiveQueueStatus');if(el)el.textContent='⏹ Зупинка запитана. Поточний запит буде завершено.'}
 async function positiveParsePublishResponse(res,startedAt){
  const type=(res.headers.get('content-type')||'').toLowerCase();
@@ -705,7 +709,7 @@ async function positiveStartQueue(){
  const names=candidates.slice(0,12).map(x=>x.shop_name+' №'+x.id).join('\\n')+(candidates.length>12?'\\n…та ще '+(candidates.length-12)+' відгуків':'');
  const confirmation=prompt('СПРАВЖНЯ ПУБЛІКАЦІЯ В PROM.\\nБуде надіслано до '+candidates.length+' відповідей:\\n'+names+'\\n\\nДля запуску введіть НАДІСЛАТИ '+candidates.length);
  if(confirmation!=='НАДІСЛАТИ '+candidates.length)return;
- try{await positiveLoadShared()}catch(e){alert('Спільний журнал недоступний: '+e.message);return}
+ // Shared Sheets may be slow or unavailable; never block Prom publishing for it.
  positiveQueueStop=false;positiveQueueRunning=true;positiveRunBusy=true;
  let sent=0;
  try{
@@ -815,7 +819,7 @@ async function positiveBuildDrafts(button){
 }
 async function positiveRestoreTemplates(){
  try{const templates=JSON.parse(localStorage.getItem('teh-positive-templates-v1')||'[]');const el=document.getElementById('positiveTemplates');if(el&&Array.isArray(templates))el.value=templates.join('\\n')}catch(e){}
- try{await positiveLoadShared()}catch(e){positiveSharedReady=false;const x=document.getElementById('positiveQueueStatus');if(x)x.textContent='⚠️ Спільний журнал недоступний: '+e.message}
+ try{await positiveLoadShared()}catch(e){positiveSharedReady=false;try{positiveSharedJournal=JSON.parse(localStorage.getItem(positiveJournalKey())||'{}')}catch(_){};positiveShowJournal()}
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',positiveRestoreTemplates);
 else positiveRestoreTemplates();
