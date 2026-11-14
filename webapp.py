@@ -1845,6 +1845,13 @@ def positive_publish_one():
                     except Exception as verify_exc:
                         verification_detail = type(verify_exc).__name__ + " під час перевірки."
                 if verified:
+                    try:
+                        _operations_data_write("positive_journal", shared_key, {
+                            "status": "verified", "comment": comment,
+                            "verified_at": datetime.utcnow().isoformat() + "Z",
+                        })
+                    except Exception:
+                        return jsonify({"status": "uncertain", "message": "Prom підтвердив коментар, але журнал не оновився. Перевірте вручну."}), 503
                     return jsonify({"status": "ok", "verified": True,
                         "company_id": company_id, "opinion_id": opinion_id,
                         "message": "Точний текст відповіді підтверджено повторним читанням Prom."})
@@ -2376,6 +2383,12 @@ def operations_store(kind):
                 "manually_absent", "preflight_failed"
             }:
                 return jsonify({"status": "error", "message": "Некоректний статус."}), 400
+            if data.get("action") == "manual_update":
+                existing = _operations_data_read(kind).get(key)
+                if not existing or value.get("status") not in ("manually_verified", "manually_absent"):
+                    return jsonify({"status": "error", "message": "Запис відсутній або статус недозволений."}), 409
+                _operations_data_write(kind, key, {**existing, **value})
+                return jsonify({"status": "ok", "inserted": False})
             inserted = _operations_data_write(kind, key, value, only_new=True)
             return jsonify({"status": "ok", "inserted": inserted})
         _operations_data_write(kind, key, value)
