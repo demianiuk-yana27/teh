@@ -247,6 +247,8 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
                 f"товари — {result['collected_product'] - result['written_product']}. "
                 f"Пропущено магазинів: {result['skipped']}; неповних перевірок: {result['incomplete']}."
             )
+            if result.get("incomplete_shops"):
+                message += " ⚠️ Неповна перевірка у магазинах: " + ", ".join(result["incomplete_shops"]) + "."
         elif process_name == "analytics":
             result = run_analytics(sheet_id)
             message = (
