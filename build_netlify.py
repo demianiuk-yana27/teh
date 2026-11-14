@@ -400,12 +400,21 @@ async function positiveImportLocalJournal(){
    const old=JSON.parse(localStorage.getItem('teh-positive-journal-v1')||'{}');
    const entries=Object.entries(old);
    if(!entries.length)return alert('Локальний журнал порожній.');
-   if(!confirm('Перенести '+entries.length+' записів? Наявні записи не перезаписуються.'))return;
-   let done=0;
-   for(const [key,value] of entries){const result=await operationsStore('positive_journal','POST',key,value);if(result.inserted)done++}
+   if(!confirm('Перенести '+entries.length+' записів пакетами? Уже перенесені записи буде пропущено.'))return;
+   let done=0,skipped=0;
+   for(let i=0;i<entries.length;i+=50){
+     const chunk=entries.slice(i,i+50).map(([key,value])=>({key,value}));
+     const response=await fetch('/api/operations/import-positive-journal',{
+       method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({entries:chunk})
+     });
+     const result=await response.json();
+     if(!response.ok||result.status!=='ok')throw Error(result.message||'Помилка Google Sheets');
+     done+=result.inserted||0;skipped+=result.skipped||0;
+   }
    await positiveLoadShared();
-   alert('Додано записів: '+done);
- }catch(e){alert('Помилка перенесення: '+e.message)}
+   alert('Готово! Додано '+done+' записів, пропущено вже наявних: '+skipped+'.');
+ }catch(e){alert('Помилка перенесення: '+e.message+'\\nУже перенесені записи збережені. Спробуйте пізніше.')}
 }
 const positiveCachePrefix='teh-positive-v2:';
 let positiveRunBusy=false;
