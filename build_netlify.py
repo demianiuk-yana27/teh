@@ -304,6 +304,7 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <div style="margin-top:18px;padding:16px;border:1px solid #dbe3ee;border-radius:12px">
 <h3>🧪 Перевірка майбутніх відповідей — без публікації</h3>
 <p style="font-size:13px;color:#64748b">Вставте ваші готові шаблони: один шаблон на рядок. Вони зберігаються лише в цьому браузері. Натисніть «Підготувати план», щоб побачити, який текст дістанеться кожному відгуку. Жодних повідомлень у Prom не надсилаємо.</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><button type="button" class="run" onclick="positiveImportLocal()">📥 Перенести шаблони з браузера</button><button type="button" class="run" onclick="positiveImportLocalJournal()">📥 Перенести журнал з браузера</button></div>
 <textarea id="positiveTemplates" rows="5" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:10px" placeholder="Один шаблон відповіді на рядок"></textarea>
 <button class="run" type="button" onclick="positiveBuildDrafts(this)" style="background:#7c3aed;margin-top:8px">📝 Підготувати план відповідей</button>
 <div style="margin:14px 0;padding:12px;border:1px solid #e2e8f0;border-radius:10px">
@@ -330,6 +331,51 @@ async function probePositiveShopSwitch(button){
   out.textContent=lines.join('\\n')+'\\nРізні магазини підтверджені: '+(data.distinct_companies?'✅ так':'⚠️ ні')+'. Тест лише читання.';
  }catch(e){out.textContent='❌ '+e.message}
  finally{button.disabled=false}
+}
+const operationsStore=async(kind,method='GET',key='',value=null)=>{
+ const opts={method,headers:{'Content-Type':'application/json'}};
+ if(method==='POST')opts.body=JSON.stringify({key,value});
+ const response=await fetch('/api/operations/store/'+kind,opts);
+ const data=await response.json();
+ if(!response.ok||data.status!=='ok')throw Error(data.message||'Спільне сховище недоступне');
+ return data;
+};
+let positiveSharedJournal={},positiveSharedReady=false;
+async function positiveLoadShared(){
+ const [templates,journal]=await Promise.all([
+   operationsStore('positive_templates'),operationsStore('positive_journal')
+ ]);
+ positiveSharedJournal=journal.items||{};positiveSharedReady=true;
+ const saved=templates.items?.default;
+ if(Array.isArray(saved))document.getElementById('positiveTemplates').value=saved.join('\\n');
+ positiveShowJournal();
+}
+async function positiveSaveSharedTemplates(){
+ const el=document.getElementById('positiveTemplates');
+ const list=el.value.split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean);
+ await operationsStore('positive_templates','POST','default',list);
+}
+async function positiveImportLocal(){
+ try{
+   const old=JSON.parse(localStorage.getItem('teh-positive-templates-v1')||'[]');
+   if(!Array.isArray(old)||!old.length)return alert('У браузері немає шаблонів для перенесення.');
+   if(!confirm('Перенести '+old.length+' шаблонів у спільне сховище?'))return;
+   await operationsStore('positive_templates','POST','default',old);
+   document.getElementById('positiveTemplates').value=old.join('\\n');
+   alert('Шаблони перенесено.');
+ }catch(e){alert('Не вдалося перенести: '+e.message)}
+}
+async function positiveImportLocalJournal(){
+ try{
+   const old=JSON.parse(localStorage.getItem('teh-positive-journal-v1')||'{}');
+   const entries=Object.entries(old);
+   if(!entries.length)return alert('Локальний журнал порожній.');
+   if(!confirm('Перенести '+entries.length+' записів? Наявні записи не перезаписуються.'))return;
+   let done=0;
+   for(const [key,value] of entries){const result=await operationsStore('positive_journal','POST',key,value);if(result.inserted)done++}
+   await positiveLoadShared();
+   alert('Додано записів: '+done);
+ }catch(e){alert('Помилка перенесення: '+e.message)}
 }
 const positiveCachePrefix='teh-positive-v2:';
 let positiveRunBusy=false;
@@ -460,9 +506,7 @@ function positiveMayPublish(key,journal){
  const entry=journal[key];
  return !entry||entry.status==='manually_absent'||entry.status==='preflight_failed';
 }
-function positiveJournalRead(){
- try{const v=JSON.parse(localStorage.getItem(positiveJournalKey())||'{}');return v&&typeof v==='object'?v:{}}catch(e){return {}}
-}
+function positiveJournalRead(){return positiveSharedJournal}
 function positiveShowJournal(){
  const target=document.getElementById('positiveJournalView');target.replaceChildren();
  const journal=positiveJournalRead(),entries=Object.entries(journal).sort((a,b)=>String(a[1].at||'').localeCompare(String(b[1].at||'')));
@@ -520,9 +564,7 @@ function positiveExportJournal(){
  const blob=new Blob([JSON.stringify(positiveJournalRead(),null,2)],{type:'application/json'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='positive-reply-journal.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-function positiveJournalWrite(journal){
- try{localStorage.setItem(positiveJournalKey(),JSON.stringify(journal));return true}catch(e){return false}
-}
+function positiveJournalWrite(journal){positiveSharedJournal=journal;return positiveSharedReady}
 function positiveStopQueue(){positiveQueueStop=true;const el=document.getElementById('positiveQueueStatus');if(el)el.textContent='⏹ Зупинка запитана. Поточний запит буде завершено.'}
 async function positiveParsePublishResponse(res,startedAt){
  const type=(res.headers.get('content-type')||'').toLowerCase();
@@ -561,6 +603,7 @@ async function positiveStartQueue(){
  const names=candidates.slice(0,12).map(x=>x.shop_name+' №'+x.id).join('\\n')+(candidates.length>12?'\\n…та ще '+(candidates.length-12)+' відгуків':'');
  const confirmation=prompt('СПРАВЖНЯ ПУБЛІКАЦІЯ В PROM.\\nБуде надіслано до '+candidates.length+' відповідей:\\n'+names+'\\n\\nДля запуску введіть НАДІСЛАТИ '+candidates.length);
  if(confirmation!=='НАДІСЛАТИ '+candidates.length)return;
+ if(!positiveSharedReady){alert('Спільний журнал недоступний. Публікацію заблоковано.');return}
  positiveQueueStop=false;positiveQueueRunning=true;positiveRunBusy=true;
  let sent=0;
  try{
@@ -588,15 +631,15 @@ async function positiveStartQueue(){
     break}
    if(!positiveQueueStop&&sent<candidates.length)await new Promise(resolve=>setTimeout(resolve,2000));
   }
- }finally{positiveQueueRunning=false;positiveRunBusy=false;positiveRender(day);out.textContent+=' Журнал спроб збережено в браузері.'}
+ }finally{positiveQueueRunning=false;positiveRunBusy=false;positiveRender(day);out.textContent+=' Перевірте спільний журнал після оновлення.'}
 }
-function positiveBuildDrafts(button){
+async function positiveBuildDrafts(button){
  const day=document.getElementById('positiveDay').value, status=document.getElementById('positiveDraftStatus');
  const target=document.getElementById('positiveDraftList');target.replaceChildren();
  if(!day){status.textContent='❌ Спочатку виберіть дату.';return}
  const templates=document.getElementById('positiveTemplates').value.split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean);
  if(!templates.length){status.textContent='❌ Додайте хоча б один шаблон відповіді.';return}
- try{localStorage.setItem('teh-positive-templates-v1',JSON.stringify(templates))}catch(e){}
+ try{await positiveSaveSharedTemplates()}catch(e){status.textContent='❌ Шаблони не збережені у спільному сховищі: '+e.message;return}
  const state=positiveRead(day), shops=Object.values(state.shops);
  const failed=shops.filter(x=>!x.complete||x.error);
  if(!shops.length){status.textContent='❌ Спочатку зберіть відгуки.';return}
@@ -668,8 +711,9 @@ function positiveBuildDrafts(button){
  }
  target.append(fragment);
 }
-function positiveRestoreTemplates(){
+async function positiveRestoreTemplates(){
  try{const templates=JSON.parse(localStorage.getItem('teh-positive-templates-v1')||'[]');const el=document.getElementById('positiveTemplates');if(el&&Array.isArray(templates))el.value=templates.join('\\n')}catch(e){}
+ try{await positiveLoadShared()}catch(e){positiveSharedReady=false;const x=document.getElementById('positiveQueueStatus');if(x)x.textContent='⚠️ Спільний журнал недоступний: '+e.message}
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',positiveRestoreTemplates);
 else positiveRestoreTemplates();
