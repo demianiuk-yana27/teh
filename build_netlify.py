@@ -541,7 +541,7 @@ async function loadPositivePreview(button,retryOnly=false){
  if(positiveRunBusy)return;
  positiveRunBusy=true;
  const controls=document.querySelectorAll('#positive-reviews button.run');controls.forEach(b=>b.disabled=true);
- let state=positiveRead(day),expectedTotal=null;
+ let state=positiveRead(day),expectedTotal=null,collectionError=null;
  try{
   if(retryOnly){
    const failed=Object.values(state.shops).filter(x=>!x.complete||x.error);
@@ -552,7 +552,7 @@ async function loadPositivePreview(button,retryOnly=false){
     try{
      const batch=await positiveFetchShop(day,0,shop.company_id);
      const result=batch.shops[0];
-     if(result&&String(result.company_id)===String(shop.company_id)){state.shops[shop.company_id]=result;positiveSave(day,state);await positiveSyncDay(day,state)}
+     if(result&&String(result.company_id)===String(shop.company_id)){state.shops[shop.company_id]=result;positiveSave(day,state)}
     }catch(e){state.shops[shop.company_id]={...shop,complete:false,error:e.message};positiveSave(day,state)}
     positiveRender(day);
    }
@@ -572,13 +572,11 @@ async function loadPositivePreview(button,retryOnly=false){
      }
     }
     positiveSave(day,state);
-    try{await positiveSyncDay(day,state)}
-    catch(e){out.textContent='⚠️ Не вдалося синхронізувати результати: '+e.message+'; локальна копія збережена.'}
     offset=batch.next_offset;
    }
   }
- }catch(e){out.textContent='❌ '+e.message+'; попередні результати збережені.'}
- finally{positiveRunBusy=false;controls.forEach(b=>b.disabled=false);positiveRender(day);if(expectedTotal!==null){const checked=Object.keys(positiveRead(day).shops||{}).length;if(checked<expectedTotal)out.textContent+=' ⚠️ Перевірено '+checked+' із '+expectedTotal+' активних магазинів. Натисніть «Зібрати з усіх магазинів» ще раз.';else out.textContent+=' Перевірено магазинів: '+checked+' із '+expectedTotal+'.'}}
+  }catch(e){collectionError=e;out.textContent='❌ '+e.message+'; попередні результати збережені.'}
+ finally{positiveRunBusy=false;controls.forEach(b=>b.disabled=false);positiveRender(day);if(expectedTotal!==null){const checked=Object.keys(positiveRead(day).shops||{}).length;if(checked<expectedTotal)out.textContent+=' ⚠️ Перевірено '+checked+' із '+expectedTotal+' активних магазинів. Збір перервано; збережені магазини не втрачено.';else out.textContent+=' Перевірено магазинів: '+checked+' із '+expectedTotal+'.'}}
 }
 async function refreshPositivePreview(button){
  const day=document.getElementById('positiveDay').value;
