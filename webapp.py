@@ -2237,6 +2237,75 @@ def buyer_questions_shops_batch():
         return jsonify({"status": "error", "message": "Не вдалося отримати запитання."}), 500
 
 
+# Shared buyer-question state in the existing Google spreadsheet (not Render's ephemeral disk).
+_buyer_store_lock = threading.RLock()
+_BUYER_TEMPLATES_TAB = "Шаблони запитань"
+_BUYER_RESULTS_TAB = "Відправлення запитань"
+
+
+def _buyer_sheet(tab_name, headers):
+    from negative_reviews import get_client
+    book = get_client().open_by_key(_sheet_id())
+    try:
+        return book.worksheet(tab_name)
+    except __import__("gspread").exceptions.WorksheetNotFound:
+        sheet = book.add_worksheet(title=tab_name, rows=2000, cols=len(headers))
+        sheet.update("A1", [headers])
+        return sheet
+
+
+def _buyer_store_snapshot():
+    with _buyer_store_lock:
+        templates_sheet = _buyer_sheet(_BUYER_TEMPLATES_TAB, ["Назва", "Текст"])
+        results_sheet = _buyer_sheet(_BUYER_RESULTS_TAB, ["Ключ", "Статус", "ID коментаря", "Повідомлення", "Дата"])
+        templates = {row[0]: row[1] for row in templates_sheet.get_all_values()[1:] if len(row) >= 2 and row[0]}
+        results = {}
+        for row in results_sheet.get_all_values()[1:]:
+            if len(row) >= 2 and row[0]:
+                results[row[0]] = {"status": row[1], "comment_id": row[2] if len(row) > 2 else "",
+                                   "message": row[3] if len(row) > 3 else ""}
+        return templates, results
+
+
+def _buyer_result_set(key, status, comment_id="", message=""):
+    with _buyer_store_lock:
+        sh = _buyer_sheet(_BUYER_RESULTS_TAB, ["Ключ", "Статус", "ID коментаря", "Повідомлення", "Дата"])
+        keys = sh.col_values(1)
+        row = keys.index(key) + 1 if key in keys else len(keys) + 1
+        sh.update(f"A{row}:E{row}", [[key, status, str(comment_id), message,
+                                      datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")]])
+
+
+@app.route("/questions/store", methods=["GET", "POST"])
+def buyer_questions_store():
+    try:
+        if request.method == "GET":
+            templates, results = _buyer_store_snapshot()
+            return jsonify({"status": "ok", "templates": templates, "results": results})
+        data = request.get_json(silent=True) or {}
+        name = str(data.get("name") or "").strip()
+        if not name or len(name) > 100:
+            return jsonify({"status": "error", "message": "Некоректна назва шаблону."}), 400
+        action = data.get("action")
+        if action not in ("save_template", "delete_template"):
+            return jsonify({"status": "error", "message": "Невідома дія."}), 400
+        content = str(data.get("text") or "").strip()
+        if action == "save_template" and (not content or len(content) > 3000):
+            return jsonify({"status": "error", "message": "Текст шаблону має містити 1–3000 символів."}), 400
+        with _buyer_store_lock:
+            sh = _buyer_sheet(_BUYER_TEMPLATES_TAB, ["Назва", "Текст"])
+            names = sh.col_values(1)
+            row = names.index(name) + 1 if name in names else len(names) + 1
+            if action == "delete_template":
+                if name in names and row > 1:
+                    sh.delete_rows(row)
+            else:
+                sh.update(f"A{row}:B{row}", [[name, content]])
+        return jsonify({"status": "ok"})
+    except Exception:
+        return jsonify({"status": "error", "message": "Не вдалося звернутися до спільного сховища Google Sheets."}), 503
+
+
 @app.route("/questions/send-one", methods=["POST"])
 def buyer_questions_send_one():
     """Explicitly confirmed, single-comment Prom submission; fail closed on uncertainty."""
@@ -2254,6 +2323,13 @@ def buyer_questions_send_one():
         return jsonify({"status": "error", "message": "Некоректний магазин, запитання або відповідь."}), 400
     if data.get("confirmed") is not True:
         return jsonify({"status": "error", "message": "Потрібне підтвердження відправлення."}), 400
+    storage_key = company + ":" + thread
+    try:
+        _, existing = _buyer_store_snapshot()
+        if storage_key in existing:
+            return jsonify({"status": "review", "message": "У спільному журналі вже є спроба відправлення. Перевірте Prom перед повтором."}), 409
+    except Exception:
+        return jsonify({"status": "error", "message": "Спільне сховище недоступне. Відправлення заблоковано."}), 503
     try:
         shops = {str(shop.id): shop for shop in load_active_shops(_sheet_id())}
         if company not in shops:
@@ -2324,6 +2400,15 @@ def buyer_questions_send_one():
                 q = find_question(context)
                 if not q or q.get("canBeCommented") is not True or int(q.get("commentsCount") or 0) > 0:
                     return jsonify({"status": "review", "message": "Запитання не знайдено серед очікуваних або вже має коментар. Нічого не відправлено."}), 409
+                # Persist an uncertain attempt before POST; never risk silent duplicates.
+                try:
+                    with _buyer_store_lock:
+                        _, current = _buyer_store_snapshot()
+                        if storage_key in current:
+                            return jsonify({"status": "review", "message": "Запитання вже є у спільному журналі."}), 409
+                        _buyer_result_set(storage_key, "review", message="Спробу розпочато; перевірте Prom.")
+                except Exception:
+                    return jsonify({"status": "error", "message": "Не вдалося записати спробу у сховище."}), 503
                 payload = json.dumps({"threadId": int(thread), "comment": answer}, ensure_ascii=False).encode("utf-8")
                 post_headers = dict(headers)
                 post_headers["Content-Type"] = "application/json"
@@ -2346,6 +2431,10 @@ def buyer_questions_send_one():
                 except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
                     return jsonify({"status": "review", "message": "Результат публікації невідомий. Перевірте відповідь у Prom перед повтором."}), 409
                 if result.get("status") == "ok" and str((result.get("comment") or {}).get("id") or "").isdigit():
+                    try:
+                        _buyer_result_set(storage_key, "sent", str(result["comment"]["id"]))
+                    except Exception:
+                        return jsonify({"status": "review", "message": "Prom підтвердив відповідь, але запис у журналі не вдався. Перевірте Prom."}), 409
                     return jsonify({"status": "sent", "comment_id": str(result["comment"]["id"])})
                 return jsonify({"status": "review", "message": "Prom не підтвердив публікацію. Перевірте вручну перед повтором."}), 409
             except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
