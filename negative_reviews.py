@@ -77,8 +77,9 @@ def load_active_shops(spreadsheet_id, worksheet_name="Список магази�
     sheet = get_client().open_by_key(spreadsheet_id).worksheet(worksheet_name)
     rows = sheet.get("A:D")
     shops = []
-    for row in rows[1:]:
+    for row in rows:
         padded = row + [""] * (4 - len(row))
+        # Header rows are naturally ignored because column C is not TRUE.
         if str(padded[2]).strip().upper() != "TRUE":
             continue
         name = str(padded[0]).strip()
