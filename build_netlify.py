@@ -159,6 +159,25 @@ questions_script = """<script>
      area.value=String(drafts[id]||'');
      area.addEventListener('input',()=>{drafts[id]=area.value;persist(DRAFTS,drafts);count()});
      card.append(area,templatePicker(q,area),button('💾 Створити шаблон із відповіді',()=>saveTemplate(area)));
+     const send=button('📤 Відправити цю відповідь (тест)',async()=>{
+       const answer=area.value.trim();
+       if(!answer)return alert('Напишіть відповідь.');
+       if(q.can_comment===false)return alert('Prom не дозволяє коментувати це запитання.');
+       if(!confirm('УВАГА: відповідь буде РЕАЛЬНО опублікована в Prom.\\n\\nМагазин: '+q.shop_name+'\\nТовар: '+q.product_name+'\\nЗапитання: '+q.text+'\\n\\nВідповідь: '+answer+'\\n\\nПідтверджуєте?'))return;
+       send.disabled=true;state.textContent='⏳ Відправляємо…';
+       try{
+         const res=await fetch('/api/questions/send-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:q.company_id,thread_id:q.id,comment:answer,confirmed:true})});
+         const result=await res.json();
+         if(result.status==='sent'){
+           state.textContent='✅ Опубліковано в Prom. ID коментаря: '+result.comment_id;
+           send.textContent='✅ Відправлено';delete drafts[id];persist(DRAFTS,drafts);count();
+         }else{
+           state.textContent='⚠️ '+(result.message||'Не вдалося підтвердити публікацію. Перевірте в Prom.');
+           if(result.status==='error')send.disabled=false;
+         }
+       }catch(e){state.textContent='⚠️ Невідомий результат. Перевірте Prom перед повтором.'}
+     });
+     card.append(send);
      const state=node('small',q.can_comment===false?'⚠️ Prom не дозволяє коментувати це запитання.':'Чернетка зберігається локально. Не відправлено.');
      state.style.cssText='display:block;color:#64748b;margin-top:6px';card.append(state);box.append(card);
    }
