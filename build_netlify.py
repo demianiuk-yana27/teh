@@ -78,7 +78,7 @@ questions_html = """<section class="view" id="buyer-questions">
 <div class="pagehead"><div class="pageicon">💬</div><div><h2>Запитання покупців</h2><p>Зібрати запитання, підготувати всі відповіді та зберегти шаблони</p></div></div>
 <div class="card" style="max-width:1080px">
 <h3>Запитання з усіх магазинів</h3>
-<p style="color:#64748b">Менеджер самостійно пише відповіді. ШІ вимкнено. Чернетки зберігаються в цьому браузері; до Prom нічого не надсилається без окремого підтвердження.</p>
+<p style="color:#64748b">Менеджер самостійно пише відповіді. ШІ вимкнено. Чернетки поки зберігаються в цьому браузері; шаблони та результати відправлення — у спільному сховищі Google Sheets.</p>
 <button class="run" type="button" id="buyerLoadBtn" onclick="buyerLoadQuestions()">🔄 Зібрати запитання</button>
 <div id="buyerQuestionsStatus" role="status" style="margin:12px 0;white-space:pre-wrap"></div>
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0">
@@ -87,7 +87,7 @@ questions_html = """<section class="view" id="buyer-questions">
 </div>
 <div id="buyerSendStatus" role="status" style="margin:10px 0;white-space:pre-wrap"></div><div id="buyerQuestionsList" style="display:grid;gap:12px;margin:12px 0 24px"></div>
 <h3>📋 Шаблони відповідей</h3>
-<p style="color:#64748b;font-size:13px">Шаблон можна створити з написаної відповіді. Він зберігається лише в поточному браузері.</p>
+<p style="color:#64748b;font-size:13px">Шаблони зберігаються у спільній Google Таблиці та доступні всім менеджерам.</p>
 <div id="buyerTemplatesList" style="display:grid;gap:8px"></div>
 </div></section>"""
 s = s.replace('</main>', questions_html + '</main>', 1)
@@ -96,7 +96,19 @@ questions_script = """<script>
  const DRAFTS='teh-buyer-drafts-v2',TEMPLATES='teh-buyer-templates-v2',RESULTS='teh-buyer-send-results-v1';
  let questions=[],failures=0,loading=false,sending=false,stopRequested=false;
  function read(key){try{const v=JSON.parse(localStorage.getItem(key)||'{}');return v&&typeof v==='object'?v:{}}catch(e){return {}}}
- let drafts=read(DRAFTS),templates=read(TEMPLATES),results=read(RESULTS);
+ let drafts=read(DRAFTS),templates={},results={},storeReady=false;
+ async function loadStore(){
+   const res=await fetch('/api/questions/store',{cache:'no-store'});
+   const data=await res.json();
+   if(!res.ok||data.status!=='ok')throw Error(data.message||'Спільне сховище недоступне');
+   templates=data.templates||{};results=data.results||{};storeReady=true;
+   renderTemplates();renderQuestions();
+ }
+ async function saveStore(action,name,text){
+   const res=await fetch('/api/questions/store',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,name,text})});
+   const data=await res.json();
+   if(!res.ok||data.status!=='ok')throw Error(data.message||'Не вдалося зберегти у сховищі');
+ }
  function persist(key,data){try{localStorage.setItem(key,JSON.stringify(data));return true}catch(e){alert('Не вдалося зберегти дані в браузері.');return false}}
  const el=id=>document.getElementById(id);
  function node(tag,text){const x=document.createElement(tag);if(text!==undefined)x.textContent=text;return x}
@@ -117,15 +129,16 @@ questions_script = """<script>
    });
    return sel;
  }
- function saveTemplate(area){
+ async function saveTemplate(area){
    const content=area.value.trim();
    if(!content)return alert('Спочатку напишіть відповідь.');
    const name=prompt('Назва нового шаблону:');
    if(!name||!name.trim())return;
    const title=name.trim().slice(0,100);
    if(templates[title]&&!confirm('Перезаписати шаблон «'+title+'»?'))return;
-   templates[title]=content;
-   if(persist(TEMPLATES,templates))renderTemplates();
+   if(!storeReady)return alert('Спільне сховище недоступне.');
+   try{await saveStore('save_template',title,content);templates[title]=content;renderTemplates();renderQuestions()}
+   catch(e){alert('Не збережено: '+e.message)}
  }
  function renderTemplates(){
    const box=el('buyerTemplatesList');box.replaceChildren();
@@ -134,7 +147,10 @@ questions_script = """<script>
    for(const name of names){
      const item=node('div');item.style.cssText='padding:10px;border:1px solid #dbe5f1;border-radius:8px';
      item.append(node('strong',name),node('p',templates[name]));
-     item.append(button('🗑 Видалити',()=>{if(confirm('Видалити шаблон «'+name+'»?')){delete templates[name];persist(TEMPLATES,templates);renderTemplates();renderQuestions()}}));
+     item.append(button('🗑 Видалити',async()=>{if(!confirm('Видалити шаблон «'+name+'»?'))return;
+       try{await saveStore('delete_template',name,'');delete templates[name];renderTemplates();renderQuestions()}
+       catch(e){alert('Не вдалося видалити: '+e.message)}
+     }));
      box.append(item);
    }
  }
@@ -162,21 +178,22 @@ questions_script = """<script>
      const send=button('📤 Відправити цю відповідь',async()=>{
        const answer=area.value.trim();
        if(!answer)return alert('Напишіть відповідь.');
+       if(!storeReady)return alert('Спільне сховище недоступне.');
        if(results[id])return alert('Для цього запитання вже є запис про відправлення або невизначений результат. Перевірте його в Prom.');
        if(q.can_comment===false)return alert('Prom не дозволяє коментувати це запитання.');
        if(!confirm('УВАГА: відповідь буде РЕАЛЬНО опублікована в Prom.\\n\\nМагазин: '+q.shop_name+'\\nТовар: '+q.product_name+'\\nЗапитання: '+q.text+'\\n\\nВідповідь: '+answer+'\\n\\nПідтверджуєте?'))return;
        send.disabled=true;state.textContent='⏳ Відправляємо…';
-       results[id]={status:'review',message:'Спроба розпочата; перевірте Prom перед повтором.'};persist(RESULTS,results);
+       results[id]={status:'review',message:'Спроба розпочата; перевірте Prom перед повтором.'};
        try{
          const res=await fetch('/api/questions/send-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:q.company_id,thread_id:q.id,comment:answer,confirmed:true})});
          const result=await res.json();
          if(result.status==='sent'){
            state.textContent='✅ Опубліковано в Prom. ID коментаря: '+result.comment_id;
-           results[id]={status:'sent',comment_id:result.comment_id};persist(RESULTS,results);
+           results[id]={status:'sent',comment_id:result.comment_id};
            send.textContent='✅ Відправлено';delete drafts[id];persist(DRAFTS,drafts);count();
          }else{
            state.textContent='⚠️ '+(result.message||'Не вдалося підтвердити публікацію. Перевірте в Prom.');
-           results[id]={status:'review',message:result.message||'Перевірте Prom'};persist(RESULTS,results);count();
+           results[id]={status:'review',message:result.message||'Перевірте Prom'};count();
          }
        }catch(e){state.textContent='⚠️ Невідомий результат. Перевірте Prom перед повтором.';count()}
      });
@@ -215,6 +232,7 @@ questions_script = """<script>
  window.buyerStopSending=function(){stopRequested=true;el('buyerSendStatus').textContent='⏹ Зупинка після поточної відповіді…';};
  window.buyerSendAll=async function(){
    if(sending||loading)return;
+   try{await loadStore()}catch(e){return alert('Спільне сховище недоступне: '+e.message)}
    const ready=questions.filter(q=>String(drafts[key(q)]||'').trim()&&!results[key(q)]&&q.can_comment!==false);
    if(!ready.length)return alert('Немає підготовлених відповідей для відправлення. Запитання з невизначеним результатом потрібно перевірити в Prom.');
    const preview=ready.slice(0,8).map(q=>'• '+q.shop_name+': '+q.text.slice(0,90)).join('\\n');
@@ -229,24 +247,27 @@ questions_script = """<script>
        const id=key(q),answer=String(drafts[id]||'').trim();
        if(!answer||results[id])continue;
        results[id]={status:'review',message:'Відправлення розпочато. Якщо сторінку закрито, перевірте Prom.'};
-       if(!persist(RESULTS,results)){stopRequested=true;break;}
+       // Server records the attempt before posting to Prom.
        status.textContent='⏳ Опрацьовано '+(sent+failed)+' із '+ready.length+'; успішно: '+sent+'; перевірити: '+failed+'. Зараз: '+q.shop_name;
        try{
          const response=await fetch('/api/questions/send-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:q.company_id,thread_id:q.id,comment:answer,confirmed:true})});
          const data=await response.json();
          if(data.status==='sent'&&data.comment_id){
            results[id]={status:'sent',comment_id:data.comment_id};
-           persist(RESULTS,results);delete drafts[id];persist(DRAFTS,drafts);sent++;
+           delete drafts[id];persist(DRAFTS,drafts);sent++;
          }else{
            results[id]={status:'review',message:data.message||'Невідомий результат'};
-           persist(RESULTS,results);failed++;stopRequested=true;
+           failed++;stopRequested=true;
          }
-       }catch(e){results[id]={status:'review',message:'Можливо, запит надіслано. Перевірте Prom перед повтором.'};persist(RESULTS,results);failed++;stopRequested=true;}
+       }catch(e){results[id]={status:'review',message:'Можливо, запит надіслано. Перевірте Prom перед повтором.'};failed++;stopRequested=true;}
        renderQuestions();
      }
      status.textContent='🏁 Успішно: '+sent+'; потребують перевірки: '+failed+'. '+(stopRequested?'Чергу зупинено.':'Чергу завершено.')+' Повторно невизначені запити автоматично не надсилаються.';
    }finally{sending=false;sendBtn.disabled=false;stopBtn.disabled=true;el('buyerLoadBtn').disabled=false;renderQuestions();}
  };
+ loadStore().catch(e=>{
+   storeReady=false;el('buyerSendStatus').textContent='⚠️ Спільне сховище недоступне: '+e.message;
+ });
  renderTemplates();count();
 })();
 </script>"""
