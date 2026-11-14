@@ -214,6 +214,23 @@ def _sheet_id():
     return value
 
 
+# Separate workbook for operational shop filters and buyer-question storage.
+_OPERATIONS_SHEET_DEFAULT = "1B8aq-wNhaCoDAGm_nbOu36GNQp8y0ovAkYoO7pjvxMA"
+_NEGATIVE_SHOPS_TAB = "Негативні відгуки"
+_POSITIVE_SHOPS_TAB = "Позитивні відгуки"
+_QUESTION_SHOPS_TAB = "Питання покупців"
+
+
+def _operations_sheet_id():
+    import os
+    return (os.environ.get("OPERATIONS_SHEET_ID") or _OPERATIONS_SHEET_DEFAULT).strip()
+
+
+def _operational_shops(tab_name):
+    from negative_reviews import load_active_shops
+    return load_active_shops(_operations_sheet_id(), tab_name)
+
+
 def _negative_worker(process_name, sheet_id, since, until, run_id):
     global negative_status
     try:
@@ -235,9 +252,10 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
                     "run_id": run_id,
                 })
             result = run_review_export(
-                sheet_id, since, until,
+                _operations_sheet_id(), since, until,
                 destination_spreadsheet_id="16BqyyMUyTNiQaibRVyd-qXzo_XdAzxCvURPfBtGoiJg",
-                login_map=login_map, progress_callback=update_shop_progress)
+                login_map=login_map, progress_callback=update_shop_progress,
+                shop_worksheet=_NEGATIVE_SHOPS_TAB)
             message = (
                 "✅ Результат вигрузки. "
                 f"Знайдено: компанія — {result['collected_company']}, товари — {result['collected_product']}; "
@@ -1430,7 +1448,7 @@ def positive_shops_batch():
         return jsonify({"status": "error", "message": "Некоректний offset."}), 400
     try:
         # Re-read TRUE/FALSE for every batch, so disabled shops are never collected.
-        active = load_active_shops(_sheet_id())
+        active = _operational_shops(_POSITIVE_SHOPS_TAB)
         unique = {}
         for shop in active:
             unique.setdefault(str(shop.id), shop)
@@ -1636,7 +1654,7 @@ def positive_publish_one():
     try:
         if key in _positive_publish_attempts and not retry_absent:
             return jsonify({"status": "error", "message": "Цей відгук уже мав спробу публікації. Повтор дозволений лише після ручної перевірки відсутності відповіді."}), 409
-        active = {str(shop.id) for shop in load_active_shops(_sheet_id())}
+        active = {str(shop.id) for shop in _operational_shops(_POSITIVE_SHOPS_TAB)}
         if company_id not in active:
             return jsonify({"status": "error", "message": "Магазин вимкнений у Google Sheets."}), 403
         accounts = _positive_login_map().get(company_id) or []
@@ -2100,7 +2118,7 @@ def buyer_questions_shops_batch():
     if not 0 <= offset <= 1000 or not 1 <= page <= 50:
         return jsonify({"status": "error", "message": "Перевищено ліміт сторінок."}), 400
     try:
-        shops = list({str(x.id): x for x in load_active_shops(_sheet_id())}.values())
+        shops = list({str(x.id): x for x in _operational_shops(_QUESTION_SHOPS_TAB)}.values())
         if offset >= len(shops):
             return jsonify({"status": "ok", "done": True, "total_shops": len(shops), "questions": []})
         shop = shops[offset]
@@ -2245,7 +2263,7 @@ _BUYER_RESULTS_TAB = "Відправлення запитань"
 
 def _buyer_sheet(tab_name, headers):
     from negative_reviews import get_client
-    book = get_client().open_by_key(_sheet_id())
+    book = get_client().open_by_key(_operations_sheet_id())
     try:
         return book.worksheet(tab_name)
     except __import__("gspread").exceptions.WorksheetNotFound:
@@ -2331,7 +2349,7 @@ def buyer_questions_send_one():
     except Exception:
         return jsonify({"status": "error", "message": "Спільне сховище недоступне. Відправлення заблоковано."}), 503
     try:
-        shops = {str(shop.id): shop for shop in load_active_shops(_sheet_id())}
+        shops = {str(shop.id): shop for shop in _operational_shops(_QUESTION_SHOPS_TAB)}
         if company not in shops:
             return jsonify({"status": "error", "message": "Магазин неактивний."}), 403
         accounts = _positive_login_map().get(company, [])
@@ -2656,7 +2674,7 @@ def buyer_questions_product_context():
     if not company_id.isdigit() or not product_id.isdigit() or len(company_id) > 12 or len(product_id) > 15:
         return jsonify({"status": "error", "message": "Оберіть запитання з переліку магазину."}), 400
     try:
-        shops = {str(shop.id): shop for shop in load_active_shops(_sheet_id())}
+        shops = {str(shop.id): shop for shop in _operational_shops(_QUESTION_SHOPS_TAB)}
         if company_id not in shops:
             return jsonify({"status": "error", "message": "Магазин неактивний."}), 403
         accounts = _positive_login_map().get(company_id, [])
