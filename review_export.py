@@ -294,7 +294,7 @@ def _write_reviews(book, sheet_name, reviews, separated_sheets=None):
     return len(fresh)
 
 
-def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_id=None, login_map=None, progress_callback=None):
+def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_id=None, login_map=None, progress_callback=None, shop_worksheet="Список магазинів"):
     if not parse_date(since):
         raise ValueError("Некоректна дата початку вигрузки відгуків.")
     if until and not parse_date(until):
@@ -305,7 +305,7 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
     # isolated destination workbook while testing negative review exports.
     book = client.open_by_key(destination_spreadsheet_id or spreadsheet_id)
     sheet_names = {kind: _sheet_name(book, kind) for kind in REVIEW_URLS}
-    shops = load_active_shops(spreadsheet_id)
+    shops = load_active_shops(spreadsheet_id, shop_worksheet)
     from negative_review_api import collect_shop
     if not login_map:
         raise RuntimeError("Немає підтвердженої карти sign-to для магазинів.")
