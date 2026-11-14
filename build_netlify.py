@@ -575,8 +575,10 @@ async function loadPositivePreview(button,retryOnly=false){
     offset=batch.next_offset;
    }
   }
-  }catch(e){collectionError=e;out.textContent='❌ '+e.message+'; попередні результати збережені.'}
- finally{positiveRunBusy=false;controls.forEach(b=>b.disabled=false);positiveRender(day);if(expectedTotal!==null){const checked=Object.keys(positiveRead(day).shops||{}).length;if(checked<expectedTotal)out.textContent+=' ⚠️ Перевірено '+checked+' із '+expectedTotal+' активних магазинів. Збір перервано; збережені магазини не втрачено.';else out.textContent+=' Перевірено магазинів: '+checked+' із '+expectedTotal+'.'}}
+ }catch(e){collectionError=e;out.textContent='❌ '+e.message+'; попередні результати збережені.'}
+ finally{positiveRunBusy=false;controls.forEach(b=>b.disabled=false);positiveRender(day);if(expectedTotal!==null){const checked=Object.keys(positiveRead(day).shops||{}).length;if(checked<expectedTotal)out.textContent+=' ⚠️ Перевірено '+checked+' із '+expectedTotal+' активних магазинів. Збір перервано; збережені магазини не втрачено.';else out.textContent+=' Перевірено магазинів: '+checked+' із '+expectedTotal+'.'}
+ if(!collectionError){positiveSyncDay(day,state).catch(e=>{const el=document.getElementById('positiveStatus');if(el)el.textContent+=' ⚠️ Спільне сховище: '+e.message+' (локальна копія збережена).';});}
+ }
 }
 async function refreshPositivePreview(button){
  const day=document.getElementById('positiveDay').value;
