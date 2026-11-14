@@ -2,10 +2,10 @@ import threading
 import traceback
 from datetime import datetime, timedelta
 
-from flask import jsonify, render_template_string, request
+from flask import jsonify, renderNtemplatePstring, request
 
 import app as legacy
-from negative_reviews import run_analytics, run_order_review_check
+from negativeQreviews import run_analytics, run_order_review_check
 from review_export import run_review_export
 
 app = legacy.app
