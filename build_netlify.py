@@ -83,9 +83,9 @@ questions_html = """<section class="view" id="buyer-questions">
 <div id="buyerQuestionsStatus" role="status" style="margin:12px 0;white-space:pre-wrap"></div>
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0">
 <strong id="buyerDraftCounter">Підготовлено 0 із 0</strong>
-<button class="run" type="button" onclick="buyerSendAll()" style="background:#0f766e">📤 Відправити всі підготовлені</button>
+<button class="run" id="buyerSendAllBtn" type="button" onclick="buyerSendAll()" style="background:#0f766e">📤 Відправити всі підготовлені</button><button class="run" id="buyerStopBtn" type="button" onclick="buyerStopSending()" style="background:#64748b" disabled>⏹ Зупинити після поточного</button>
 </div>
-<div id="buyerQuestionsList" style="display:grid;gap:12px;margin:12px 0 24px"></div>
+<div id="buyerSendStatus" role="status" style="margin:10px 0;white-space:pre-wrap"></div><div id="buyerQuestionsList" style="display:grid;gap:12px;margin:12px 0 24px"></div>
 <h3>📋 Шаблони відповідей</h3>
 <p style="color:#64748b;font-size:13px">Шаблон можна створити з написаної відповіді. Він зберігається лише в поточному браузері.</p>
 <div id="buyerTemplatesList" style="display:grid;gap:8px"></div>
@@ -93,17 +93,17 @@ questions_html = """<section class="view" id="buyer-questions">
 s = s.replace('</main>', questions_html + '</main>', 1)
 questions_script = """<script>
 (function(){
- const DRAFTS='teh-buyer-drafts-v2',TEMPLATES='teh-buyer-templates-v2';
- let questions=[],failures=0,loading=false;
+ const DRAFTS='teh-buyer-drafts-v2',TEMPLATES='teh-buyer-templates-v2',RESULTS='teh-buyer-send-results-v1';
+ let questions=[],failures=0,loading=false,sending=false,stopRequested=false;
  function read(key){try{const v=JSON.parse(localStorage.getItem(key)||'{}');return v&&typeof v==='object'?v:{}}catch(e){return {}}}
- let drafts=read(DRAFTS),templates=read(TEMPLATES);
+ let drafts=read(DRAFTS),templates=read(TEMPLATES),results=read(RESULTS);
  function persist(key,data){try{localStorage.setItem(key,JSON.stringify(data));return true}catch(e){alert('Не вдалося зберегти дані в браузері.');return false}}
  const el=id=>document.getElementById(id);
  function node(tag,text){const x=document.createElement(tag);if(text!==undefined)x.textContent=text;return x}
  function button(text,fn){const b=node('button',text);b.type='button';b.style.cssText='padding:8px 12px;margin:4px 6px 4px 0;border-radius:8px;cursor:pointer';b.addEventListener('click',fn);return b}
  function key(q){return String(q.company_id)+':'+String(q.id)}
  function count(){
-   const ready=questions.filter(q=>String(drafts[key(q)]||'').trim()).length;
+   const ready=questions.filter(q=>String(drafts[key(q)]||'').trim()&&!results[key(q)]).length;
    el('buyerDraftCounter').textContent='Підготовлено '+ready+' із '+questions.length;
  }
  function templatePicker(q,area){
@@ -159,26 +159,31 @@ questions_script = """<script>
      area.value=String(drafts[id]||'');
      area.addEventListener('input',()=>{drafts[id]=area.value;persist(DRAFTS,drafts);count()});
      card.append(area,templatePicker(q,area),button('💾 Створити шаблон із відповіді',()=>saveTemplate(area)));
-     const send=button('📤 Відправити цю відповідь (тест)',async()=>{
+     const send=button('📤 Відправити цю відповідь',async()=>{
        const answer=area.value.trim();
        if(!answer)return alert('Напишіть відповідь.');
+       if(results[id])return alert('Для цього запитання вже є запис про відправлення або невизначений результат. Перевірте його в Prom.');
        if(q.can_comment===false)return alert('Prom не дозволяє коментувати це запитання.');
        if(!confirm('УВАГА: відповідь буде РЕАЛЬНО опублікована в Prom.\\n\\nМагазин: '+q.shop_name+'\\nТовар: '+q.product_name+'\\nЗапитання: '+q.text+'\\n\\nВідповідь: '+answer+'\\n\\nПідтверджуєте?'))return;
        send.disabled=true;state.textContent='⏳ Відправляємо…';
+       results[id]={status:'review',message:'Спроба розпочата; перевірте Prom перед повтором.'};persist(RESULTS,results);
        try{
          const res=await fetch('/api/questions/send-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:q.company_id,thread_id:q.id,comment:answer,confirmed:true})});
          const result=await res.json();
          if(result.status==='sent'){
            state.textContent='✅ Опубліковано в Prom. ID коментаря: '+result.comment_id;
+           results[id]={status:'sent',comment_id:result.comment_id};persist(RESULTS,results);
            send.textContent='✅ Відправлено';delete drafts[id];persist(DRAFTS,drafts);count();
          }else{
            state.textContent='⚠️ '+(result.message||'Не вдалося підтвердити публікацію. Перевірте в Prom.');
-           if(result.status==='error')send.disabled=false;
+           results[id]={status:'review',message:result.message||'Перевірте Prom'};persist(RESULTS,results);count();
          }
-       }catch(e){state.textContent='⚠️ Невідомий результат. Перевірте Prom перед повтором.'}
+       }catch(e){state.textContent='⚠️ Невідомий результат. Перевірте Prom перед повтором.';count()}
      });
      card.append(send);
+     if(results[id]){send.disabled=true;send.textContent=results[id].status==='sent'?'✅ Відправлено':'⚠️ Потрібна перевірка';}
      const state=node('small',q.can_comment===false?'⚠️ Prom не дозволяє коментувати це запитання.':'Чернетка зберігається локально. Не відправлено.');
+     if(results[id])state.textContent=results[id].status==='sent'?'✅ Опубліковано в Prom. ID коментаря: '+results[id].comment_id:'⚠️ '+(results[id].message||'Перевірте Prom перед повтором.');
      state.style.cssText='display:block;color:#64748b;margin-top:6px';card.append(state);box.append(card);
    }
    count();
@@ -207,10 +212,40 @@ questions_script = """<script>
    }catch(e){status.textContent='⚠️ Збір перервано: '+e.message+'. Завантажено '+questions.length+' запитань.'}
    finally{renderQuestions();loading=false;el('buyerLoadBtn').disabled=false}
  };
- window.buyerSendAll=function(){
-   const ready=questions.filter(q=>String(drafts[key(q)]||'').trim());
-   if(!ready.length)return alert('Спочатку підготуйте відповіді.');
-   alert('Підготовлено '+ready.length+' відповідей. Відправлення в Prom поки не активоване: необхідно перевірити точний API публікації та захист від повторної відправки. Чернетки збережено, нічого не відправлено.');
+ window.buyerStopSending=function(){stopRequested=true;el('buyerSendStatus').textContent='⏹ Зупинка після поточної відповіді…';};
+ window.buyerSendAll=async function(){
+   if(sending||loading)return;
+   const ready=questions.filter(q=>String(drafts[key(q)]||'').trim()&&!results[key(q)]&&q.can_comment!==false);
+   if(!ready.length)return alert('Немає підготовлених відповідей для відправлення. Запитання з невизначеним результатом потрібно перевірити в Prom.');
+   const preview=ready.slice(0,8).map(q=>'• '+q.shop_name+': '+q.text.slice(0,90)).join('\\n');
+   if(!confirm('УВАГА: '+ready.length+' відповідей будуть РЕАЛЬНО опубліковані в Prom по черзі.\\n\\n'+preview+(ready.length>8?'\\n…':'')+'\\n\\nПеревірили тексти, магазини та запитання? Підтвердити публікацію?'))return;
+   sending=true;stopRequested=false;
+   const status=el('buyerSendStatus'),sendBtn=el('buyerSendAllBtn'),stopBtn=el('buyerStopBtn');
+   sendBtn.disabled=true;stopBtn.disabled=false;el('buyerLoadBtn').disabled=true;
+   let sent=0,failed=0;
+   try{
+     for(const q of ready){
+       if(stopRequested)break;
+       const id=key(q),answer=String(drafts[id]||'').trim();
+       if(!answer||results[id])continue;
+       results[id]={status:'review',message:'Відправлення розпочато. Якщо сторінку закрито, перевірте Prom.'};
+       if(!persist(RESULTS,results)){stopRequested=true;break;}
+       status.textContent='⏳ Опрацьовано '+(sent+failed)+' із '+ready.length+'; успішно: '+sent+'; перевірити: '+failed+'. Зараз: '+q.shop_name;
+       try{
+         const response=await fetch('/api/questions/send-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:q.company_id,thread_id:q.id,comment:answer,confirmed:true})});
+         const data=await response.json();
+         if(data.status==='sent'&&data.comment_id){
+           results[id]={status:'sent',comment_id:data.comment_id};
+           persist(RESULTS,results);delete drafts[id];persist(DRAFTS,drafts);sent++;
+         }else{
+           results[id]={status:'review',message:data.message||'Невідомий результат'};
+           persist(RESULTS,results);failed++;stopRequested=true;
+         }
+       }catch(e){results[id]={status:'review',message:'Можливо, запит надіслано. Перевірте Prom перед повтором.'};persist(RESULTS,results);failed++;stopRequested=true;}
+       renderQuestions();
+     }
+     status.textContent='🏁 Успішно: '+sent+'; потребують перевірки: '+failed+'. '+(stopRequested?'Чергу зупинено.':'Чергу завершено.')+' Повторно невизначені запити автоматично не надсилаються.';
+   }finally{sending=false;sendBtn.disabled=false;stopBtn.disabled=true;el('buyerLoadBtn').disabled=false;renderQuestions();}
  };
  renderTemplates();count();
 })();
