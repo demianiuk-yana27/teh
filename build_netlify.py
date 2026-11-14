@@ -391,6 +391,10 @@ async function positiveImportLocal(){
    alert('Шаблони перенесено.');
  }catch(e){alert('Не вдалося перенести: '+e.message)}
 }
+async function positiveManualUpdate(key,value){
+ const res=await fetch('/api/operations/store/positive_journal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,value,action:'manual_update'})});
+ const data=await res.json();if(!res.ok||data.status!=='ok')throw Error(data.message||'Не вдалося записати статус');
+}
 async function positiveImportLocalJournal(){
  try{
    const old=JSON.parse(localStorage.getItem('teh-positive-journal-v1')||'{}');
@@ -559,7 +563,7 @@ function positiveShowJournal(){
    const verify=document.createElement('button');verify.type='button';verify.className='run';
    verify.style.cssText='background:#64748b;margin-top:8px';
    verify.textContent='✅ Я перевірила коментар у Prom';
-   verify.addEventListener('click',()=>{
+   verify.addEventListener('click',async()=>{
     if(!confirm('Підтверджуєте, що саме цей текст опублікований у магазині '+(item.shop||company)+' під відгуком №'+opinion+'?'))return;
     const latest=positiveJournalRead();
     if(!latest[key])return;
@@ -573,7 +577,7 @@ function positiveShowJournal(){
    const absent=document.createElement('button');absent.type='button';absent.className='run';
    absent.style.cssText='background:#9f1239;margin-top:8px;margin-left:6px';
    absent.textContent='❌ Перевірила — відповіді немає';
-   absent.addEventListener('click',()=>{
+   absent.addEventListener('click',async()=>{
     if(!confirm('Ви перевірили саме магазин '+(item.shop||company)+' та відгук №'+opinion+' і відповіді там немає? Це лише запис у журналі, нічого не надсилається.'))return;
     const latest=positiveJournalRead();
     if(!latest[key])return;
@@ -629,7 +633,7 @@ async function positiveStartQueue(){
  const names=candidates.slice(0,12).map(x=>x.shop_name+' №'+x.id).join('\\n')+(candidates.length>12?'\\n…та ще '+(candidates.length-12)+' відгуків':'');
  const confirmation=prompt('СПРАВЖНЯ ПУБЛІКАЦІЯ В PROM.\\nБуде надіслано до '+candidates.length+' відповідей:\\n'+names+'\\n\\nДля запуску введіть НАДІСЛАТИ '+candidates.length);
  if(confirmation!=='НАДІСЛАТИ '+candidates.length)return;
- if(!positiveSharedReady){alert('Спільний журнал недоступний. Публікацію заблоковано.');return}
+ try{await positiveLoadShared()}catch(e){alert('Спільний журнал недоступний: '+e.message);return}
  positiveQueueStop=false;positiveQueueRunning=true;positiveRunBusy=true;
  let sent=0;
  try{
