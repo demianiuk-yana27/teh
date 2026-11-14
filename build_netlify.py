@@ -805,7 +805,7 @@ async function positiveBuildDrafts(button){
  }
  target.append(fragment);
 }
-async async async async function positiveRestoreTemplates(){
+async function positiveRestoreTemplates(){
  try{const templates=JSON.parse(localStorage.getItem('teh-positive-templates-v1')||'[]');const el=document.getElementById('positiveTemplates');if(el&&Array.isArray(templates))el.value=templates.join('\\n')}catch(e){}
  try{await positiveLoadShared()}catch(e){positiveSharedReady=false;const x=document.getElementById('positiveQueueStatus');if(x)x.textContent='⚠️ Спільний журнал недоступний: '+e.message}
 }
