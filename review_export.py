@@ -314,6 +314,7 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
     collected_count = {"company": 0, "product": 0}
     skipped = 0
     incomplete = 0
+    incomplete_shops = []
     errors = []
     total_shops = len(shops)
     for shop_number, shop in enumerate(shops, 1):
@@ -335,6 +336,7 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
                 print(f"[{shop.name}] API sign-to {account}: {type(exc).__name__}: {exc}")
         if reviews_by_type is None:
             incomplete += 1
+            incomplete_shops.append(shop.name)
             continue
         # Do not write anything from a shop unless BOTH review categories
         # were collected successfully and company identity was checked.
@@ -345,6 +347,8 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
                 written[kind] += _write_reviews(book, sheet_names[kind], reviews, separated_sheets)
             except Exception as exc:
                 incomplete += 1
+                if shop.name not in incomplete_shops:
+                    incomplete_shops.append(shop.name)
                 errors.append(f"{shop.name}, {kind}, запис: {type(exc).__name__}: {str(exc)[:160]}")
                 print(f"[{shop.name}] Не вдалося записати {kind}: {exc}")
 
@@ -357,6 +361,7 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
         "active": len(shops),
         "skipped": skipped,
         "incomplete": incomplete,
+        "incomplete_shops": incomplete_shops,
         "collected_company": collected_count["company"],
         "collected_product": collected_count["product"],
         "written_company": written["company"],
