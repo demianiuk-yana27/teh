@@ -1416,6 +1416,39 @@ def negative_sign_to_readiness():
         return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:180]}), 500
 
 
+@app.route("/positive/shops-diagnostics", methods=["GET"])
+def positive_shops_diagnostics():
+    """Explain why TRUE rows do not become distinct active shops; read-only."""
+    try:
+        from negative_reviews import get_client, normalize_order
+        sheet = get_client().open_by_key(_operations_sheet_id()).worksheet(_POSITIVE_SHOPS_TAB)
+        rows = sheet.get("A:D")
+        flagged = []
+        seen = {}
+        active_rows = 0
+        for index, row in enumerate(rows[1:], start=2):
+            cells = (row + [""] * 4)[:4]
+            if str(cells[2]).strip().upper() != "TRUE":
+                continue
+            active_rows += 1
+            name = str(cells[0]).strip()
+            company_id = normalize_order(cells[1])
+            if not name or not company_id:
+                flagged.append({"row": index, "reason": "Порожня назва або некоректний ID",
+                                "name": name, "company_id": str(cells[1])})
+            elif str(company_id) in seen:
+                flagged.append({"row": index, "reason": "Повторний company_id",
+                                "name": name, "company_id": str(company_id),
+                                "first_row": seen[str(company_id)]})
+            else:
+                seen[str(company_id)] = index
+        return jsonify({"status": "ok", "active_true_rows": active_rows,
+                        "unique_valid_shops": len(seen), "excluded": flagged,
+                        "worksheet": _POSITIVE_SHOPS_TAB})
+    except Exception as exc:
+        return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:150]}), 500
+
+
 @app.route("/positive/shops-batch", methods=["POST"])
 def positive_shops_batch():
     """Read-only bounded batch of active shops. No publication or cookie persistence."""
