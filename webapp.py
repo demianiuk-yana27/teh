@@ -2237,6 +2237,114 @@ def buyer_questions_shops_batch():
         return jsonify({"status": "error", "message": "Не вдалося отримати запитання."}), 500
 
 
+@app.route("/questions/send-one", methods=["POST"])
+def buyer_questions_send_one():
+    """Explicitly confirmed, single-comment Prom submission; fail closed on uncertainty."""
+    import http.cookiejar
+    import urllib.request
+    import urllib.error
+    import json
+    import threading
+    from negative_reviews import _prom_session_cookies, load_active_shops
+
+    data = request.get_json(silent=True) or {}
+    company = str(data.get("company_id") or "")
+    thread = str(data.get("thread_id") or "")
+    answer = str(data.get("comment") or "").strip()
+    if not company.isdigit() or not thread.isdigit() or not (1 <= len(answer) <= 3000):
+        return jsonify({"status": "error", "message": "Некоректний магазин, запитання або відповідь."}), 400
+    if data.get("confirmed") is not True:
+        return jsonify({"status": "error", "message": "Потрібне підтвердження відправлення."}), 400
+    try:
+        shops = {str(shop.id): shop for shop in load_active_shops(_sheet_id())}
+        if company not in shops:
+            return jsonify({"status": "error", "message": "Магазин неактивний."}), 403
+        accounts = _positive_login_map().get(company, [])
+        if not accounts:
+            return jsonify({"status": "error", "message": "Немає доступу до магазину."}), 403
+        originals = _prom_session_cookies()
+        for account in accounts:
+            jar = http.cookiejar.CookieJar()
+            for c in originals:
+                if not isinstance(c, dict) or not isinstance(c.get("name"), str) or not isinstance(c.get("value"), str):
+                    continue
+                domain = str(c.get("domain") or "").lower()
+                if domain.lstrip(".") != "prom.ua" and not domain.lstrip(".").endswith(".prom.ua"):
+                    continue
+                expiry = c.get("expirationDate", c.get("expiry"))
+                try:
+                    expiry = int(expiry) if expiry is not None else None
+                except (TypeError, ValueError):
+                    expiry = None
+                jar.set_cookie(http.cookiejar.Cookie(
+                    version=0, name=c["name"], value=c["value"], port=None,
+                    port_specified=False, domain=domain, domain_specified=True,
+                    domain_initial_dot=domain.startswith("."), path=str(c.get("path") or "/"),
+                    path_specified=True, secure=bool(c.get("secure", False)), expires=expiry,
+                    discard=expiry is None, comment=None, comment_url=None, rest={}, rfc2109=False))
+            class NoRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, req, fp, code, msg, headers, newurl):
+                    return None
+            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect())
+            try:
+                try:
+                    switched = opener.open(urllib.request.Request(
+                        "https://my.prom.ua/remote/auth/sign-to/" + account,
+                        headers={"User-Agent": "Mozilla/5.0"}), timeout=12)
+                except urllib.error.HTTPError as exc:
+                    switched = exc
+                with switched:
+                    location = switched.headers.get("Location", "")
+                    if switched.status not in (301, 302, 303) or not (
+                        location.startswith("/cms") or location.startswith("https://my.prom.ua/cms")):
+                        continue
+                # Check the current question under the selected shop before writing.
+                context_url = ("https://my.prom.ua/cms/questions/context?page=1&perPage=100"
+                               "&need_response=need_response&sortingQuery=-activity")
+                headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json",
+                           "Referer": "https://my.prom.ua/cms/questions",
+                           "X-Requested-With": "XMLHttpRequest"}
+                with opener.open(urllib.request.Request(context_url, headers=headers), timeout=18) as resp:
+                    context = json.loads(resp.read(1000000))
+                def find_question(obj, depth=0):
+                    if depth > 7:
+                        return None
+                    if isinstance(obj, dict):
+                        if str(obj.get("id") or "") == thread and "text" in obj and "product" in obj:
+                            return obj
+                        for value in obj.values():
+                            found = find_question(value, depth + 1)
+                            if found is not None:
+                                return found
+                    elif isinstance(obj, list):
+                        for value in obj:
+                            found = find_question(value, depth + 1)
+                            if found is not None:
+                                return found
+                    return None
+                q = find_question(context)
+                if not q or q.get("canBeCommented") is not True or int(q.get("commentsCount") or 0) > 0:
+                    return jsonify({"status": "review", "message": "Запитання не знайдено серед очікуваних або вже має коментар. Нічого не відправлено."}), 409
+                payload = json.dumps({"threadId": int(thread), "comment": answer}, ensure_ascii=False).encode("utf-8")
+                post_headers = dict(headers)
+                post_headers["Content-Type"] = "application/json"
+                req = urllib.request.Request("https://my.prom.ua/cms/questions/comments/create",
+                                             data=payload, headers=post_headers, method="POST")
+                try:
+                    with opener.open(req, timeout=20) as resp:
+                        result = json.loads(resp.read(100000))
+                except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
+                    return jsonify({"status": "review", "message": "Результат публікації невідомий. Перевірте відповідь у Prom перед повтором."}), 409
+                if result.get("status") == "ok" and str((result.get("comment") or {}).get("id") or "").isdigit():
+                    return jsonify({"status": "sent", "comment_id": str(result["comment"]["id"])})
+                return jsonify({"status": "review", "message": "Prom не підтвердив публікацію. Перевірте вручну перед повтором."}), 409
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
+                continue
+        return jsonify({"status": "error", "message": "Не вдалося підтвердити доступ до магазину або стан запитання."}), 503
+    except Exception:
+        return jsonify({"status": "error", "message": "Помилка перевірки перед відправленням."}), 503
+
+
 @app.route("/questions/ai-draft", methods=["POST"])
 def buyer_questions_ai_draft():
     """Generate an editable Ukrainian draft, never publish to Prom."""
