@@ -326,10 +326,12 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <button class="run" type="button" onclick="loadPositivePreview(this)">🔎 Зібрати з усіх магазинів</button>
 <button class="run" type="button" onclick="refreshPositivePreview(this)" style="background:#0f766e">🔄 Оновити відгуки за цю дату</button>
 <button class="run" type="button" onclick="retryPositiveFailed(this)" style="background:#64748b">🔄 Повторити невдалі</button>
+<button class="run" type="button" onclick="positiveLoadSharedDay()">☁️ Завантажити спільні результати</button>
+<button class="run" type="button" onclick="positiveImportLocalResults()">📥 Перенести результати за дату</button>
 
 <div style="margin-top:18px;padding:16px;border:1px solid #dbe3ee;border-radius:12px">
 <h3>🧪 Перевірка майбутніх відповідей — без публікації</h3>
-<p style="font-size:13px;color:#64748b">Вставте ваші готові шаблони: один шаблон на рядок. Вони зберігаються лише в цьому браузері. Натисніть «Підготувати план», щоб побачити, який текст дістанеться кожному відгуку. Жодних повідомлень у Prom не надсилаємо.</p>
+<p style="font-size:13px;color:#64748b">Вставте ваші готові шаблони: один шаблон на рядок. Шаблони зберігаються у спільній Google Таблиці. Натисніть «Підготувати план», щоб побачити, який текст дістанеться кожному відгуку. Жодних повідомлень у Prom не надсилаємо.</p>
 <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><button type="button" class="run" onclick="positiveImportLocal()">📥 Перенести шаблони з браузера</button><button type="button" class="run" onclick="positiveImportLocalJournal()">📥 Перенести журнал з браузера</button></div>
 <textarea id="positiveTemplates" rows="5" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:10px" placeholder="Один шаблон відповіді на рядок"></textarea>
 <button class="run" type="button" onclick="positiveBuildDrafts(this)" style="background:#7c3aed;margin-top:8px">📝 Підготувати план відповідей</button>
@@ -426,6 +428,57 @@ function positiveSave(day,v){
  try{localStorage.setItem(positiveCacheKey(day),JSON.stringify(v))}
  catch(e){document.getElementById('positiveStatus').textContent+=' ⚠️ Не вдалося зберегти результат у браузері.'}
 }
+async function positiveSyncDay(day,state){
+ for(const [id,shop] of Object.entries(state.shops||{})){
+   const payload={...shop};
+   const reviews=Array.isArray(payload.reviews)?payload.reviews:[];
+   delete payload.reviews;
+   const chunks=[];
+   let part=[];
+   for(const review of reviews){
+     const candidate=[...part,review];
+     if(JSON.stringify(candidate).length>25000&&part.length){chunks.push(part);part=[review]}
+     else part=candidate;
+   }
+   if(part.length)chunks.push(part);
+   await operationsStore('positive_cache','POST',day+':'+id+':meta',{...payload,chunk_count:chunks.length});
+   for(let n=0;n<chunks.length;n++){
+     await operationsStore('positive_cache','POST',day+':'+id+':'+n,chunks[n]);
+   }
+ }
+}
+async function positiveLoadSharedDay(){
+ const day=document.getElementById('positiveDay').value;
+ if(!day)return alert('Оберіть дату.');
+ try{
+   const data=await operationsStore('positive_cache');
+   const items=data.items||{},state=positiveRead(day);
+   let count=0;
+   for(const [key,meta] of Object.entries(items)){
+     if(!key.startsWith(day+':')||!key.endsWith(':meta'))continue;
+     const id=key.slice(day.length+1,-5);
+     if(state.shops[id]&&state.shops[id].complete&&!state.shops[id].error)continue;
+     const chunks=[];
+     for(let i=0;i<(meta.chunk_count||0);i++){
+       const part=items[day+':'+id+':'+i];
+       if(!Array.isArray(part))throw Error('Неповні дані магазину '+id);
+       chunks.push(...part);
+     }
+     state.shops[id]={...meta,reviews:chunks};delete state.shops[id].chunk_count;count++;
+   }
+   localStorage.setItem(positiveCacheKey(day),JSON.stringify(state));
+   positiveRender(day);
+   alert('Завантажено результатів магазинів: '+count);
+ }catch(e){alert('Не вдалося завантажити спільні результати: '+e.message)}
+}
+async function positiveImportLocalResults(){
+ const day=document.getElementById('positiveDay').value;
+ if(!day)return alert('Оберіть дату для перенесення.');
+ const state=positiveRead(day);
+ if(!Object.keys(state.shops||{}).length)return alert('За цю дату немає локальних результатів.');
+ try{await positiveSyncDay(day,state);alert('Результати за '+day+' перенесено.')}
+ catch(e){alert('Помилка: '+e.message+'; локальна копія збережена.')}
+}
 function positiveRender(day){
  const out=document.getElementById('positiveStatus'),list=document.getElementById('positiveList');
  const state=positiveRead(day), shops=Object.values(state.shops);
@@ -499,7 +552,7 @@ async function loadPositivePreview(button,retryOnly=false){
     try{
      const batch=await positiveFetchShop(day,0,shop.company_id);
      const result=batch.shops[0];
-     if(result&&String(result.company_id)===String(shop.company_id)){state.shops[shop.company_id]=result;positiveSave(day,state)}
+     if(result&&String(result.company_id)===String(shop.company_id)){state.shops[shop.company_id]=result;positiveSave(day,state);await positiveSyncDay(day,state)}
     }catch(e){state.shops[shop.company_id]={...shop,complete:false,error:e.message};positiveSave(day,state)}
     positiveRender(day);
    }
@@ -519,6 +572,8 @@ async function loadPositivePreview(button,retryOnly=false){
      }
     }
     positiveSave(day,state);
+    try{await positiveSyncDay(day,state)}
+    catch(e){out.textContent='⚠️ Не вдалося синхронізувати результати: '+e.message+'; локальна копія збережена.'}
     offset=batch.next_offset;
    }
   }
@@ -750,7 +805,7 @@ async function positiveBuildDrafts(button){
  }
  target.append(fragment);
 }
-async function positiveRestoreTemplates(){
+async async function positiveRestoreTemplates(){
  try{const templates=JSON.parse(localStorage.getItem('teh-positive-templates-v1')||'[]');const el=document.getElementById('positiveTemplates');if(el&&Array.isArray(templates))el.value=templates.join('\\n')}catch(e){}
  try{await positiveLoadShared()}catch(e){positiveSharedReady=false;const x=document.getElementById('positiveQueueStatus');if(x)x.textContent='⚠️ Спільний журнал недоступний: '+e.message}
 }
