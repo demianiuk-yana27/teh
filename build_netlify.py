@@ -82,7 +82,7 @@ questions_html = """<section class="view" id="buyer-questions">
 <button class="run" type="button" id="buyerLoadBtn" onclick="buyerLoadQuestions()">🔄 Зібрати запитання</button>
 <div id="buyerQuestionsStatus" role="status" style="margin:12px 0;white-space:pre-wrap"></div>
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0">
-<strong id="buyerDraftCounter">Підготовлено 0 із 0</strong>
+<strong id="buyerDraftCounter">Підготовлено 0 із 0</strong><button type="button" class="run" onclick="buyerImportDrafts()">📥 Перенести чернетки з браузера</button>
 <button class="run" id="buyerSendAllBtn" type="button" onclick="buyerSendAll()" style="background:#0f766e">📤 Відправити всі підготовлені</button><button class="run" id="buyerStopBtn" type="button" onclick="buyerStopSending()" style="background:#64748b" disabled>⏹ Зупинити після поточного</button>
 </div>
 <div id="buyerSendStatus" role="status" style="margin:10px 0;white-space:pre-wrap"></div><div id="buyerQuestionsList" style="display:grid;gap:12px;margin:12px 0 24px"></div>
@@ -96,12 +96,31 @@ questions_script = """<script>
  const DRAFTS='teh-buyer-drafts-v2',TEMPLATES='teh-buyer-templates-v2',RESULTS='teh-buyer-send-results-v1';
  let questions=[],failures=0,loading=false,sending=false,stopRequested=false;
  function read(key){try{const v=JSON.parse(localStorage.getItem(key)||'{}');return v&&typeof v==='object'?v:{}}catch(e){return {}}}
- let drafts=read(DRAFTS),templates={},results={},storeReady=false;
+ let drafts=read(DRAFTS),templates={},results={},storeReady=false,draftSaveTimers={};
+ async function buyerSaveDraft(id,text){
+   const res=await fetch('/api/operations/store/question_drafts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:id,value:{text}})});
+   const data=await res.json();
+   if(!res.ok||data.status!=='ok')throw Error(data.message||'Не вдалося зберегти чернетку');
+ }
+ async function buyerImportDrafts(){
+   if(!storeReady)return alert('Спільне сховище недоступне.');
+   const local=read(DRAFTS),keys=Object.keys(local).filter(k=>String(local[k]||'').trim());
+   if(!keys.length)return alert('Локальних чернеток немає.');
+   if(!confirm('Перенести '+keys.length+' чернеток у спільне сховище?'))return;
+   let count=0;
+   for(const k of keys){try{await buyerSaveDraft(k,local[k]);count++}catch(e){alert('Перенесено '+count+'. '+e.message);break}}
+   alert('Перенесено чернеток: '+count);
+ }
+ window.buyerImportDrafts=buyerImportDrafts;
  async function loadStore(){
    const res=await fetch('/api/questions/store',{cache:'no-store'});
    const data=await res.json();
    if(!res.ok||data.status!=='ok')throw Error(data.message||'Спільне сховище недоступне');
-   templates=data.templates||{};results=data.results||{};storeReady=true;
+   templates=data.templates||{};results=data.results||{};
+   const dres=await fetch('/api/operations/store/question_drafts',{cache:'no-store'});
+   const ddata=await dres.json();
+   if(!dres.ok||ddata.status!=='ok')throw Error('Не вдалося завантажити спільні чернетки');
+   drafts=Object.fromEntries(Object.entries(ddata.items||{}).map(([k,v])=>[k,v.text||'']));storeReady=true;
    renderTemplates();renderQuestions();
  }
  async function saveStore(action,name,text){
@@ -173,7 +192,14 @@ questions_script = """<script>
      const area=node('textarea');area.rows=3;area.placeholder='Напишіть відповідь українською…';
      area.style.cssText='display:block;width:100%;box-sizing:border-box;padding:10px;margin:8px 0;border:1px solid #cbd5e1;border-radius:8px';
      area.value=String(drafts[id]||'');
-     area.addEventListener('input',()=>{drafts[id]=area.value;persist(DRAFTS,drafts);count()});
+     area.addEventListener('input',()=>{
+       drafts[id]=area.value;persist(DRAFTS,drafts);count();
+       clearTimeout(draftSaveTimers[id]);
+       draftSaveTimers[id]=setTimeout(async()=>{
+         try{await buyerSaveDraft(id,area.value)}
+         catch(e){el('buyerSendStatus').textContent='⚠️ Чернетку не синхронізовано: '+e.message}
+       },1200);
+     });
      card.append(area,templatePicker(q,area),button('💾 Створити шаблон із відповіді',()=>saveTemplate(area)));
      const send=button('📤 Відправити цю відповідь',async()=>{
        const answer=area.value.trim();
@@ -190,7 +216,7 @@ questions_script = """<script>
          if(result.status==='sent'){
            state.textContent='✅ Опубліковано в Prom. ID коментаря: '+result.comment_id;
            results[id]={status:'sent',comment_id:result.comment_id};
-           send.textContent='✅ Відправлено';delete drafts[id];persist(DRAFTS,drafts);count();
+           send.textContent='✅ Відправлено';delete drafts[id];persist(DRAFTS,drafts);buyerSaveDraft(id,'').catch(()=>{});count();
          }else{
            state.textContent='⚠️ '+(result.message||'Не вдалося підтвердити публікацію. Перевірте в Prom.');
            results[id]={status:'review',message:result.message||'Перевірте Prom'};count();
@@ -268,7 +294,7 @@ questions_script = """<script>
          const data=await response.json();
          if(data.status==='sent'&&data.comment_id){
            results[id]={status:'sent',comment_id:data.comment_id};
-           delete drafts[id];persist(DRAFTS,drafts);sent++;
+           delete drafts[id];persist(DRAFTS,drafts);buyerSaveDraft(id,'').catch(()=>{});sent++;
          }else{
            results[id]={status:'review',message:data.message||'Невідомий результат'};
            failed++;stopRequested=true;
