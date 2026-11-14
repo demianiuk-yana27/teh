@@ -73,8 +73,8 @@ class Shop:
     url: str = ""
 
 
-def load_active_shops(spreadsheet_id):
-    sheet = get_client().open_by_key(spreadsheet_id).worksheet("Список магазинів")
+def load_active_shops(spreadsheet_id, worksheet_name="Список магазинів"):
+    sheet = get_client().open_by_key(spreadsheet_id).worksheet(worksheet_name)
     rows = sheet.get("A:D")
     shops = []
     for row in rows[1:]:
