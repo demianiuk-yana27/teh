@@ -82,13 +82,13 @@ questions_html = """<section class="view" id="buyer-questions">
 <button class="run" type="button" id="buyerLoadBtn" onclick="buyerLoadQuestions()">🔄 Зібрати запитання</button>
 <div id="buyerQuestionsStatus" role="status" style="margin:12px 0;white-space:pre-wrap"></div>
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0">
-<strong id="buyerDraftCounter">Підготовлено 0 із 0</strong><button type="button" class="run" onclick="buyerImportDrafts()">📥 Перенести чернетки з браузера</button>
+<strong id="buyerDraftCounter">Підготовлено 0 із 0</strong>
 <button class="run" id="buyerSendAllBtn" type="button" onclick="buyerSendAll()" style="background:#0f766e">📤 Відправити всі підготовлені</button><button class="run" id="buyerStopBtn" type="button" onclick="buyerStopSending()" style="background:#64748b" disabled>⏹ Зупинити після поточного</button>
 </div>
 <div id="buyerSendStatus" role="status" style="margin:10px 0;white-space:pre-wrap"></div><div id="buyerQuestionsList" style="display:grid;gap:12px;margin:12px 0 24px"></div>
 <h3>📋 Шаблони відповідей</h3>
 <p style="color:#64748b;font-size:13px">Шаблони зберігаються у спільній Google Таблиці та доступні всім менеджерам.</p>
-<button type="button" onclick="buyerImportLocalTemplates()" style="padding:8px 12px;margin:6px 0">📥 Перенести старі шаблони з цього браузера</button><div id="buyerTemplatesList" style="display:grid;gap:8px"></div>
+<div id="buyerTemplatesList" style="display:grid;gap:8px"></div>
 </div></section>"""
 s = s.replace('</main>', questions_html + '</main>', 1)
 questions_script = """<script>
@@ -327,12 +327,12 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <button class="run" type="button" onclick="refreshPositivePreview(this)" style="background:#0f766e">🔄 Оновити відгуки за цю дату</button>
 <button class="run" type="button" onclick="retryPositiveFailed(this)" style="background:#64748b">🔄 Повторити невдалі</button>
 <button class="run" type="button" onclick="positiveLoadSharedDay()">☁️ Завантажити спільні результати</button>
-<button class="run" type="button" onclick="positiveImportLocalResults()">📥 Перенести результати за дату</button>
+
 
 <div style="margin-top:18px;padding:16px;border:1px solid #dbe3ee;border-radius:12px">
 <h3>🧪 Перевірка майбутніх відповідей — без публікації</h3>
 <p style="font-size:13px;color:#64748b">Вставте ваші готові шаблони: один шаблон на рядок. Шаблони зберігаються у спільній Google Таблиці. Натисніть «Підготувати план», щоб побачити, який текст дістанеться кожному відгуку. Жодних повідомлень у Prom не надсилаємо.</p>
-<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><button type="button" class="run" onclick="positiveImportLocal()">📥 Перенести шаблони з браузера</button><button type="button" class="run" onclick="positiveImportLocalJournal()">📥 Перенести журнал з браузера</button></div>
+
 <textarea id="positiveTemplates" rows="5" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:10px" placeholder="Один шаблон відповіді на рядок"></textarea>
 <button class="run" type="button" onclick="positiveBuildDrafts(this)" style="background:#7c3aed;margin-top:8px">📝 Підготувати план відповідей</button>
 <div style="margin:14px 0;padding:12px;border:1px solid #e2e8f0;border-radius:10px">
