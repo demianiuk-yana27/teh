@@ -2244,7 +2244,6 @@ def buyer_questions_send_one():
     import urllib.request
     import urllib.error
     import json
-    import threading
     from negative_reviews import _prom_session_cookies, load_active_shops
 
     data = request.get_json(silent=True) or {}
@@ -2328,11 +2327,22 @@ def buyer_questions_send_one():
                 payload = json.dumps({"threadId": int(thread), "comment": answer}, ensure_ascii=False).encode("utf-8")
                 post_headers = dict(headers)
                 post_headers["Content-Type"] = "application/json"
+                post_headers["Origin"] = "https://my.prom.ua"
+                csrf = next((c for c in jar if c.name.lower() in (
+                    "csrftoken", "csrf_token", "xsrf-token", "xsrf_token")), None)
+                if csrf is not None:
+                    csrf_header = "X-XSRF-TOKEN" if "xsrf" in csrf.name.lower() else "X-CSRFToken"
+                    post_headers[csrf_header] = csrf.value
                 req = urllib.request.Request("https://my.prom.ua/cms/questions/comments/create",
                                              data=payload, headers=post_headers, method="POST")
                 try:
                     with opener.open(req, timeout=20) as resp:
                         result = json.loads(resp.read(100000))
+                except urllib.error.HTTPError as exc:
+                    return jsonify({"status": "rejected", "message":
+                                    "Prom відхилив запит (HTTP " + str(exc.code) +
+                                    "). Перевірте відповідь у Prom перед повтором.",
+                                    "http_status": exc.code}), 409
                 except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
                     return jsonify({"status": "review", "message": "Результат публікації невідомий. Перевірте відповідь у Prom перед повтором."}), 409
                 if result.get("status") == "ok" and str((result.get("comment") or {}).get("id") or "").isdigit():
