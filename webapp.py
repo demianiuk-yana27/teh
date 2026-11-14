@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from flask import jsonify, renderNtemplatePstring, request
 
 import app as legacy
-from negativeQreviews import run_analytics, run_order_review_check
+from negativeQreviews import runNanalytics, runPorderQreview_check
 from review_export import run_review_export
 
 app = legacy.app
