@@ -88,7 +88,7 @@ questions_html = """<section class="view" id="buyer-questions">
 <div id="buyerSendStatus" role="status" style="margin:10px 0;white-space:pre-wrap"></div><div id="buyerQuestionsList" style="display:grid;gap:12px;margin:12px 0 24px"></div>
 <h3>📋 Шаблони відповідей</h3>
 <p style="color:#64748b;font-size:13px">Шаблони зберігаються у спільній Google Таблиці та доступні всім менеджерам.</p>
-<div id="buyerTemplatesList" style="display:grid;gap:8px"></div>
+<button type="button" onclick="buyerImportLocalTemplates()" style="padding:8px 12px;margin:6px 0">📥 Перенести старі шаблони з цього браузера</button><div id="buyerTemplatesList" style="display:grid;gap:8px"></div>
 </div></section>"""
 s = s.replace('</main>', questions_html + '</main>', 1)
 questions_script = """<script>
@@ -228,6 +228,20 @@ questions_script = """<script>
      status.textContent='✅ Магазинів: '+shops+'; запитань: '+questions.length+'; неповних перевірок: '+failures+'.';
    }catch(e){status.textContent='⚠️ Збір перервано: '+e.message+'. Завантажено '+questions.length+' запитань.'}
    finally{renderQuestions();loading=false;el('buyerLoadBtn').disabled=false}
+ };
+ window.buyerImportLocalTemplates=async function(){
+   if(!storeReady)return alert('Спільне сховище недоступне.');
+   const old=read(TEMPLATES);
+   const entries=Object.entries(old).filter(([name,value])=>name&&typeof value==='string'&&value.trim()&&!templates[name]);
+   if(!entries.length)return alert('Нових локальних шаблонів для перенесення немає.');
+   if(!confirm('Перенести '+entries.length+' шаблонів зі старого браузера до спільної таблиці? Існуючі спільні шаблони не перезаписуватимуться.'))return;
+   let imported=0;
+   for(const [name,value] of entries){
+     try{await saveStore('save_template',name,value);templates[name]=value;imported++}
+     catch(e){alert('Перенесено '+imported+'. Помилка: '+e.message);break}
+   }
+   renderTemplates();renderQuestions();
+   alert('Перенесено шаблонів: '+imported);
  };
  window.buyerStopSending=function(){stopRequested=true;el('buyerSendStatus').textContent='⏹ Зупинка після поточної відповіді…';};
  window.buyerSendAll=async function(){
