@@ -1426,7 +1426,7 @@ def positive_shops_diagnostics():
         flagged = []
         seen = {}
         active_rows = 0
-        for index, row in enumerate(rows[1:], start=2):
+        for index, row in enumerate(rows, start=1):
             cells = (row + [""] * 4)[:4]
             if str(cells[2]).strip().upper() != "TRUE":
                 continue
