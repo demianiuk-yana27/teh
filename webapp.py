@@ -2295,6 +2295,80 @@ def _buyer_result_set(key, status, comment_id="", message=""):
                                       datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")]])
 
 
+# Shared operational data. JSON payloads are stored as rows in the dedicated workbook.
+_OPERATIONS_DATA_TABS = {
+    "positive_templates": "Позитивні відгуки - шаблони",
+    "positive_journal": "Позитивні відгуки - відправлення",
+    "positive_cache": "Позитивні відгуки - результати збору",
+    "question_drafts": "Питання покупців - чернетки",
+}
+_operations_data_lock = threading.RLock()
+
+
+def _operations_data_sheet(kind):
+    if kind not in _OPERATIONS_DATA_TABS:
+        raise ValueError("Невідомий тип даних.")
+    return _buyer_sheet(_OPERATIONS_DATA_TABS[kind], ["Ключ", "Дані JSON", "Оновлено"])
+
+
+def _operations_data_read(kind):
+    import json
+    with _operations_data_lock:
+        rows = _operations_data_sheet(kind).get_all_values()[1:]
+        output = {}
+        for row in rows:
+            if len(row) >= 2 and row[0]:
+                try:
+                    output[row[0]] = json.loads(row[1])
+                except (ValueError, TypeError):
+                    raise RuntimeError("Пошкоджений запис у спільному сховищі.")
+        return output
+
+
+def _operations_data_write(kind, key, value, only_new=False):
+    import json
+    if not key or len(key) > 120:
+        raise ValueError("Некоректний ключ.")
+    payload = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if len(payload) > 45000:
+        raise ValueError("Запис завеликий для однієї клітинки Google Sheets.")
+    with _operations_data_lock:
+        sheet = _operations_data_sheet(kind)
+        keys = sheet.col_values(1)
+        if only_new and key in keys:
+            return False
+        row = keys.index(key) + 1 if key in keys else len(keys) + 1
+        sheet.update(f"A{row}:C{row}", [[key, payload, datetime.utcnow().isoformat() + "Z"]])
+        return True
+
+
+@app.route("/operations/store/<kind>", methods=["GET", "POST"])
+def operations_store(kind):
+    if kind not in _OPERATIONS_DATA_TABS:
+        return jsonify({"status": "error", "message": "Невідоме сховище."}), 404
+    try:
+        if request.method == "GET":
+            return jsonify({"status": "ok", "items": _operations_data_read(kind)})
+        data = request.get_json(silent=True) or {}
+        key = str(data.get("key") or "").strip()
+        value = data.get("value")
+        if not key or len(key) > 120 or not isinstance(value, (dict, list, str)):
+            return jsonify({"status": "error", "message": "Некоректний запис."}), 400
+        if kind == "positive_journal":
+            # Browser may import historical attempts, but cannot overwrite existing entries.
+            if not isinstance(value, dict) or value.get("status") not in {
+                "attempted", "sent", "verified", "manually_verified",
+                "manually_absent", "preflight_failed"
+            }:
+                return jsonify({"status": "error", "message": "Некоректний статус."}), 400
+            inserted = _operations_data_write(kind, key, value, only_new=True)
+            return jsonify({"status": "ok", "inserted": inserted})
+        _operations_data_write(kind, key, value)
+        return jsonify({"status": "ok"})
+    except Exception:
+        return jsonify({"status": "error", "message": "Спільне сховище недоступне."}), 503
+
+
 @app.route("/questions/store", methods=["GET", "POST"])
 def buyer_questions_store():
     try:
