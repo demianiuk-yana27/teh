@@ -2265,11 +2265,12 @@ def _buyer_sheet(tab_name, headers):
     from negative_reviews import get_client
     book = get_client().open_by_key(_operations_sheet_id())
     try:
-        return book.worksheet(tab_name)
+        sheet = book.worksheet(tab_name)
     except __import__("gspread").exceptions.WorksheetNotFound:
         sheet = book.add_worksheet(title=tab_name, rows=2000, cols=len(headers))
+    if not sheet.row_values(1):
         sheet.update("A1", [headers])
-        return sheet
+    return sheet
 
 
 def _buyer_store_snapshot():
