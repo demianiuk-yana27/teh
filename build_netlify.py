@@ -341,7 +341,7 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <label for="positiveBatchLimit">Кількість</label> <select id="positiveBatchLimit" style="padding:9px;border:1px solid #cbd5e1;border-radius:7px"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="all">Усі доступні</option></select>
 <button class="run" type="button" onclick="positiveStartQueue()" style="background:#b45309">🚀 Запустити підтверджену чергу</button>
 <button class="run" type="button" onclick="positiveStopQueue()" style="background:#64748b">⏹ Зупинити після поточного</button>
-<div class="status" id="positiveQueueStatus"></div><div style="margin-top:10px"><button class="run" type="button" onclick="positiveShowJournal(this)" style="background:#475569">📋 Показати журнал спроб</button><button class="run" type="button" onclick="positiveExportJournal()" style="background:#475569">⬇️ Експорт журналу JSON</button><div id="positiveJournalView" style="margin-top:8px"></div></div>
+<div class="status" id="positiveQueueStatus"></div><div style="margin-top:10px"><button class="run" type="button" onclick="positiveToggleJournal(this)" style="background:#475569" aria-expanded="false">📋 Показати журнал спроб</button><button class="run" type="button" onclick="positiveExportJournal()" style="background:#475569">⬇️ Експорт журналу JSON</button><div id="positiveJournalView" style="margin-top:8px;display:none"></div></div>
 </div><div class="status" id="positiveDraftStatus"></div><div id="positiveDraftList"></div>
 </div>
 <div class="status" id="positiveShopProbeStatus" style="white-space:pre-wrap"></div>
@@ -601,6 +601,14 @@ function positiveMayPublish(key,journal){
  return !entry||entry.status==='manually_absent'||entry.status==='preflight_failed';
 }
 function positiveJournalRead(){return positiveSharedJournal}
+function positiveToggleJournal(button){
+ const target=document.getElementById('positiveJournalView');
+ const opening=target.style.display==='none';
+ target.style.display=opening?'block':'none';
+ button.textContent=opening?'📋 Сховати журнал спроб':'📋 Показати журнал спроб';
+ button.setAttribute('aria-expanded',String(opening));
+ if(opening)positiveShowJournal();
+}
 function positiveShowJournal(){
  const target=document.getElementById('positiveJournalView');target.replaceChildren();
  const journal=positiveJournalRead(),entries=Object.entries(journal).sort((a,b)=>String(a[1].at||'').localeCompare(String(b[1].at||'')));
