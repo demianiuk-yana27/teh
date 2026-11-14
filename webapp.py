@@ -1652,6 +1652,13 @@ def positive_publish_one():
     if not _positive_publish_lock.acquire(blocking=False):
         return jsonify({"status": "error", "message": "Інша тестова публікація вже виконується."}), 409
     try:
+        shared_key = company_id + ":" + opinion_id
+        try:
+            shared_entry = _operations_data_read("positive_journal").get(shared_key)
+            if shared_entry and not (retry_absent and shared_entry.get("status") == "manually_absent"):
+                return jsonify({"status": "error", "message": "У спільному журналі вже є спроба відповіді. Перевірте Prom."}), 409
+        except Exception:
+            return jsonify({"status": "error", "message": "Спільний журнал недоступний. Публікацію заблоковано."}), 503
         if key in _positive_publish_attempts and not retry_absent:
             return jsonify({"status": "error", "message": "Цей відгук уже мав спробу публікації. Повтор дозволений лише після ручної перевірки відсутності відповіді."}), 409
         active = {str(shop.id) for shop in _operational_shops(_POSITIVE_SHOPS_TAB)}
@@ -1785,6 +1792,14 @@ def positive_publish_one():
                         found.get("comments_count") != 0 or found.get("comments") != []):
                     return jsonify({"status": "error", "message": "Відгук уже має коментар або не відповідає умовам. Нічого не надіслано."}), 409
                 # Mark before POST: if network times out, never blindly retry.
+                try:
+                    _operations_data_write("positive_journal", shared_key, {
+                        "status": "attempted", "comment": comment,
+                        "at": datetime.utcnow().isoformat() + "Z",
+                        "previous_attempt": shared_entry,
+                    })
+                except Exception:
+                    return jsonify({"status": "error", "message": "Не вдалося записати спробу у спільний журнал. Публікацію скасовано."}), 503
                 _positive_publish_attempts.add(key)
                 req = urllib.request.Request(
                     "https://my.prom.ua/remote/opinion_comment/create",
