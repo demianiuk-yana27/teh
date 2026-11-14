@@ -75,212 +75,125 @@ s = s.replace('</main>', '<section class="view" id="ttn"><div class="pagehead"><
 
 # Buyer questions: manager-approved reply workspace, no automatic publication.
 questions_html = """<section class="view" id="buyer-questions">
-<div class="pagehead"><div class="pageicon">💬</div><div><h2>Запитання покупців</h2><p>Підготовка відповідей із перевіркою менеджером</p></div></div>
+<div class="pagehead"><div class="pageicon">💬</div><div><h2>Запитання покупців</h2><p>Зібрати запитання, підготувати всі відповіді та зберегти шаблони</p></div></div>
 <div class="card" style="max-width:1080px">
-<h3>💬 Запитання з Prom</h3>
-<p style="color:#64748b">Тестовий режим читання. Завантаження не публікує відповіді.</p>
-<button class="run" type="button" onclick="buyerLoadQuestions()">🔄 Завантажити запитання магазинів</button>
+<h3>Запитання з усіх магазинів</h3>
+<p style="color:#64748b">Менеджер самостійно пише відповіді. ШІ вимкнено. Чернетки зберігаються в цьому браузері; до Prom нічого не надсилається без окремого підтвердження.</p>
+<button class="run" type="button" id="buyerLoadBtn" onclick="buyerLoadQuestions()">🔄 Зібрати запитання</button>
 <div id="buyerQuestionsStatus" role="status" style="margin:12px 0;white-space:pre-wrap"></div>
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0">
+<strong id="buyerDraftCounter">Підготовлено 0 із 0</strong>
+<button class="run" type="button" onclick="buyerSendAll()" style="background:#0f766e">📤 Відправити всі підготовлені</button>
+</div>
 <div id="buyerQuestionsList" style="display:grid;gap:12px;margin:12px 0 24px"></div>
-<h3>💬 Робоче місце менеджера</h3>
-<p style="color:#64748b">Запитання завантажуються з Prom. Чернетки редагуються менеджером; автоматична публікація поки вимкнена.</p>
-<label for="buyerShop">Магазин</label><input id="buyerShop" placeholder="Назва магазину" style="display:block;width:100%;max-width:500px;margin:8px 0 16px;padding:10px">
-<label for="buyerProduct">Назва товару</label><input id="buyerProduct" placeholder="Назва товару" style="display:block;width:100%;max-width:650px;margin:8px 0 16px;padding:10px">
-<label for="buyerUrl">Посилання на товар</label><input id="buyerUrl" type="url" placeholder="https://..." style="display:block;width:100%;max-width:650px;margin:8px 0 16px;padding:10px">
-<label for="buyerFacts">Підтверджені характеристики товару</label><button class="run" type="button" onclick="buyerFetchFacts()" style="background:#0f766e;margin:6px 0">🔎 Знайти характеристики товару</button><div id="buyerFactsStatus" role="status" style="font-size:13px;color:#475569;margin:6px 0"></div><textarea id="buyerFacts" rows="4" placeholder="Тільки перевірені характеристики — без припущень" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
-<button class="run" type="button" onclick="buyerWebResearch()" style="background:#475569;margin:4px 0 10px">🌐 Пошукати в інтернеті</button><div id="buyerWebResults" role="status" style="margin:8px 0 16px;white-space:normal"></div>
-<label for="buyerQuestion">Запитання покупця</label><textarea id="buyerQuestion" rows="3" placeholder="Вставте запитання покупця" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
-<button class="run" type="button" onclick="buyerGenerateAI()">🤖 Згенерувати ШІ-відповідь</button> <button class="run" type="button" onclick="buyerPrepareDraft()" style="background:#64748b">📝 Шаблон без ШІ</button>
-<div id="buyerDraftStatus" class="status" style="white-space:pre-wrap"></div>
-<label for="buyerDraft">Відповідь менеджера (можна редагувати)</label><textarea id="buyerDraft" rows="5" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:10px"></textarea>
-<button class="run" type="button" onclick="buyerSaveDraft()" style="background:#0f766e">💾 Зберегти чернетку в браузері</button>
-<button class="run" type="button" onclick="buyerCopyDraft()" style="background:#475569">📋 Копіювати відповідь</button>
-<p style="color:#64748b;font-size:13px">ШІ-чернетка доступна після налаштування ключа на сервері. Пошук характеристик працює для публічних сторінок Prom. Посилання на внутрішній редактор my.prom.ua/cms не читаються. Відправлення в Prom не підключене.</p>
+<h3>📋 Шаблони відповідей</h3>
+<p style="color:#64748b;font-size:13px">Шаблон можна створити з написаної відповіді. Він зберігається лише в поточному браузері.</p>
+<div id="buyerTemplatesList" style="display:grid;gap:8px"></div>
 </div></section>"""
 s = s.replace('</main>', questions_html + '</main>', 1)
 questions_script = """<script>
 (function(){
+ const DRAFTS='teh-buyer-drafts-v2',TEMPLATES='teh-buyer-templates-v2';
+ let questions=[],failures=0,loading=false;
+ function read(key){try{const v=JSON.parse(localStorage.getItem(key)||'{}');return v&&typeof v==='object'?v:{}}catch(e){return {}}}
+ let drafts=read(DRAFTS),templates=read(TEMPLATES);
+ function persist(key,data){try{localStorage.setItem(key,JSON.stringify(data));return true}catch(e){alert('Не вдалося зберегти дані в браузері.');return false}}
+ const el=id=>document.getElementById(id);
+ function node(tag,text){const x=document.createElement(tag);if(text!==undefined)x.textContent=text;return x}
+ function button(text,fn){const b=node('button',text);b.type='button';b.style.cssText='padding:8px 12px;margin:4px 6px 4px 0;border-radius:8px;cursor:pointer';b.addEventListener('click',fn);return b}
+ function key(q){return String(q.company_id)+':'+String(q.id)}
+ function count(){
+   const ready=questions.filter(q=>String(drafts[key(q)]||'').trim()).length;
+   el('buyerDraftCounter').textContent='Підготовлено '+ready+' із '+questions.length;
+ }
+ function templatePicker(q,area){
+   const sel=node('select');sel.style.cssText='padding:8px;max-width:100%;margin:6px 8px 6px 0';
+   sel.append(new Option('Вставити шаблон…',''));
+   Object.keys(templates).sort().forEach(name=>sel.append(new Option(name,name)));
+   sel.addEventListener('change',()=>{
+     if(!sel.value)return;
+     if(area.value.trim()&&!confirm('Замінити поточну відповідь текстом шаблону?')){sel.value='';return}
+     area.value=templates[sel.value];area.dispatchEvent(new Event('input'));sel.value='';
+   });
+   return sel;
+ }
+ function saveTemplate(area){
+   const content=area.value.trim();
+   if(!content)return alert('Спочатку напишіть відповідь.');
+   const name=prompt('Назва нового шаблону:');
+   if(!name||!name.trim())return;
+   const title=name.trim().slice(0,100);
+   if(templates[title]&&!confirm('Перезаписати шаблон «'+title+'»?'))return;
+   templates[title]=content;
+   if(persist(TEMPLATES,templates))renderTemplates();
+ }
+ function renderTemplates(){
+   const box=el('buyerTemplatesList');box.replaceChildren();
+   const names=Object.keys(templates).sort();
+   if(!names.length){box.append(node('p','Поки немає збережених шаблонів.'));return}
+   for(const name of names){
+     const item=node('div');item.style.cssText='padding:10px;border:1px solid #dbe5f1;border-radius:8px';
+     item.append(node('strong',name),node('p',templates[name]));
+     item.append(button('🗑 Видалити',()=>{if(confirm('Видалити шаблон «'+name+'»?')){delete templates[name];persist(TEMPLATES,templates);renderTemplates();renderQuestions()}}));
+     box.append(item);
+   }
+ }
+ function renderQuestions(){
+   const box=el('buyerQuestionsList');box.replaceChildren();
+   for(const q of questions){
+     const id=key(q),card=node('article');card.style.cssText='padding:14px;background:#fff;border:1px solid #dbe5f1;border-radius:12px';
+     card.append(node('strong',(q.shop_name||'Магазин')+' · '+(q.product_name||'Товар')));
+     const details=node('div');details.style.cssText='display:flex;align-items:center;gap:12px;margin:10px 0;flex-wrap:wrap';
+     if(q.product_image&&q.product_image.startsWith('https://')){
+       const img=node('img');img.src=q.product_image;img.alt=q.product_name||'Товар';
+       img.loading='lazy';img.style.cssText='width:76px;height:76px;object-fit:contain;border-radius:8px';details.append(img);
+     }
+     if(q.product_url&&q.product_url.startsWith('https://')){
+       const a=node('a','🔗 Переглянути товар');a.href=q.product_url;a.target='_blank';a.rel='noopener noreferrer';details.append(a);
+     }
+     card.append(details,node('p',q.text||''));
+     const meta=node('p',(q.author||'Покупець')+' · '+(q.date||''));meta.style.color='#64748b';card.append(meta);
+     const label=node('label','Відповідь менеджера:');label.style.fontWeight='600';card.append(label);
+     const area=node('textarea');area.rows=3;area.placeholder='Напишіть відповідь українською…';
+     area.style.cssText='display:block;width:100%;box-sizing:border-box;padding:10px;margin:8px 0;border:1px solid #cbd5e1;border-radius:8px';
+     area.value=String(drafts[id]||'');
+     area.addEventListener('input',()=>{drafts[id]=area.value;persist(DRAFTS,drafts);count()});
+     card.append(area,templatePicker(q,area),button('💾 Створити шаблон із відповіді',()=>saveTemplate(area)));
+     const state=node('small',q.can_comment===false?'⚠️ Prom не дозволяє коментувати це запитання.':'Чернетка зберігається локально. Не відправлено.');
+     state.style.cssText='display:block;color:#64748b;margin-top:6px';card.append(state);box.append(card);
+   }
+   count();
+ }
  window.buyerLoadQuestions=async function(){
-   const output=document.getElementById('buyerQuestionsList');
-   const status=document.getElementById('buyerQuestionsStatus');
-   output.replaceChildren();
-   status.textContent='⏳ Завантажуємо запитання…';
-   const seen=new Set();let count=0, failures=0, shops=0;
+   if(loading)return;
+   loading=true;el('buyerLoadBtn').disabled=true;
+   const status=el('buyerQuestionsStatus');status.textContent='⏳ Збираємо запитання…';
+   questions=[];failures=0;const seen=new Set();let shops=0;
    try{
      for(let offset=0;offset<150;offset++){
-       const response=await fetch('/api/questions/shops-batch',{method:'POST',
-         headers:{'Content-Type':'application/json'},body:JSON.stringify({offset,page:1}),cache:'no-store'});
+       const response=await fetch('/api/questions/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({offset,page:1}),cache:'no-store'});
        const data=await response.json();
-       if(!response.ok || data.status==='error')throw Error(data.message||'HTTP '+response.status);
+       if(!response.ok||data.status==='error')throw Error(data.message||'HTTP '+response.status);
        if(data.done)break;
        shops++;
-       if(data.status!=='ok'){
-         failures++;
-         if(failures<=5){
-           const warning=document.createElement('p');
-           warning.style.cssText='color:#9a3412;font-size:13px;margin:4px 0';
-           warning.textContent='⚠️ '+(data.shop_name||'Магазин')+': '+(data.message||data.error||data.status)+' ('+(data.stage||'перевірка')+'; '+(data.reason||'без деталей')+')';
-           output.append(warning);
-         }
+       if(data.status!=='ok')failures++;
+       for(const q of data.questions||[]){
+         const id=key(q);if(seen.has(id))continue;
+         seen.add(id);questions.push(q);
        }
-       for(const q of (data.questions||[])){
-         const key=q.company_id+':'+q.id;
-         if(seen.has(key))continue;
-         seen.add(key);count++;
-         const card=document.createElement('article');
-         card.style.cssText='border:1px solid #dbe5f1;border-radius:12px;padding:14px;background:white';
-         const heading=document.createElement('strong');
-         heading.textContent=(q.shop_name||'Магазин')+' · '+(q.product_name||'Товар');
-         card.append(heading);
-         const details=document.createElement('div');
-         details.style.cssText='display:flex;gap:12px;align-items:center;margin-top:10px;flex-wrap:wrap';
-         if(q.product_image && q.product_image.startsWith('https://')){
-           const image=document.createElement('img');
-           image.src=q.product_image;image.alt=q.product_name||'Фото товару';
-           image.loading='lazy';image.referrerPolicy='no-referrer';
-           image.style.cssText='width:76px;height:76px;object-fit:contain;border:1px solid #e2e8f0;border-radius:8px';
-           details.append(image);
-         }
-         if(q.product_url && q.product_url.startsWith('https://')){
-           const link=document.createElement('a');
-           link.href=q.product_url;link.target='_blank';link.rel='noopener noreferrer';
-           link.textContent='🔗 Переглянути товар і характеристики';
-           details.append(link);
-         }
-         if(details.childNodes.length)card.append(details);
-         const p=document.createElement('p');p.textContent=q.text||'';card.append(p);
-         const meta=document.createElement('p');
-         meta.style.color='#64748b';
-         meta.textContent=(q.author||'Покупець')+' · '+(q.date||'')+' · '+(q.status||'');
-         card.append(meta);
-         const button=document.createElement('button');
-         button.type='button';button.textContent='📝 Відкрити в редакторі';
-         button.addEventListener('click',()=>{
-           window.buyerSelectedCompanyId=String(q.company_id||'');
-           document.getElementById('buyerShop').value=q.shop_name||'';
-           document.getElementById('buyerProduct').value=q.product_name||'';
-           document.getElementById('buyerUrl').value=q.product_url||'';
-           document.getElementById('buyerQuestion').value=q.text||'';
-           document.getElementById('buyerFacts').value='';
-           document.getElementById('buyerWebResults').replaceChildren();
-           document.getElementById('buyerFactsStatus').textContent='Натисніть «Знайти характеристики товару» для отримання даних із Prom.';
-           document.getElementById('buyerDraft').value='';
-           document.getElementById('buyerDraftStatus').textContent='Додайте перевірені характеристики товару перед підготовкою чернетки.';
-           document.getElementById('buyerQuestion').scrollIntoView({behavior:'smooth',block:'center'});
-         });
-         card.append(button);
-         const mark=document.createElement('button');
-         mark.type='button';mark.style.marginLeft='10px';
-         const storageKey='teh-buyer-reviewed:'+key;
-         let reviewed=false;
-         try{reviewed=localStorage.getItem(storageKey)==='1';}catch(e){}
-         function renderMark(){mark.textContent=reviewed?'↩️ Повернути в роботу':'✓ Позначити опрацьованим';card.style.opacity=reviewed?'0.65':'1';}
-         renderMark();
-         mark.addEventListener('click',()=>{
-           reviewed=!reviewed;
-           try{if(reviewed)localStorage.setItem(storageKey,'1');else localStorage.removeItem(storageKey);}
-           catch(e){reviewed=!reviewed;alert('Не вдалося зберегти позначку в браузері.');}
-           renderMark();
-         });
-         card.append(mark);output.append(card);
-       }
-       status.textContent='⏳ Магазинів перевірено: '+shops+'; запитань: '+count+'; неповних перевірок: '+failures;
+       status.textContent='⏳ Перевірено магазинів: '+shops+'; запитань: '+questions.length+'; неповних перевірок: '+failures;
        if(shops>=data.total_shops)break;
      }
-     status.textContent='✅ Перевірено магазинів: '+shops+'; знайдено запитань: '+count+'; неповних перевірок: '+failures+'. Відповіді не відправлялись.';
-   }catch(e){status.textContent='⚠️ Збір зупинено: '+e.message+'. Перевірено магазинів: '+shops+'; неповних перевірок: '+failures;}
+     status.textContent='✅ Магазинів: '+shops+'; запитань: '+questions.length+'; неповних перевірок: '+failures+'.';
+   }catch(e){status.textContent='⚠️ Збір перервано: '+e.message+'. Завантажено '+questions.length+' запитань.'}
+   finally{renderQuestions();loading=false;el('buyerLoadBtn').disabled=false}
  };
-})();
-</script><script>
-(function(){
- const ids=['buyerShop','buyerProduct','buyerUrl','buyerFacts','buyerQuestion','buyerDraft'];
- const key='teh-buyer-questions-draft-v1';
- function status(message){document.getElementById('buyerDraftStatus').textContent=message;}
- window.buyerSelectedCompanyId='';
- window.buyerFetchFacts=async function(){
-   const url=document.getElementById('buyerUrl').value.trim();
-   const out=document.getElementById('buyerFactsStatus');
-   if(!url){out.textContent='⚠️ Спочатку додайте посилання на товар.';return;}
-   out.textContent='⏳ Отримуємо характеристики товару з Prom…';
-   const match=url.match(/\/product\/edit\/(\d+)/);
-   const cms=!!match && !!window.buyerSelectedCompanyId;
-   try{
-     const res=await fetch(cms?'/api/questions/product-context':'/api/questions/product-facts',{method:'POST',
-       headers:{'Content-Type':'application/json'},body:JSON.stringify(cms?{company_id:window.buyerSelectedCompanyId,product_id:match[1]}:{url})});
-     const data=await res.json();
-     if(!res.ok || data.status!=='ok')throw Error(data.message||'Не вдалося знайти характеристики.');
-     document.getElementById('buyerFacts').value=data.facts;
-     out.textContent='✅ Дані отримано з '+(cms?'кабінету Prom':'публічної сторінки')+'. Перевірте їх перед генерацією.';
-   }catch(e){out.textContent='⚠️ '+e.message;}
+ window.buyerSendAll=function(){
+   const ready=questions.filter(q=>String(drafts[key(q)]||'').trim());
+   if(!ready.length)return alert('Спочатку підготуйте відповіді.');
+   alert('Підготовлено '+ready.length+' відповідей. Відправлення в Prom поки не активоване: необхідно перевірити точний API публікації та захист від повторної відправки. Чернетки збережено, нічого не відправлено.');
  };
- window.buyerWebResearch=async function(){
-   const product=document.getElementById('buyerProduct').value.trim();
-   const question=document.getElementById('buyerQuestion').value.trim();
-   const out=document.getElementById('buyerWebResults');
-   out.replaceChildren();
-   if(!product||!question){out.textContent='⚠️ Потрібні назва товару й запитання.';return;}
-   out.textContent='⏳ Шукаємо публічні джерела без платних API…';
-   try{
-     const response=await fetch('/api/questions/web-research',{method:'POST',
-       headers:{'Content-Type':'application/json'},body:JSON.stringify({product,question})});
-     const data=await response.json();
-     out.replaceChildren();
-     const notice=document.createElement('p');
-     notice.textContent='⚠️ '+(data.message||'Дані з інтернету не підтверджені для цього товару.');
-     out.append(notice);
-     if(!Array.isArray(data.sources))return;
-     for(const source of data.sources){
-       const card=document.createElement('div');
-       card.style.cssText='border:1px solid #cbd5e1;border-radius:8px;padding:10px;margin:8px 0';
-       const link=document.createElement('a');
-       link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';
-       link.textContent=source.title||source.url;
-       card.append(link);
-       const snippet=document.createElement('p');
-       snippet.textContent=source.snippet||'Перегляньте джерело для перевірки характеристик.';
-       card.append(snippet);
-       const label=document.createElement('small');
-       label.textContent='НЕПІДТВЕРДЖЕНО — перевірте точну модель; орієнтовні значення не є характеристиками цього товару.';
-       card.append(label);out.append(card);
-     }
-   }catch(e){out.textContent='⚠️ Безкоштовний пошук недоступний: '+e.message;}
- };
- window.buyerGenerateAI=async function(){
-   const question=document.getElementById('buyerQuestion').value.trim();
-   const facts=document.getElementById('buyerFacts').value.trim();
-   const product=document.getElementById('buyerProduct').value.trim();
-   if(!question || !facts){status('⚠️ Вкажіть запитання і перевірені характеристики товару.');return;}
-   status('⏳ ШІ готує чернетку…');
-   try{
-     const response=await fetch('/api/questions/ai-draft',{method:'POST',
-       headers:{'Content-Type':'application/json'},
-       body:JSON.stringify({question,facts,product})});
-     const data=await response.json();
-     if(!response.ok || data.status!=='ok')throw Error(data.message||'Помилка генерації');
-     document.getElementById('buyerDraft').value=data.draft;
-     status('✅ ШІ-чернетка готова. Перевірте всі факти та відредагуйте перед відправленням у Prom.');
-   }catch(e){status('⚠️ '+e.message);}
- };
- window.buyerPrepareDraft=function(){
-   const facts=document.getElementById('buyerFacts').value.trim();
-   const question=document.getElementById('buyerQuestion').value.trim();
-   if(!question){status('⚠️ Спочатку введіть запитання покупця.');return;}
-   if(!facts){status('⚠️ Немає перевірених характеристик. Не будемо вигадувати відповідь.');return;}
-   document.getElementById('buyerDraft').value='Добрий день! Дякуємо за запитання. За підтвердженою інформацією про товар: '+facts+'. Якщо потрібно уточнити інші характеристики, будь ласка, напишіть нам. Гарного дня!';
-   status('📝 Чернетку підготовлено з указаних характеристик. Перевірте, чи відповідає вона саме на запитання покупця, та відредагуйте перед використанням.');
- };
- window.buyerSaveDraft=function(){
-   try{localStorage.setItem(key,JSON.stringify(Object.fromEntries(ids.map(id=>[id,document.getElementById(id).value]))));status('✅ Чернетку збережено лише у цьому браузері.');}
-   catch(e){status('❌ Не вдалося зберегти чернетку: '+e.message);}
- };
- window.buyerCopyDraft=async function(){
-   const value=document.getElementById('buyerDraft').value.trim();
-   if(!value){status('⚠️ Чернетка порожня.');return;}
-   try{await navigator.clipboard.writeText(value);status('✅ Скопійовано. Відправлення в Prom виконується вручну.');}
-   catch(e){status('⚠️ Копіювання недоступне. Виділіть текст вручну.');}
- };
- function restore(){try{const data=JSON.parse(localStorage.getItem(key)||'{}');for(const id of ids)if(typeof data[id]==='string')document.getElementById(id).value=data[id];}catch(e){}}
- if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',restore);else restore();
+ renderTemplates();count();
 })();
 </script>"""
 s = s.replace('</body>', questions_script + '</body>', 1)
