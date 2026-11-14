@@ -238,9 +238,21 @@ questions_script = """<script>
    questions=[];failures=0;const seen=new Set();let shops=0;
    try{
      for(let offset=0;offset<150;offset++){
-       const response=await fetch('/api/questions/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({offset,page:1}),cache:'no-store'});
-       const data=await response.json();
-       if(!response.ok||data.status==='error')throw Error(data.message||'HTTP '+response.status);
+       let data=null,lastError='';
+       for(let attempt=1;attempt<=3;attempt++){
+         try{
+           const response=await fetch('/api/questions/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({offset,page:1}),cache:'no-store'});
+           const contentType=response.headers.get('content-type')||'';
+           if(!contentType.includes('application/json'))throw Error('HTTP '+response.status+' (не JSON)');
+           const result=await response.json();
+           if(!response.ok||result.status==='error')throw Error(result.message||'HTTP '+response.status);
+           data=result;break;
+         }catch(e){
+           lastError=e.message;
+           if(attempt<3){status.textContent='⏳ Повторна спроба для магазину №'+(offset+1)+' ('+attempt+'/3): '+lastError;await new Promise(resolve=>setTimeout(resolve,attempt*1200))}
+         }
+       }
+       if(!data){failures++;status.textContent='⚠️ Магазин №'+(offset+1)+' не вдалося прочитати після 3 спроб: '+lastError+'. Продовжуємо.';continue}
        if(data.done)break;
        shops++;
        if(data.status!=='ok')failures++;
