@@ -2364,6 +2364,44 @@ def _operations_data_write(kind, key, value, only_new=False):
         return True
 
 
+@app.route("/operations/import-positive-journal", methods=["POST"])
+def import_positive_journal():
+    """Idempotent bulk migration: one read and one append per chunk."""
+    import json
+    try:
+        data = request.get_json(silent=True) or {}
+        entries = data.get("entries")
+        if not isinstance(entries, list) or not 1 <= len(entries) <= 100:
+            return jsonify({"status": "error", "message": "Передайте від 1 до 100 записів."}), 400
+        allowed = {"attempted", "sent", "verified", "manually_verified",
+                   "manually_absent", "preflight_failed"}
+        prepared = {}
+        for item in entries:
+            if not isinstance(item, dict):
+                return jsonify({"status": "error", "message": "Некоректний запис."}), 400
+            key = str(item.get("key") or "").strip()
+            value = item.get("value")
+            if (not key or len(key) > 120 or not isinstance(value, dict)
+                    or value.get("status") not in allowed):
+                return jsonify({"status": "error", "message": "Некоректний ключ або статус."}), 400
+            payload = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+            if len(payload) > 45000:
+                return jsonify({"status": "error", "message": "Запис завеликий."}), 400
+            prepared[key] = payload
+        with _operations_data_lock:
+            sheet = _operations_data_sheet("positive_journal")
+            existing = set(sheet.col_values(1))
+            timestamp = datetime.utcnow().isoformat() + "Z"
+            rows = [[key, payload, timestamp] for key, payload in prepared.items()
+                    if key not in existing]
+            if rows:
+                sheet.append_rows(rows, value_input_option="RAW", insert_data_option="INSERT_ROWS")
+        return jsonify({"status": "ok", "inserted": len(rows),
+                        "skipped": len(prepared) - len(rows)})
+    except Exception:
+        return jsonify({"status": "error", "message": "Google Sheets тимчасово недоступний. Повторіть пакет пізніше."}), 503
+
+
 @app.route("/operations/store/<kind>", methods=["GET", "POST"])
 def operations_store(kind):
     if kind not in _OPERATIONS_DATA_TABS:
