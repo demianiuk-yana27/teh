@@ -1449,6 +1449,35 @@ def positive_shops_diagnostics():
         return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:150]}), 500
 
 
+# Read-only positive collection: reuse one Google Sheets snapshot for a run.
+# Publication endpoints still check eligibility independently.
+_positive_shops_cache_lock = threading.Lock()
+_positive_shops_cache = {"expires": 0.0, "shops": None}
+
+
+def _positive_collection_shops():
+    import time
+    now = time.monotonic()
+    with _positive_shops_cache_lock:
+        cached = _positive_shops_cache["shops"]
+        if cached is not None and now < _positive_shops_cache["expires"]:
+            return list(cached)
+        try:
+            shops = list(_operational_shops(_POSITIVE_SHOPS_TAB))
+        except Exception:
+            # A quota error should not break an in-progress read-only collection.
+            if cached is not None:
+                return list(cached)
+            raise
+        unique = {}
+        for shop in shops:
+            unique.setdefault(str(shop.id), shop)
+        result = list(unique.values())
+        _positive_shops_cache["shops"] = result
+        _positive_shops_cache["expires"] = time.monotonic() + 900
+        return list(result)
+
+
 @app.route("/positive/shops-batch", methods=["POST"])
 def positive_shops_batch():
     """Read-only bounded batch of active shops. No publication or cookie persistence."""
@@ -1480,12 +1509,8 @@ def positive_shops_batch():
     if offset < 0 or offset > 1000:
         return jsonify({"status": "error", "message": "Некоректний offset."}), 400
     try:
-        # Re-read TRUE/FALSE for every batch, so disabled shops are never collected.
-        active = _operational_shops(_POSITIVE_SHOPS_TAB)
-        unique = {}
-        for shop in active:
-            unique.setdefault(str(shop.id), shop)
-        shops = list(unique.values())
+        # Reuse the active-shop snapshot instead of hitting Sheets 49 times.
+        shops = _positive_collection_shops()
         if target_id:
             shops = [shop for shop in shops if str(shop.id) == target_id]
         mapping = _positive_login_map()
