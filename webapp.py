@@ -400,7 +400,7 @@ def _analytics_lifestyle_write(metrics):
         actual_label = str(row[1]).strip().casefold() if len(row) > 1 else ""
         if label not in actual_label:
             raise ValueError("Показник роботи: неправильний підпис у B" + str(rownum) + ": " + actual_label)
-        kpi_updates.append((rownum, col, "—" if key == "readyToShipPercent" and metrics[key] == "—" else metrics[key] / 100))
+        kpi_updates.append((rownum, col, "—" if key == "readyToShipPercent" and metrics[key] == "—" else metrics[key]))
 
     # Analytics: each shop occupies 9 columns: monthly (positive, negative, %),
     # yearly (positive, negative, %), successful orders (total, canceled, %).
@@ -427,16 +427,28 @@ def _analytics_lifestyle_write(metrics):
                         yearly_pos, yearly_neg, ratio(yearly_pos, yearly_neg),
                         total_orders, cancelled, metrics["successfulOrdersPercent"] / 100]
     changes = [(target, base + j, value) for j, value in enumerate(analytics_values) if value is not None]
+    # Permit only exact legacy values from this automation, never unrelated data.
     for sheet, cells in ((work, kpi_updates), (reviews, changes)):
-        for rownum, colnum, _ in cells:
+        for rownum, colnum, value in cells:
             cell = rowcol_to_a1(rownum, colnum)
-            if sheet.acell(cell).value not in (None, ""):
-                raise ValueError(sheet.title + ": клітинка " + cell + " вже заповнена. Нічого не перезаписано.")
+            current = sheet.acell(cell, value_render_option="UNFORMATTED_VALUE").value
+            if current in (None, ""):
+                continue
+            legacy = value / 100 if sheet == work and type(value) in (int, float) else value
+            if current != legacy and current != value:
+                raise ValueError(sheet.title + ": клітинка " + cell + " містить інші дані. Запис скасовано.")
     # Only after all validations, update two sheets.
     for sheet, cells in ((work, kpi_updates), (reviews, changes)):
         sheet.batch_update([{"range": rowcol_to_a1(rownum, colnum),
                              "values": [[value]]} for rownum, colnum, value in cells],
                            value_input_option="USER_ENTERED")
+    # Fix number formatting, including cells already written by the previous version.
+    work.batch_format([{"range": rowcol_to_a1(rownum, colnum), "format": {
+        "numberFormat": {"type": "NUMBER", "pattern": "0"}}}
+        for rownum, colnum, value in kpi_updates if value != "—"])
+    reviews.batch_format([{"range": rowcol_to_a1(rownum, colnum), "format": {
+        "numberFormat": {"type": "NUMBER", "pattern": "0"}}}
+        for rownum, colnum, value in changes if colnum - base in (0, 1, 3, 4, 6, 7)])
     return {"date": today, "work_cells": len(kpi_updates), "review_cells": len(changes)}
 
 
