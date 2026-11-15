@@ -14,7 +14,7 @@ export async function onRequest({request,env,data}){
   }
   const body=await request.json().catch(()=>({}));
   const key=String(body.key||'').trim();
-  if(!/^\\d+:\\d+$/.test(key)||key.length>100)return reply({status:'error',message:'Неправильний ключ запитання.'},400);
+  if(!/^\d+:\d+$/.test(key)||key.length>100)return reply({status:'error',message:'Неправильний ключ запитання.'},400);
   if(request.method==='DELETE'){
    await db.prepare('DELETE FROM buyer_question_drafts WHERE draft_key=?').bind(key).run();
    return reply({status:'ok'});
