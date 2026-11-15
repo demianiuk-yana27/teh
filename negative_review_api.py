@@ -41,7 +41,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _read(opener, url, data=None, csrf=None):
+def _read(opener, url, data=None, csrf=None, max_attempts=4):
     headers = {"Accept": "application/json, text/plain, */*",
                "User-Agent": "Mozilla/5.0",
                "Referer": "https://my.prom.ua/cms/opinions/product/prom",
@@ -51,7 +51,7 @@ def _read(opener, url, data=None, csrf=None):
                         "Origin": "https://my.prom.ua",
                         "Referer": "https://my.prom.ua/cms/opinions/company",
                         "X-CSRFToken": csrf})
-    for attempt in range(4):
+    for attempt in range(max_attempts):
         try:
             with opener.open(urllib.request.Request(
                 url, data=json.dumps(data).encode() if data is not None else None,
@@ -67,7 +67,7 @@ def _read(opener, url, data=None, csrf=None):
                 return result
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
             code = getattr(exc, "code", None)
-            if attempt == 3 or (code is not None and code not in (429, 500, 502, 503, 504)):
+            if attempt == max_attempts - 1 or (code is not None and code not in (429, 500, 502, 503, 504)):
                 raise
             time.sleep(min(2 ** attempt, 6) + random.uniform(0, .3))
 
@@ -361,7 +361,7 @@ def collect_analytics_context(account):
         "grades": "https://my.prom.ua/cms/grades/context",
         "company_reviews": "https://my.prom.ua/cms/opinions/company/context",
     }
-    return {name: _read(opener, url) for name, url in endpoints.items()}
+    return {name: _read(opener, url, max_attempts=5 if name == "company_reviews" else 4) for name, url in endpoints.items()}
 
 
 def _find_named_metric(node, names):
