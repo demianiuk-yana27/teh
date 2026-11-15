@@ -352,3 +352,68 @@ def probe_analytics_pages(account):
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
             output[key] = {"status": "error", "message": str(exc)[:180]}
     return output
+
+
+def collect_analytics_context(account):
+    """Fetch the two verified Prom JSON context endpoints for one signed-in shop."""
+    opener, _csrf = _switch(account)
+    endpoints = {
+        "grades": "https://my.prom.ua/cms/grades/context",
+        "company_reviews": "https://my.prom.ua/cms/opinions/company/context",
+    }
+    return {name: _read(opener, url) for name, url in endpoints.items()}
+
+
+def _find_named_metric(node, names):
+    """Look up a metric by exact JSON key, recursively, without guessing values."""
+    if isinstance(node, dict):
+        for key in names:
+            if key in node and type(node[key]) in (int, float):
+                return node[key]
+        for value in node.values():
+            found = _find_named_metric(value, names)
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for value in node:
+            found = _find_named_metric(value, names)
+            if found is not None:
+                return found
+    return None
+
+
+def extract_analytics_metrics(context):
+    """Return only observed numeric fields, leaving unknown values unset."""
+    grades = context["grades"]
+    opinions = context["company_reviews"]
+    monthly = {}
+    def walk(node):
+        if isinstance(node, dict):
+            entries = node.get("countByMonth")
+            if isinstance(entries, list):
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    title = str(entry.get("periodTitle") or "").strip().casefold()
+                    if title in ("позитивні", "негативні"):
+                        monthly[title] = {
+                            "month": entry.get("count1Month"),
+                            "year": entry.get("count12Month"),
+                        }
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+    walk(opinions)
+    return {
+        "monthlyPositive": monthly.get("позитивні", {}).get("month"),
+        "monthlyNegative": monthly.get("негативні", {}).get("month"),
+        "yearlyPositive": monthly.get("позитивні", {}).get("year"),
+        "yearlyNegative": monthly.get("негативні", {}).get("year"),
+        "successfulOrdersPercent": _find_named_metric(grades, ("completedOrdersPercent",)),
+        "positiveReviewsPercent": _find_named_metric(grades, ("percentagePositiveReviews", "positiveOpinionsPercent")),
+        "affectingOrders": _find_named_metric(grades, ("orders_in_rating_count",)),
+        "affectingCancellations": _find_named_metric(grades, ("canceled_orders_in_rating_count",)),
+        "readyToShipPercent": _find_named_metric(grades, ("completedOrdersPercent",)) if False else None,
+    }
