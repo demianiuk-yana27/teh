@@ -363,12 +363,14 @@ def _analytics_lifestyle_write(metrics):
     from datetime import datetime
     from negative_reviews import get_client
     from gspread.utils import rowcol_to_a1
-    required = ("successfulOrdersPercent", "positiveReviewsPercent", "readyToShipPercent",
+    required = ("successfulOrdersPercent", "positiveReviewsPercent",
                 "monthlyPositive", "monthlyNegative", "yearlyPositive", "yearlyNegative",
                 "affectingOrders", "affectingCancellations")
     missing = [key for key in required if type(metrics.get(key)) not in (int, float)]
     if missing:
         raise ValueError("Не записано: відсутні показники: " + ", ".join(missing))
+    if metrics.get("readyToShipPercent") != "—" and type(metrics.get("readyToShipPercent")) not in (int, float):
+        raise ValueError("Не записано: невідомий показник «Готово до відправки».")
     book = get_client().open_by_key(_ANALYTICS_TEST_BOOK)
     work = book.worksheet("Показники роботи")
     reviews = book.worksheet("Аналітика відгуків")
@@ -398,7 +400,7 @@ def _analytics_lifestyle_write(metrics):
         actual_label = str(row[1]).strip().casefold() if len(row) > 1 else ""
         if label not in actual_label:
             raise ValueError("Показник роботи: неправильний підпис у B" + str(rownum) + ": " + actual_label)
-        kpi_updates.append((rownum, col, metrics[key] / 100))
+        kpi_updates.append((rownum, col, "—" if key == "readyToShipPercent" and metrics[key] == "—" else metrics[key] / 100))
 
     # Analytics: each shop occupies 9 columns: monthly (positive, negative, %),
     # yearly (positive, negative, %), successful orders (total, canceled, %).
