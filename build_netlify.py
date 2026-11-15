@@ -96,14 +96,10 @@ questions_script = """<script>
  const DRAFTS='teh-buyer-drafts-v2',TEMPLATES='teh-buyer-templates-v2',RESULTS='teh-buyer-send-results-v1';
  let questions=[],failures=0,loading=false,sending=false,stopRequested=false;
  function read(key){try{const v=JSON.parse(localStorage.getItem(key)||'{}');return v&&typeof v==='object'?v:{}}catch(e){return {}}}
- let drafts=read(DRAFTS),templates={},results={},storeReady=false,draftSaveTimers={};
- async function buyerSaveDraft(id,text){
-   const res=await fetch('/api/operations/store/question_drafts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:id,value:{text}})});
-   const data=await res.json();
-   if(!res.ok||data.status!=='ok')throw Error(data.message||'Не вдалося зберегти чернетку');
- }
+ let drafts=read(DRAFTS),templates=read(TEMPLATES),results=read(RESULTS),storeReady=true,draftSaveTimers={};
+ async function buyerSaveDraft(id,text){persist(DRAFTS,drafts)}
  async function buyerImportDrafts(){
-   if(!storeReady)return alert('Спільне сховище недоступне.');
+   
    const local=read(DRAFTS),keys=Object.keys(local).filter(k=>String(local[k]||'').trim());
    if(!keys.length)return alert('Локальних чернеток немає.');
    if(!confirm('Перенести '+keys.length+' чернеток у спільне сховище?'))return;
@@ -116,11 +112,11 @@ questions_script = """<script>
    const res=await fetch('/api/questions/store',{cache:'no-store'});
    const data=await res.json();
    if(!res.ok||data.status!=='ok')throw Error(data.message||'Спільне сховище недоступне');
-   templates=data.templates||{};results=data.results||{};
+   templates={...(data.templates||{}),...templates};results={...(data.results||{}),...results};persist(RESULTS,results);
    const dres=await fetch('/api/operations/store/question_drafts',{cache:'no-store'});
    const ddata=await dres.json();
    if(!dres.ok||ddata.status!=='ok')throw Error('Не вдалося завантажити спільні чернетки');
-   drafts=Object.fromEntries(Object.entries(ddata.items||{}).map(([k,v])=>[k,v.text||'']));storeReady=true;
+   drafts={...Object.fromEntries(Object.entries(ddata.items||{}).map(([k,v])=>[k,v.text||''])),...drafts};storeReady=true;persist(DRAFTS,drafts);persist(TEMPLATES,templates);
    renderTemplates();renderQuestions();
  }
  async function saveStore(action,name,text){
@@ -156,7 +152,7 @@ questions_script = """<script>
    const title=name.trim().slice(0,100);
    if(templates[title]&&!confirm('Перезаписати шаблон «'+title+'»?'))return;
    if(!storeReady)return alert('Спільне сховище недоступне.');
-   try{await saveStore('save_template',title,content);templates[title]=content;renderTemplates();renderQuestions()}
+   try{templates[title]=content;persist(TEMPLATES,templates);renderTemplates();renderQuestions()}
    catch(e){alert('Не збережено: '+e.message)}
  }
  function renderTemplates(){
@@ -209,7 +205,7 @@ questions_script = """<script>
        if(q.can_comment===false)return alert('Prom не дозволяє коментувати це запитання.');
        if(!confirm('УВАГА: відповідь буде РЕАЛЬНО опублікована в Prom.\\n\\nМагазин: '+q.shop_name+'\\nТовар: '+q.product_name+'\\nЗапитання: '+q.text+'\\n\\nВідповідь: '+answer+'\\n\\nПідтверджуєте?'))return;
        send.disabled=true;state.textContent='⏳ Відправляємо…';
-       results[id]={status:'review',message:'Спроба розпочата; перевірте Prom перед повтором.'};
+       results[id]={status:'review',message:'Спроба розпочата; перевірте Prom перед повтором.'};persist(RESULTS,results);
        try{
          const res=await fetch('/api/questions/send-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:q.company_id,thread_id:q.id,comment:answer,confirmed:true})});
          const result=await res.json();
@@ -221,7 +217,7 @@ questions_script = """<script>
            state.textContent='⚠️ '+(result.message||'Не вдалося підтвердити публікацію. Перевірте в Prom.');
            results[id]={status:'review',message:result.message||'Перевірте Prom'};count();
          }
-       }catch(e){state.textContent='⚠️ Невідомий результат. Перевірте Prom перед повтором.';count()}
+       }catch(e){state.textContent='⚠️ Невідомий результат. Перевірте Prom перед повтором.';count()}finally{persist(RESULTS,results)}
      });
      card.append(send);
      if(results[id]){send.disabled=true;send.textContent=results[id].status==='sent'?'✅ Відправлено':'⚠️ Потрібна перевірка';}
@@ -284,7 +280,7 @@ questions_script = """<script>
  window.buyerStopSending=function(){stopRequested=true;el('buyerSendStatus').textContent='⏹ Зупинка після поточної відповіді…';};
  window.buyerSendAll=async function(){
    if(sending||loading)return;
-   try{await loadStore()}catch(e){return alert('Спільне сховище недоступне: '+e.message)}
+   // Sending must not depend on Google Sheets.
    const ready=questions.filter(q=>String(drafts[key(q)]||'').trim()&&!results[key(q)]&&q.can_comment!==false);
    if(!ready.length)return alert('Немає підготовлених відповідей для відправлення. Запитання з невизначеним результатом потрібно перевірити в Prom.');
    const preview=ready.slice(0,8).map(q=>'• '+q.shop_name+': '+q.text.slice(0,90)).join('\\n');
@@ -299,7 +295,7 @@ questions_script = """<script>
        const id=key(q),answer=String(drafts[id]||'').trim();
        if(!answer||results[id])continue;
        results[id]={status:'review',message:'Відправлення розпочато. Якщо сторінку закрито, перевірте Prom.'};
-       // Server records the attempt before posting to Prom.
+       persist(RESULTS,results); // Keep ambiguous attempts in this browser before POST.
        status.textContent='⏳ Опрацьовано '+(sent+failed)+' із '+ready.length+'; успішно: '+sent+'; перевірити: '+failed+'. Зараз: '+q.shop_name;
        try{
          const response=await fetch('/api/questions/send-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:q.company_id,thread_id:q.id,comment:answer,confirmed:true})});
@@ -312,14 +308,12 @@ questions_script = """<script>
            failed++;stopRequested=true;
          }
        }catch(e){results[id]={status:'review',message:'Можливо, запит надіслано. Перевірте Prom перед повтором.'};failed++;stopRequested=true;}
-       renderQuestions();
+       persist(RESULTS,results);renderQuestions();
      }
      status.textContent='🏁 Успішно: '+sent+'; потребують перевірки: '+failed+'. '+(stopRequested?'Чергу зупинено.':'Чергу завершено.')+' Повторно невизначені запити автоматично не надсилаються.';
    }finally{sending=false;sendBtn.disabled=false;stopBtn.disabled=true;el('buyerLoadBtn').disabled=false;renderQuestions();}
  };
- loadStore().catch(e=>{
-   storeReady=false;el('buyerSendStatus').textContent='⚠️ Спільне сховище недоступне: '+e.message;
- });
+ loadStore().catch(e=>{storeReady=true;el('buyerSendStatus').textContent='ℹ️ Працюємо з локальними чернетками та журналом. Відправлення доступне.'});
  renderTemplates();count();
 })();
 </script>"""
