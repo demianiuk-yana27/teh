@@ -19,6 +19,56 @@ if missing:
 s = s.replace('<title>Asteril Automation</title>', '<title>Технічний відділ</title>', 1)
 s = s.replace('<h1>Asteril Automation</h1>', '<h1>Технічний відділ</h1>', 1)
 
+# Render readiness control replaces the unused top-bar search.
+s = s.replace(
+    '<div class="search">⌕ &nbsp; Пошук по базі...</div>',
+    '<button id="renderReadyButton" type="button" class="search" onclick="checkRenderReady()" '
+    'style="cursor:pointer;text-align:left;color:#eaf2ff;font:inherit;border:1px solid #49617f">'
+    '🟡 Перевірити готовність Render</button>',
+    1,
+)
+render_ready_script = """<script>
+(function(){
+ let running=false;
+ window.checkRenderReady=async function(){
+  if(running)return;
+  running=true;
+  const button=document.getElementById('renderReadyButton');
+  if(!button){running=false;return}
+  button.disabled=true;
+  const started=Date.now(),maxMs=150000;
+  let attempt=0,last='Сервер запускається';
+  try{
+   while(Date.now()-started<maxMs){
+    attempt++;
+    button.textContent='⏳ Запускаємо Render… ('+Math.floor((Date.now()-started)/1000)+' с)';
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),22000);
+    try{
+     const res=await fetch('/api/healthz?check='+Date.now(),{cache:'no-store',signal:controller.signal});
+     const type=res.headers.get('content-type')||'';
+     if(res.ok&&type.includes('application/json')){
+      const data=await res.json();
+      if(data.status==='ok'&&data.service==='teh-new'){
+       button.textContent='🟢 Render готовий до роботи';
+       return;
+      }
+     }
+     if(type.includes('text/html')&&(res.status===403||res.status===429||res.status===503)){
+      last='Cloudflare повернув сторінку перевірки (HTTP '+res.status+')';
+     }else last='HTTP '+res.status;
+    }catch(e){last=e.name==='AbortError'?'Сервер ще прокидається':e.message}
+    finally{clearTimeout(timer)}
+    await new Promise(resolve=>setTimeout(resolve,4000));
+   }
+   button.textContent='🔴 Render недоступний — повторити';
+   alert('Не вдалося підтвердити готовність Render за 2,5 хвилини. '+last+'. Спробуйте ще раз пізніше. Якщо Cloudflare вимагає перевірку браузера, її потрібно пройти вручну.');
+  }finally{running=false;button.disabled=false}
+ };
+})();
+</script>"""
+s = s.replace('</body>', render_ready_script + '</body>', 1)
+
 # Shared manager task board navigation.
 s = s.replace('<div class="section-label">Відділи</div>', '<div class="section-label">Відділи</div><div class="navitem" data-view="task-board">📋 Дошка задач</div><div class="navitem" data-view="quick-requests">🐿️ Швидка подача запитів</div>', 1)
 
