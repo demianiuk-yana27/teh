@@ -307,3 +307,48 @@ def collect_shop(shop, account, since, until=""):
             raise ValueError("Перевищено ліміт сторінок " + kind)
         output[kind] = found
     return output
+
+
+def probe_analytics_pages(account):
+    """Read-only HTTP probe, using the same authenticated sign-to session as review exports.
+
+    No guessed internal API endpoints and no unverified numeric metrics.
+    """
+    import re
+    from html import unescape
+    opener, _csrf = _switch(account)
+    output = {}
+    for key, path in (("grades", "/cms/grades"), ("company_reviews", "/cms/opinions/company")):
+        url = "https://my.prom.ua" + path
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+            "Referer": "https://my.prom.ua/cms/",
+        })
+        try:
+            with opener.open(req, timeout=20) as resp:
+                content_type = resp.headers.get("Content-Type", "").split(";")[0].lower()
+                body = resp.read(1500001)
+                if len(body) > 1500000:
+                    raise ValueError("Відповідь Prom завелика")
+                text = body.decode("utf-8", errors="replace")
+                if "html" not in content_type and "json" not in content_type:
+                    raise ValueError("Неочікуваний формат відповіді: " + content_type)
+                if re.search(r"captcha|cf-chl|just a moment|login-form", text, re.I):
+                    raise ValueError("Prom повернув перевірку доступу або сторінку входу")
+                # Report only diagnostic metadata; never return cookies, HTML or buyer data.
+                output[key] = {
+                    "status": "ok", "http_status": resp.status,
+                    "content_type": content_type,
+                    "bytes": len(body),
+                    "contains_statistics_block": "statistics_block" in text,
+                    "contains_company_statistics": "company_statistics" in text,
+                    "contains_opinion_stats_block": "opinion_stats_block" in text,
+                    "contains_successful_orders_label": "успішні замовлення" in unescape(text).lower(),
+                }
+        except urllib.error.HTTPError as exc:
+            output[key] = {"status": "error", "http_status": exc.code,
+                           "message": "Prom повернув HTTP " + str(exc.code)}
+        except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+            output[key] = {"status": "error", "message": str(exc)[:180]}
+    return output
