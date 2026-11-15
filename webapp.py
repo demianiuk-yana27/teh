@@ -316,33 +316,57 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
         negative_lock.release()
 
 
-@app.route("/negative/analytics-preview", methods=["POST"])
-def negative_analytics_preview():
-    """Read-only single-shop verification before enabling writes to the test workbook."""
+analytics_preview_status = {"status": "idle", "message": "Тест ще не запускався."}
+
+
+def _analytics_preview_worker():
+    global analytics_preview_status
     from negative_reviews import PromBrowser, load_active_shops
-    if not negative_lock.acquire(blocking=False):
-        return jsonify({"status": "busy", "message": "Інший процес уже виконується."}), 409
+    browser = None
     try:
         shops = load_active_shops(_sheet_id(), "Список магазинів")
         shop = next((item for item in shops if item.name.strip().casefold() == "teno"), None)
         if shop is None:
-            return jsonify({"status": "error", "message": "Teno не знайдено серед активних магазинів основної таблиці."}), 404
+            raise RuntimeError("Teno не знайдено серед активних магазинів основної таблиці.")
         browser = PromBrowser()
-        try:
-            browser.open_cms()
-            browser.switch_shop(shop)
-            performance = browser.collect_performance_stats()
-            reviews = browser.collect_review_stats()
-            return jsonify({"status": "ok", "shop": shop.name, "company_id": shop.id,
-                            "performance": performance, "reviews": reviews,
-                            "message": "Дані отримано з обох сторінок Prom. У таблицю нічого не записано."})
-        finally:
-            browser.close()
+        browser.open_cms()
+        browser.switch_shop(shop)
+        performance = browser.collect_performance_stats()
+        reviews = browser.collect_review_stats()
+        analytics_preview_status = {
+            "status": "success", "shop": shop.name, "company_id": shop.id,
+            "performance": performance, "reviews": reviews,
+            "message": "Дані отримано з двох сторінок Prom. Google Sheets не змінено."
+        }
     except Exception as exc:
         traceback.print_exc()
-        return jsonify({"status": "error", "message": str(exc)}), 500
+        analytics_preview_status = {"status": "error", "message": str(exc)}
     finally:
+        if browser is not None:
+            try:
+                browser.close()
+            except Exception:
+                pass
         negative_lock.release()
+
+
+@app.route("/negative/analytics-preview", methods=["POST"])
+def negative_analytics_preview():
+    global analytics_preview_status
+    if not negative_lock.acquire(blocking=False):
+        return jsonify({"status": "busy", "message": "Інший процес уже виконується."}), 409
+    analytics_preview_status = {"status": "running", "message": "Збираємо дані Teno з двох сторінок Prom."}
+    try:
+        threading.Thread(target=_analytics_preview_worker, daemon=True).start()
+    except Exception:
+        negative_lock.release()
+        raise
+    return jsonify(analytics_preview_status), 202
+
+
+@app.route("/negative/analytics-preview/status", methods=["GET"])
+def negative_analytics_preview_get_status():
+    return jsonify(analytics_preview_status)
 
 
 @app.route("/negative/run/<process_name>", methods=["POST"])
