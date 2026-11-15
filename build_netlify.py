@@ -97,7 +97,26 @@ questions_script = """<script>
  let questions=[],failures=0,loading=false,sending=false,stopRequested=false;
  function read(key){try{const v=JSON.parse(localStorage.getItem(key)||'{}');return v&&typeof v==='object'?v:{}}catch(e){return {}}}
  let drafts=read(DRAFTS),templates=read(TEMPLATES),results=read(RESULTS),storeReady=true,draftSaveTimers={};
- async function buyerSaveDraft(id,text){persist(DRAFTS,drafts)}
+ async function buyerSaveDraft(id,text){
+   persist(DRAFTS,drafts);
+   const response=await fetch('/questions/drafts',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:id,text})});
+   const data=await response.json();
+   if(!response.ok||data.status!=='ok')throw Error(data.message||'D1 недоступна');
+ }
+ async function buyerLoadD1Drafts(){
+   const response=await fetch('/questions/drafts',{cache:'no-store'});
+   const data=await response.json();
+   if(!response.ok||data.status!=='ok')throw Error(data.message||'D1 недоступна');
+   const remote=data.items||{},local=read(DRAFTS);
+   // Existing browser drafts take precedence; do not silently lose unsynced text.
+   drafts={...Object.fromEntries(Object.entries(remote).map(([k,v])=>[k,String(v.text||'')])),...local};
+   persist(DRAFTS,drafts);
+   renderQuestions();
+   // Import any previously local-only drafts without blocking normal work.
+   for(const [k,text] of Object.entries(local)){
+     if(String(text||'').trim() && !(k in remote))buyerSaveDraft(k,text).catch(()=>{});
+   }
+ }
  async function buyerImportDrafts(){
    
    const local=read(DRAFTS),keys=Object.keys(local).filter(k=>String(local[k]||'').trim());
@@ -113,10 +132,7 @@ questions_script = """<script>
    const data=await res.json();
    if(!res.ok||data.status!=='ok')throw Error(data.message||'Спільне сховище недоступне');
    templates={...(data.templates||{}),...templates};results={...(data.results||{}),...results};persist(RESULTS,results);
-   const dres=await fetch('/api/operations/store/question_drafts',{cache:'no-store'});
-   const ddata=await dres.json();
-   if(!dres.ok||ddata.status!=='ok')throw Error('Не вдалося завантажити спільні чернетки');
-   drafts={...Object.fromEntries(Object.entries(ddata.items||{}).map(([k,v])=>[k,v.text||''])),...drafts};storeReady=true;persist(DRAFTS,drafts);persist(TEMPLATES,templates);
+   storeReady=true;persist(TEMPLATES,templates);
    renderTemplates();renderQuestions();
  }
  async function saveStore(action,name,text){
@@ -235,7 +251,7 @@ questions_script = """<script>
    try{
      for(let offset=0;offset<150;offset++){
        let data=null,lastError='';
-       for(let attempt=1;attempt<=3;attempt++){
+       for(let attempt=1;attempt<=5;attempt++){
          try{
            const response=await fetch('/api/questions/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({offset,page:1}),cache:'no-store'});
            const contentType=response.headers.get('content-type')||'';
@@ -245,10 +261,10 @@ questions_script = """<script>
            data=result;break;
          }catch(e){
            lastError=e.message;
-           if(attempt<3){status.textContent='⏳ Повторна спроба для магазину №'+(offset+1)+' ('+attempt+'/3): '+lastError;await new Promise(resolve=>setTimeout(resolve,attempt*1200))}
+           if(attempt<5){status.textContent='⏳ Повторна спроба для магазину №'+(offset+1)+' ('+attempt+'/5): '+lastError;await new Promise(resolve=>setTimeout(resolve,attempt*1200))}
          }
        }
-       if(!data){failures++;status.textContent='⚠️ Магазин №'+(offset+1)+' не вдалося прочитати після 3 спроб: '+lastError+'. Продовжуємо.';continue}
+       if(!data){failures++;status.textContent='⚠️ Магазин №'+(offset+1)+' не вдалося прочитати після 5 спроб: '+lastError+'. Продовжуємо.';continue}
        if(data.done)break;
        shops++;
        if(data.status!=='ok')failures++;
@@ -313,7 +329,7 @@ questions_script = """<script>
      status.textContent='🏁 Успішно: '+sent+'; потребують перевірки: '+failed+'. '+(stopRequested?'Чергу зупинено.':'Чергу завершено.')+' Повторно невизначені запити автоматично не надсилаються.';
    }finally{sending=false;sendBtn.disabled=false;stopBtn.disabled=true;el('buyerLoadBtn').disabled=false;renderQuestions();}
  };
- loadStore().catch(e=>{storeReady=true;el('buyerSendStatus').textContent='ℹ️ Працюємо з локальними чернетками та журналом. Відправлення доступне.'});
+ buyerLoadD1Drafts().catch(e=>{el('buyerSendStatus').textContent='ℹ️ D1 тимчасово недоступна, чернетки залишаються в браузері. Відправлення доступне.'});
  renderTemplates();count();
 })();
 </script>"""
