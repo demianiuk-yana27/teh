@@ -842,7 +842,8 @@ async function positiveBuildDrafts(button){
  for(const item of positiveDraftPlan){
   const key=String(item.company_id)+':'+String(item.id);
   positiveStoreDraftLocal(day,key,item.comment);
-  positiveSaveD1Draft(day,key,item.comment).catch(()=>{});
+  // Save only newly created drafts; existing D1 records were loaded above.
+  if(!(key in savedDrafts))positiveSaveD1Draft(day,key,item.comment).catch(()=>{});
  }
  const fragment=document.createDocumentFragment();
  for(let i=0;i<eligible.length;i++){
