@@ -9,13 +9,13 @@ export async function onRequest({request,env,data}){
   await db.prepare('CREATE TABLE IF NOT EXISTS positive_reply_drafts (draft_key TEXT PRIMARY KEY, review_day TEXT NOT NULL, draft_text TEXT NOT NULL, updated_at TEXT NOT NULL)').run();
   if(request.method==='GET'){
    const day=new URL(request.url).searchParams.get('day')||'';
-   if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(day))return json({status:'error',message:'Невірна дата.'},400);
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return json({status:'error',message:'Невірна дата.'},400);
    const {results}=await db.prepare('SELECT draft_key,draft_text,updated_at FROM positive_reply_drafts WHERE review_day=? LIMIT 5000').bind(day).all();
    return json({status:'ok',items:Object.fromEntries(results.map(r=>[r.draft_key,{text:r.draft_text,updated_at:r.updated_at}]))});
   }
   const body=await request.json().catch(()=>({}));
   const key=String(body.key||'').trim(),day=String(body.day||'');
-  if(!/^\\d+:\\d+$/.test(key)||key.length>100||!/^\\d{4}-\\d{2}-\\d{2}$/.test(day))return json({status:'error',message:'Неправильний ключ або дата.'},400);
+  if(!/^\d+:\d+$/.test(key)||key.length>100||!/^\d{4}-\d{2}-\d{2}$/.test(day))return json({status:'error',message:'Неправильний ключ або дата.'},400);
   if(request.method==='DELETE'){
    await db.prepare('DELETE FROM positive_reply_drafts WHERE draft_key=? AND review_day=?').bind(key,day).run();
    return json({status:'ok'});
