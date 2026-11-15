@@ -13,7 +13,9 @@
     "/export-completed",
     "/prom-session",
     "/prom-session-transfer",
-    "/prom-session-migrate"
+    "/prom-session-migrate",
+    "/questions/*",
+    "/positive/*"
   ],
   "exclude": []
 }
