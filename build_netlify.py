@@ -588,7 +588,14 @@ async function loadPositivePreview(button,retryOnly=false){
    while(offset<total){
     out.textContent='⏳ Магазин '+(offset+1)+'/'+(total===1?'…':total)+'; успішні результати збережено';
     const skipIds=Object.values(state.shops).filter(x=>x.complete&&!x.error).map(x=>x.company_id);
-    const batch=await positiveFetchShop(day,offset,null,skipIds);
+    let batch;
+    try{batch=await positiveFetchShop(day,offset,null,skipIds)}
+    catch(e){
+     collectionError=e;
+     out.textContent='⚠️ Магазин №'+(offset+1)+' не відповів після повторів: '+e.message+'. Перевіряємо наступні.';
+     offset++;
+     continue;
+    }
     total=batch.total_shops;expectedTotal=total;
     if(!batch.shops.length)throw Error('Порожня відповідь магазину');
     for(const shop of batch.shops){
