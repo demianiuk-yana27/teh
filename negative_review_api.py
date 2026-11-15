@@ -382,6 +382,28 @@ def _find_named_metric(node, names):
     return None
 
 
+def _ready_to_ship_percent(node):
+    """Read only trustAssortmentData.stats.completedOrdersPercent."""
+    if isinstance(node, dict):
+        trust = node.get("trustAssortmentData")
+        if isinstance(trust, dict):
+            stats = trust.get("stats")
+            if isinstance(stats, dict):
+                value = stats.get("completedOrdersPercent")
+                if type(value) in (int, float):
+                    return value
+        for child in node.values():
+            result = _ready_to_ship_percent(child)
+            if result is not None:
+                return result
+    elif isinstance(node, list):
+        for child in node:
+            result = _ready_to_ship_percent(child)
+            if result is not None:
+                return result
+    return None
+
+
 def extract_analytics_metrics(context):
     """Return only observed numeric fields, leaving unknown values unset."""
     grades = context["grades"]
@@ -415,5 +437,5 @@ def extract_analytics_metrics(context):
         "positiveReviewsPercent": _find_named_metric(grades, ("percentagePositiveReviews", "positiveOpinionsPercent")),
         "affectingOrders": _find_named_metric(grades, ("orders_in_rating_count",)),
         "affectingCancellations": _find_named_metric(grades, ("canceled_orders_in_rating_count",)),
-        "readyToShipPercent": _find_named_metric(grades.get("trustAssortmentData", {}).get("stats", {}), ("completedOrdersPercent",)) if isinstance(grades, dict) and isinstance(grades.get("trustAssortmentData"), dict) else _find_named_metric(grades, ("trustAssortmentData",)),
+        "readyToShipPercent": _ready_to_ship_percent(grades),
     }
