@@ -392,6 +392,8 @@ def _ready_to_ship_percent(node):
                 value = stats.get("completedOrdersPercent")
                 if type(value) in (int, float):
                     return value
+                if value is None or (isinstance(value, str) and value.strip() in ("—", "–", "-")):
+                    return "—"
         for child in node.values():
             result = _ready_to_ship_percent(child)
             if result is not None:
