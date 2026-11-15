@@ -319,12 +319,12 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
 analytics_preview_status = {"status": "idle", "message": "Тест ще не запускався."}
 
 
-def _analytics_preview_worker():
+def _analytics_preview_worker(sheet_id):
     global analytics_preview_status
     from negative_reviews import PromBrowser, load_active_shops
     browser = None
     try:
-        shops = load_active_shops(_sheet_id(), "Список магазинів")
+        shops = load_active_shops(sheet_id, "Список магазинів")
         shop = next((item for item in shops if item.name.strip().casefold() == "teno"), None)
         if shop is None:
             raise RuntimeError("Teno не знайдено серед активних магазинів основної таблиці.")
@@ -355,9 +355,10 @@ def negative_analytics_preview():
     global analytics_preview_status
     if not negative_lock.acquire(blocking=False):
         return jsonify({"status": "busy", "message": "Інший процес уже виконується."}), 409
-    analytics_preview_status = {"status": "running", "message": "Збираємо дані Teno з двох сторінок Prom."}
     try:
-        threading.Thread(target=_analytics_preview_worker, daemon=True).start()
+        sheet_id = _sheet_id()  # Resolve request headers before starting the worker thread.
+        analytics_preview_status = {"status": "running", "message": "Збираємо дані Teno з двох сторінок Prom."}
+        threading.Thread(target=_analytics_preview_worker, args=(sheet_id,), daemon=True).start()
     except Exception:
         negative_lock.release()
         raise
