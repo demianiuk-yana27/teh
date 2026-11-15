@@ -322,32 +322,32 @@ analytics_preview_status = {"status": "idle", "message": "Тест ще не з�
 def _analytics_preview_worker(sheet_id):
     global analytics_preview_status
     from negative_reviews import load_active_shops
-    from negative_review_api import probe_analytics_pages
+    from negative_review_api import collect_analytics_context, extract_analytics_metrics
     try:
         shops = load_active_shops(sheet_id, "Список магазинів")
-        shop = next((item for item in shops if item.name.strip().casefold() == "teno"), None)
+        shop = next((item for item in shops if item.name.strip().casefold() == "lifestyle"), None)
         if shop is None:
-            raise RuntimeError("Teno не знайдено серед активних магазинів основної таблиці.")
+            raise RuntimeError("LifeStyle не знайдено серед активних магазинів основної таблиці.")
         accounts = _positive_login_map().get(str(shop.id)) or []
         if not accounts:
-            raise RuntimeError("Для Teno немає підтвердженого sign-to ID.")
+            raise RuntimeError("Для LifeStyle немає підтвердженого sign-to ID.")
         errors = []
         for account in accounts:
             try:
-                analytics_preview_status = {"status": "running", "message": "Teno: перевіряємо HTTP-доступ до двох сторінок Prom…"}
-                pages = probe_analytics_pages(account)
-                if all(item.get("status") == "ok" for item in pages.values()):
-                    analytics_preview_status = {
-                        "status": "success", "shop": shop.name, "company_id": shop.id,
-                        "pages": pages, "mode": "http_probe",
-                        "message": "HTTP-доступ підтверджено. Наступний крок — визначити джерела числових показників у відповідях Prom. Таблиці не змінено."
-                    }
-                    return
-                errors.append("; ".join(k + ": " + v.get("message", "HTTP-перевірка не пройшла")
-                                        for k, v in pages.items() if v.get("status") != "ok"))
+                analytics_preview_status = {"status": "running", "message": "LifeStyle: читаємо два JSON context Prom…"}
+                context = collect_analytics_context(account)
+                metrics = extract_analytics_metrics(context)
+                if all(metrics.get(k) is None for k in ("monthlyPositive", "yearlyPositive", "successfulOrdersPercent")):
+                    raise ValueError("У JSON Prom не знайдено очікуваних числових полів.")
+                analytics_preview_status = {
+                    "status": "success", "shop": shop.name, "company_id": shop.id,
+                    "metrics": metrics, "mode": "http_json_readonly",
+                    "message": "LifeStyle: два JSON отримано, числові поля прочитано. Google Sheets не змінено."
+                }
+                return
             except Exception as exc:
-                errors.append(type(exc).__name__ + ": " + str(exc)[:160])
-        raise RuntimeError("Не вдалося прочитати сторінки Prom через HTTP: " + "; ".join(errors))
+                errors.append(type(exc).__name__ + ": " + str(exc)[:180])
+        raise RuntimeError("Не вдалося прочитати JSON Prom для LifeStyle: " + "; ".join(errors))
     except Exception as exc:
         traceback.print_exc()
         analytics_preview_status = {"status": "error", "message": str(exc)}
@@ -362,7 +362,7 @@ def negative_analytics_preview():
         return jsonify({"status": "busy", "message": "Інший процес уже виконується."}), 409
     try:
         sheet_id = _sheet_id()  # Resolve request headers before starting the worker thread.
-        analytics_preview_status = {"status": "running", "message": "Збираємо дані Teno з двох сторінок Prom."}
+        analytics_preview_status = {"status": "running", "message": "Збираємо JSON-показники LifeStyle з двох сторінок Prom."}
         threading.Thread(target=_analytics_preview_worker, args=(sheet_id,), daemon=True).start()
     except Exception:
         negative_lock.release()
