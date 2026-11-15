@@ -65,6 +65,11 @@ render_ready_script = """<script>
    alert('Не вдалося підтвердити готовність Render за 2,5 хвилини. '+last+'. Спробуйте ще раз пізніше. Якщо Cloudflare вимагає перевірку браузера, її потрібно пройти вручну.');
   }finally{running=false;button.disabled=false}
  };
+ // Start the wake-up check once per page load, without user interaction.
+ // It only performs safe GET requests to /api/healthz; never starts exports or sends replies.
+ const autoWake=()=>{if(document.getElementById('renderReadyButton'))window.checkRenderReady()};
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',autoWake,{once:true});
+ else autoWake();
 })();
 </script>"""
 s = s.replace('</body>', render_ready_script + '</body>', 1)
