@@ -22,7 +22,7 @@ SCOPES = [
 CMS_URL = "https://my.prom.ua/cms/"
 COMPANY_REVIEWS_URL = "https://my.prom.ua/cms/opinions/company"
 PRODUCT_REVIEWS_URL = "https://my.prom.ua/cms/opinions/product/prom"
-GRADES_URL = "https://my.prom.ua/cms/company/grades"
+GRADES_URL = "https://my.prom.ua/cms/grades"
 REVIEWS_ANALYTICS_URL = COMPANY_REVIEWS_URL
 ORDER_REVIEW_SHEET_ID = "1Ci_AoA6PBtlglbY_CY4d16tRX-7rxZ8_1YbEFft_hGs"
 ORDER_REVIEW_TABS = ["Yellow/Laggi/Born/Bybka/TrendVibe", "Наші", "Нові", "Дроп"]
@@ -474,9 +474,26 @@ class PromBrowser:
                     return el
         return None
 
+    def _navigate_analytics_page(self, url, selector):
+        """Use DOM readiness, not full page load, for heavy Prom analytics pages."""
+        try:
+            self.driver.get(url)
+        except TimeoutException:
+            # The analytics widgets may be ready even if background requests never finish.
+            try:
+                self.driver.execute_script("window.stop()")
+            except Exception:
+                pass
+        try:
+            return self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+        except TimeoutException as exc:
+            raise RuntimeError(
+                "Prom не завантажив блок статистики за відведений час "
+                f"({url}). Перевірте доступність сторінки та сесію Prom."
+            ) from exc
+
     def collect_review_stats(self):
-        self.driver.get(REVIEWS_ANALYTICS_URL)
-        block = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[data-qaid="statistics_block"]')))
+        block = self._navigate_analytics_page(REVIEWS_ANALYTICS_URL, '[data-qaid="statistics_block"]')
         try:
             details = self.driver.find_element(By.CSS_SELECTOR, '[data-qaid="show_more_btn"]')
             if details.is_displayed():
@@ -494,8 +511,7 @@ class PromBrowser:
         return {"monthlyPositive": p[0], "monthlyNegative": n[0], "yearlyPositive": p[2], "yearlyNegative": n[2]}
 
     def collect_performance_stats(self):
-        self.driver.get(GRADES_URL)
-        company = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[data-qaid="company_statistics"]')))
+        company = self._navigate_analytics_page(GRADES_URL, '[data-qaid="company_statistics"]')
         text = company.text
         date_match = re.search(r"\b(\d{2}\.\d{2}\.\d{4})\b", text)
         prom_date = date_match.group(1) if date_match else datetime.now().strftime("%d.%m.%Y")
