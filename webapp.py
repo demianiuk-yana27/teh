@@ -1478,6 +1478,30 @@ def _positive_collection_shops():
         return list(result)
 
 
+def _positive_opinion_deleted(opinion):
+    """Detect Prom deletion/moderation flags without guessing from review text."""
+    if not isinstance(opinion, dict):
+        return False
+    for field in ("deleted", "is_deleted", "isDeleted", "removed", "is_removed",
+                  "isRemoved", "deleted_by_buyer", "deletedByBuyer"):
+        if opinion.get(field) is True or str(opinion.get(field)).lower() in ("true", "1"):
+            return True
+    for field in ("status", "state", "moderation_status", "moderationStatus",
+                  "deletion_reason", "deletionReason", "remove_reason", "removeReason"):
+        value = opinion.get(field)
+        if not isinstance(value, str):
+            continue
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        if (normalized in ("deleted", "removed", "hidden", "deleted_by_buyer",
+                           "removed_by_buyer", "deleted_by_customer",
+                           "removed_by_customer", "видалено_покупцем",
+                           "видалений", "видалено") or
+                "deleted_by" in normalized or "removed_by" in normalized or
+                "видален" in normalized):
+            return True
+    return False
+
+
 @app.route("/positive/shops-batch", methods=["POST"])
 def positive_shops_batch():
     """Read-only bounded batch of active shops. No publication or cookie persistence."""
@@ -1644,7 +1668,8 @@ def positive_shops_batch():
                                 previous_date = dt
                             else:
                                 ordered = False
-                            if dt != chosen or opinion.get("rating") not in (4, 5):
+                            if (dt != chosen or opinion.get("rating") not in (4, 5)
+                                    or _positive_opinion_deleted(opinion)):
                                 continue
                             count = opinion.get("comments_count")
                             comments = opinion.get("comments")
@@ -1840,6 +1865,8 @@ def positive_publish_one():
                 if found is None:
                     last_error = "Відгук не знайдено у вибраному магазині."
                     continue
+                if _positive_opinion_deleted(found):
+                    return jsonify({"status": "error", "message": "Відгук видалено або приховано в Prom. Відповідь не надсилалася."}), 409
                 if (type(found.get("rating")) is not int or
                         found["rating"] not in (4, 5) or
                         found.get("comments_count") != 0 or found.get("comments") != []):
