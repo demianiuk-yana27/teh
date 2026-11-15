@@ -328,10 +328,12 @@ def _analytics_preview_worker(sheet_id):
         shop = next((item for item in shops if item.name.strip().casefold() == "teno"), None)
         if shop is None:
             raise RuntimeError("Teno не знайдено серед активних магазинів основної таблиці.")
-        browser = PromBrowser()
+        browser = PromBrowser(lightweight=True)
         browser.open_cms()
         browser.switch_shop(shop)
+        analytics_preview_status = {"status": "running", "message": "Teno: зчитуємо показник роботи…"}
         performance = browser.collect_performance_stats()
+        analytics_preview_status = {"status": "running", "message": "Teno: зчитуємо аналітику відгуків…"}
         reviews = browser.collect_review_stats()
         analytics_preview_status = {
             "status": "success", "shop": shop.name, "company_id": shop.id,
