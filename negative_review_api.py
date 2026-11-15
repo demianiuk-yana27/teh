@@ -415,5 +415,5 @@ def extract_analytics_metrics(context):
         "positiveReviewsPercent": _find_named_metric(grades, ("percentagePositiveReviews", "positiveOpinionsPercent")),
         "affectingOrders": _find_named_metric(grades, ("orders_in_rating_count",)),
         "affectingCancellations": _find_named_metric(grades, ("canceled_orders_in_rating_count",)),
-        "readyToShipPercent": _find_named_metric(grades, ("completedOrdersPercent",)) if False else None,
+        "readyToShipPercent": _find_named_metric(grades.get("trustAssortmentData", {}).get("stats", {}), ("completedOrdersPercent",)) if isinstance(grades, dict) and isinstance(grades.get("trustAssortmentData"), dict) else _find_named_metric(grades, ("trustAssortmentData",)),
     }
