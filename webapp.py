@@ -316,6 +316,35 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
         negative_lock.release()
 
 
+@app.route("/negative/analytics-preview", methods=["POST"])
+def negative_analytics_preview():
+    """Read-only single-shop verification before enabling writes to the test workbook."""
+    from negative_reviews import PromBrowser, load_active_shops
+    if not negative_lock.acquire(blocking=False):
+        return jsonify({"status": "busy", "message": "Інший процес уже виконується."}), 409
+    try:
+        shops = load_active_shops(_sheet_id(), "Список магазинів")
+        shop = next((item for item in shops if item.name.strip().casefold() == "teno"), None)
+        if shop is None:
+            return jsonify({"status": "error", "message": "Teno не знайдено серед активних магазинів основної таблиці."}), 404
+        browser = PromBrowser()
+        try:
+            browser.open_cms()
+            browser.switch_shop(shop)
+            performance = browser.collect_performance_stats()
+            reviews = browser.collect_review_stats()
+            return jsonify({"status": "ok", "shop": shop.name, "company_id": shop.id,
+                            "performance": performance, "reviews": reviews,
+                            "message": "Дані отримано з обох сторінок Prom. У таблицю нічого не записано."})
+        finally:
+            browser.close()
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(exc)}), 500
+    finally:
+        negative_lock.release()
+
+
 @app.route("/negative/run/<process_name>", methods=["POST"])
 def run_negative(process_name):
     global negative_status
