@@ -355,6 +355,106 @@ def _analytics_preview_worker(sheet_id):
         negative_lock.release()
 
 
+_ANALYTICS_TEST_BOOK = "1HDuSqgb2cQpXzkxOK9GJTFQaomO4uHnNsFJzok9DjYc"
+
+
+def _analytics_lifestyle_write(metrics):
+    """Write only LifeStyle to the test workbook, never overwrite existing values."""
+    from datetime import datetime
+    from negative_reviews import get_client
+    from gspread.utils import rowcol_to_a1
+    required = ("successfulOrdersPercent", "positiveReviewsPercent", "readyToShipPercent",
+                "monthlyPositive", "monthlyNegative", "yearlyPositive", "yearlyNegative",
+                "affectingOrders", "affectingCancellations")
+    missing = [key for key in required if type(metrics.get(key)) not in (int, float)]
+    if missing:
+        raise ValueError("Не записано: відсутні показники: " + ", ".join(missing))
+    book = get_client().open_by_key(_ANALYTICS_TEST_BOOK)
+    work = book.worksheet("Показник роботи")
+    reviews = book.worksheet("Аналітика відгуків")
+    today = datetime.now().strftime("%d.%m")
+    # KPI: A=date, B=metric label, store columns from C onward, 3 rows per day.
+    headers = work.get("A1:ZZ5")
+    candidates = [(i + 1, str(v).strip().casefold()) for row in headers for i, v in enumerate(row)
+                  if str(v).strip().casefold() == "lifestyle"]
+    columns = sorted(set(i for i, _ in candidates))
+    if len(columns) != 1:
+        raise ValueError("Показник роботи: очікується один стовпець LifeStyle у заголовках; знайдено " + str(columns))
+    col = columns[0]
+    values = work.get("A1:B1000")
+    label_map = (
+        ("успішні замовлення", "successfulOrdersPercent"),
+        ("позитивні відгуки", "positiveReviewsPercent"),
+        ("готово до відправки", "readyToShipPercent"),
+    )
+    starts = [i + 1 for i, row in enumerate(values) if row and str(row[0]).strip() == today]
+    if not starts:
+        raise ValueError("Показник роботи: немає блоку дати " + today + ". Додайте дату у стовпець A, щоб не порушити шаблон.")
+    start = starts[-1]
+    kpi_updates = []
+    for offset, (label, key) in enumerate(label_map):
+        rownum = start + offset
+        row = values[rownum - 1] if rownum <= len(values) else []
+        actual_label = str(row[1]).strip().casefold() if len(row) > 1 else ""
+        if label not in actual_label:
+            raise ValueError("Показник роботи: неправильний підпис у B" + str(rownum) + ": " + actual_label)
+        kpi_updates.append((rownum, col, metrics[key] / 100))
+
+    # Analytics: each shop occupies 9 columns: monthly (positive, negative, %),
+    # yearly (positive, negative, %), successful orders (total, canceled, %).
+    grid = reviews.get("A1:ZZ5")
+    matches = [(ri + 1, ci + 1) for ri, row in enumerate(grid)
+               for ci, value in enumerate(row) if str(value).strip().casefold() == "lifestyle"]
+    if len(matches) != 1:
+        raise ValueError("Аналітика відгуків: очікується один заголовок LifeStyle; знайдено " + str(matches))
+    base = matches[0][1]
+    dates = reviews.col_values(1)
+    rows = [i + 1 for i, value in enumerate(dates) if str(value).strip() == today]
+    if not rows:
+        raise ValueError("Аналітика відгуків: немає рядка дати " + today + " у стовпці A.")
+    target = rows[-1]
+    monthly_pos, monthly_neg = metrics["monthlyPositive"], metrics["monthlyNegative"]
+    yearly_pos, yearly_neg = metrics["yearlyPositive"], metrics["yearlyNegative"]
+    total_orders = metrics["affectingOrders"]
+    cancelled = metrics["affectingCancellations"]
+    if any(value < 0 for value in (monthly_pos, monthly_neg, yearly_pos, yearly_neg, total_orders, cancelled)):
+        raise ValueError("Отримано від’ємні значення — запис скасовано.")
+    # Annual and monthly rating % calculated from counts, order rating % from Prom.
+    ratio = lambda a, b: a / (a + b) if a + b else None
+    analytics_values = [monthly_pos, monthly_neg, ratio(monthly_pos, monthly_neg),
+                        yearly_pos, yearly_neg, ratio(yearly_pos, yearly_neg),
+                        total_orders, cancelled, metrics["successfulOrdersPercent"] / 100]
+    changes = [(target, base + j, value) for j, value in enumerate(analytics_values) if value is not None]
+    for sheet, cells in ((work, kpi_updates), (reviews, changes)):
+        for rownum, colnum, _ in cells:
+            cell = rowcol_to_a1(rownum, colnum)
+            if sheet.acell(cell).value not in (None, ""):
+                raise ValueError(sheet.title + ": клітинка " + cell + " вже заповнена. Нічого не перезаписано.")
+    # Only after all validations, update two sheets.
+    for sheet, cells in ((work, kpi_updates), (reviews, changes)):
+        sheet.batch_update([{"range": rowcol_to_a1(rownum, colnum),
+                             "values": [[value]]} for rownum, colnum, value in cells],
+                           value_input_option="USER_ENTERED")
+    return {"date": today, "work_cells": len(kpi_updates), "review_cells": len(changes)}
+
+
+@app.route("/negative/analytics-lifestyle-write", methods=["POST"])
+def negative_analytics_lifestyle_write():
+    global analytics_preview_status
+    if not negative_lock.acquire(blocking=False):
+        return jsonify({"status": "busy", "message": "Інший процес виконується."}), 409
+    try:
+        snapshot = analytics_preview_status
+        if snapshot.get("status") != "success" or str(snapshot.get("company_id")) != "2369215":
+            return jsonify({"status": "error", "message": "Спочатку зчитайте показники LifeStyle."}), 400
+        outcome = _analytics_lifestyle_write(snapshot["metrics"])
+        return jsonify({"status": "success", "message": "LifeStyle записано в тестову таблицю.", "result": outcome})
+    except Exception as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    finally:
+        negative_lock.release()
+
+
 @app.route("/negative/analytics-preview", methods=["POST"])
 def negative_analytics_preview():
     global analytics_preview_status
