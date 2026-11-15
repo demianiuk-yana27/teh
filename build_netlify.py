@@ -543,10 +543,24 @@ function positiveRender(day){
 }
 async function positiveFetchShop(day,offset,companyId,skipIds){
  const body=companyId?{date:day,offset:0,company_id:companyId}:{date:day,offset,skip_company_ids:skipIds||[]};
- const res=await fetch('/api/positive/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
- if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув HTML (HTTP '+res.status+')');
- const batch=await res.json();if(!res.ok||batch.status!=='ok')throw Error(batch.message||'Помилка збору');
- return batch;
+ let lastError;
+ for(let attempt=1;attempt<=3;attempt++){
+  try{
+   const res=await fetch('/api/positive/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});
+   if(!(res.headers.get('content-type')||'').includes('application/json'))throw Error('Сервер повернув HTML (HTTP '+res.status+')');
+   const batch=await res.json();
+   if(!res.ok||batch.status!=='ok')throw Error(batch.message||'Помилка збору (HTTP '+res.status+')');
+   return batch;
+  }catch(e){
+   lastError=e;
+   if(attempt<3){
+    const status=document.getElementById('positiveStatus');
+    if(status)status.textContent='⏳ Тимчасова помилка магазину №'+(offset+1)+': '+e.message+'. Повтор '+attempt+'/2…';
+    await new Promise(resolve=>setTimeout(resolve,attempt*1500));
+   }
+  }
+ }
+ throw Error('Не вдалося отримати магазин №'+(offset+1)+' після 3 спроб: '+lastError.message);
 }
 async function loadPositivePreview(button,retryOnly=false){
  const day=document.getElementById('positiveDay').value,out=document.getElementById('positiveStatus');
