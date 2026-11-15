@@ -2548,13 +2548,6 @@ def buyer_questions_send_one():
         return jsonify({"status": "error", "message": "Некоректний магазин, запитання або відповідь."}), 400
     if data.get("confirmed") is not True:
         return jsonify({"status": "error", "message": "Потрібне підтвердження відправлення."}), 400
-    storage_key = company + ":" + thread
-    try:
-        _, existing = _buyer_store_snapshot()
-        if storage_key in existing:
-            return jsonify({"status": "review", "message": "У спільному журналі вже є спроба відправлення. Перевірте Prom перед повтором."}), 409
-    except Exception:
-        return jsonify({"status": "error", "message": "Спільне сховище недоступне. Відправлення заблоковано."}), 503
     try:
         shops = {str(shop.id): shop for shop in _operational_shops(_QUESTION_SHOPS_TAB)}
         if company not in shops:
@@ -2625,15 +2618,6 @@ def buyer_questions_send_one():
                 q = find_question(context)
                 if not q or q.get("canBeCommented") is not True or int(q.get("commentsCount") or 0) > 0:
                     return jsonify({"status": "review", "message": "Запитання не знайдено серед очікуваних або вже має коментар. Нічого не відправлено."}), 409
-                # Persist an uncertain attempt before POST; never risk silent duplicates.
-                try:
-                    with _buyer_store_lock:
-                        _, current = _buyer_store_snapshot()
-                        if storage_key in current:
-                            return jsonify({"status": "review", "message": "Запитання вже є у спільному журналі."}), 409
-                        _buyer_result_set(storage_key, "review", message="Спробу розпочато; перевірте Prom.")
-                except Exception:
-                    return jsonify({"status": "error", "message": "Не вдалося записати спробу у сховище."}), 503
                 payload = json.dumps({"threadId": int(thread), "comment": answer}, ensure_ascii=False).encode("utf-8")
                 post_headers = dict(headers)
                 post_headers["Content-Type"] = "application/json"
@@ -2656,10 +2640,6 @@ def buyer_questions_send_one():
                 except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
                     return jsonify({"status": "review", "message": "Результат публікації невідомий. Перевірте відповідь у Prom перед повтором."}), 409
                 if result.get("status") == "ok" and str((result.get("comment") or {}).get("id") or "").isdigit():
-                    try:
-                        _buyer_result_set(storage_key, "sent", str(result["comment"]["id"]))
-                    except Exception:
-                        return jsonify({"status": "review", "message": "Prom підтвердив відповідь, але запис у журналі не вдався. Перевірте Prom."}), 409
                     return jsonify({"status": "sent", "comment_id": str(result["comment"]["id"])})
                 return jsonify({"status": "review", "message": "Prom не підтвердив публікацію. Перевірте вручну перед повтором."}), 409
             except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
