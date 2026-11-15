@@ -370,7 +370,7 @@ def _analytics_lifestyle_write(metrics):
     if missing:
         raise ValueError("Не записано: відсутні показники: " + ", ".join(missing))
     book = get_client().open_by_key(_ANALYTICS_TEST_BOOK)
-    work = book.worksheet("Показник роботи")
+    work = book.worksheet("Показники роботи")
     reviews = book.worksheet("Аналітика відгуків")
     today = datetime.now().strftime("%d.%m")
     # KPI: A=date, B=metric label, store columns from C onward, 3 rows per day.
