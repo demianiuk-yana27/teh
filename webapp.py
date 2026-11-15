@@ -321,34 +321,37 @@ analytics_preview_status = {"status": "idle", "message": "Тест ще не з�
 
 def _analytics_preview_worker(sheet_id):
     global analytics_preview_status
-    from negative_reviews import PromBrowser, load_active_shops
-    browser = None
+    from negative_reviews import load_active_shops
+    from negative_review_api import probe_analytics_pages
     try:
         shops = load_active_shops(sheet_id, "Список магазинів")
         shop = next((item for item in shops if item.name.strip().casefold() == "teno"), None)
         if shop is None:
             raise RuntimeError("Teno не знайдено серед активних магазинів основної таблиці.")
-        browser = PromBrowser(lightweight=True)
-        browser.open_cms()
-        browser.switch_shop(shop)
-        analytics_preview_status = {"status": "running", "message": "Teno: зчитуємо показник роботи…"}
-        performance = browser.collect_performance_stats()
-        analytics_preview_status = {"status": "running", "message": "Teno: зчитуємо аналітику відгуків…"}
-        reviews = browser.collect_review_stats()
-        analytics_preview_status = {
-            "status": "success", "shop": shop.name, "company_id": shop.id,
-            "performance": performance, "reviews": reviews,
-            "message": "Дані отримано з двох сторінок Prom. Google Sheets не змінено."
-        }
+        accounts = _positive_login_map().get(str(shop.id)) or []
+        if not accounts:
+            raise RuntimeError("Для Teno немає підтвердженого sign-to ID.")
+        errors = []
+        for account in accounts:
+            try:
+                analytics_preview_status = {"status": "running", "message": "Teno: перевіряємо HTTP-доступ до двох сторінок Prom…"}
+                pages = probe_analytics_pages(account)
+                if all(item.get("status") == "ok" for item in pages.values()):
+                    analytics_preview_status = {
+                        "status": "success", "shop": shop.name, "company_id": shop.id,
+                        "pages": pages, "mode": "http_probe",
+                        "message": "HTTP-доступ підтверджено. Наступний крок — визначити джерела числових показників у відповідях Prom. Таблиці не змінено."
+                    }
+                    return
+                errors.append("; ".join(k + ": " + v.get("message", "HTTP-перевірка не пройшла")
+                                        for k, v in pages.items() if v.get("status") != "ok"))
+            except Exception as exc:
+                errors.append(type(exc).__name__ + ": " + str(exc)[:160])
+        raise RuntimeError("Не вдалося прочитати сторінки Prom через HTTP: " + "; ".join(errors))
     except Exception as exc:
         traceback.print_exc()
         analytics_preview_status = {"status": "error", "message": str(exc)}
     finally:
-        if browser is not None:
-            try:
-                browser.close()
-            except Exception:
-                pass
         negative_lock.release()
 
 
