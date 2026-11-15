@@ -391,12 +391,34 @@ const operationsStore=async(kind,method='GET',key='',value=null)=>{
  return data;
 };
 let positiveSharedJournal={},positiveSharedReady=false;
+const positiveDraftKey=(day)=>'teh-positive-drafts-d1-'+day;
+function positiveLocalDrafts(day){try{return JSON.parse(localStorage.getItem(positiveDraftKey(day))||'{}')}catch(e){return {}}}
+function positiveStoreDraftLocal(day,key,text){const d=positiveLocalDrafts(day);d[key]=text;try{localStorage.setItem(positiveDraftKey(day),JSON.stringify(d))}catch(e){}}
+async function positiveSaveD1Draft(day,key,text){
+ positiveStoreDraftLocal(day,key,text);
+ const res=await fetch('/positive/drafts',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({day,key,text})});
+ const data=await res.json();
+ if(!res.ok||data.status!=='ok')throw Error(data.message||'D1 недоступна');
+}
+async function positiveLoadD1Drafts(day){
+ const local=positiveLocalDrafts(day);
+ const res=await fetch('/positive/drafts?day='+encodeURIComponent(day),{cache:'no-store'});
+ const data=await res.json();
+ if(!res.ok||data.status!=='ok')throw Error(data.message||'D1 недоступна');
+ const remote=Object.fromEntries(Object.entries(data.items||{}).map(([k,v])=>[k,v.text||'']));
+ const merged={...remote,...local};
+ try{localStorage.setItem(positiveDraftKey(day),JSON.stringify(merged))}catch(e){}
+ for(const [key,text] of Object.entries(local))if(!(key in remote))positiveSaveD1Draft(day,key,text).catch(()=>{});
+ return merged;
+}
+
 async function positiveLoadShared(){
  const [templates,journal]=await Promise.all([
    operationsStore('positive_templates'),operationsStore('positive_journal')
  ]);
  let local={};try{local=JSON.parse(localStorage.getItem('teh-positive-journal-v1')||'{}')}catch(e){}
- positiveSharedJournal={...(journal.items||{}),...local};positiveSharedReady=true;
+ positiveSharedJournal=positiveFailureJournal({...((journal.items)||{}),...local});positiveSharedReady=true;
+ positiveJournalWrite(positiveSharedJournal);
  const saved=templates.items?.default;
  if(Array.isArray(saved))document.getElementById('positiveTemplates').value=saved.join('\\n');
  positiveShowJournal();
@@ -644,6 +666,10 @@ function positiveMayPublish(key,journal){
  const entry=journal[key];
  return !entry||entry.status==='manually_absent'||entry.status==='preflight_failed';
 }
+function positiveFailureJournal(journal){
+ return Object.fromEntries(Object.entries(journal||{}).filter(([key,item])=>item&&
+  !['verified','manually_verified','sent','success'].includes(item.status)));
+}
 function positiveJournalRead(){return positiveSharedJournal}
 function positiveToggleJournal(button){
  const target=document.getElementById('positiveJournalView');
@@ -655,7 +681,7 @@ function positiveToggleJournal(button){
 }
 function positiveShowJournal(){
  const target=document.getElementById('positiveJournalView');target.replaceChildren();
- const journal=positiveJournalRead(),entries=Object.entries(journal).sort((a,b)=>String(a[1].at||'').localeCompare(String(b[1].at||'')));
+ const journal=positiveJournalRead(),entries=Object.entries(positiveFailureJournal(journal)).sort((a,b)=>String(a[1].at||'').localeCompare(String(b[1].at||'')));
  if(!entries.length){target.textContent='Журнал поки порожній.';return}
  const intro=document.createElement('p');intro.style.cssText='font-size:13px;color:#475569;margin:8px 0';
  intro.textContent='Перевіряйте кожен відгук у зазначеному магазині. Номер нижче — ID відгуку, а не замовлення. Ручне підтвердження не надсилає нічого в Prom.';
@@ -711,7 +737,7 @@ function positiveExportJournal(){
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='positive-reply-journal.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function positiveJournalWrite(journal){
- try{localStorage.setItem(positiveJournalKey(),JSON.stringify(journal));positiveSharedJournal=journal;return true}
+ try{const failed=positiveFailureJournal(journal);localStorage.setItem(positiveJournalKey(),JSON.stringify(failed));positiveSharedJournal=failed;return true}
  catch(e){return false}
 }
 function positiveStopQueue(){positiveQueueStop=true;const el=document.getElementById('positiveQueueStatus');if(el)el.textContent='⏹ Зупинка запитана. Поточний запит буде завершено.'}
@@ -771,7 +797,7 @@ async function positiveStartQueue(){
     const startedAt=performance.now();
     const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:item.company_id,opinion_id:item.id,comment:item.comment,retry_verified_absent:isRetry,retry_confirmation:isRetry?'ПЕРЕВІРЕНО НЕМАЄ':null,confirmation:'НАДІСЛАТИ'})});
     const result=await positiveParsePublishResponse(res,startedAt);
-    const done=positiveJournalRead();done[key]={...done[key],status:'verified',verified_at:new Date().toISOString()};positiveJournalWrite(done);
+    const done=positiveJournalRead();delete done[key];positiveJournalWrite(done);
     review.reply_status='answered';positiveSave(day,now);sent++;
     out.textContent='✅ Підтверджено в Prom '+sent+' із '+candidates.length+'.';
    }catch(e){
@@ -780,7 +806,7 @@ async function positiveStartQueue(){
     break}
    if(!positiveQueueStop&&sent<candidates.length)await new Promise(resolve=>setTimeout(resolve,2000));
   }
- }finally{positiveQueueRunning=false;positiveRunBusy=false;positiveRender(day);out.textContent+=' Перевірте спільний журнал після оновлення.'}
+ }finally{positiveQueueRunning=false;positiveRunBusy=false;positiveRender(day);out.textContent+=' Невдалі та невизначені спроби доступні в журналі.'}
 }
 async function positiveBuildDrafts(button){
  const day=document.getElementById('positiveDay').value, status=document.getElementById('positiveDraftStatus');
@@ -805,7 +831,19 @@ async function positiveBuildDrafts(button){
  }
  eligible.sort((a,b)=>String(a.company_id).localeCompare(String(b.company_id))||String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
  status.textContent='🧪 Підготовлено '+eligible.length+' чернеток за '+day+' із '+templates.length+' шаблонів. Успішні та невизначені спроби виключені; перевірені без відповіді доступні для повторної спроби. Перед публікацією сервер перевіряє актуальний стан у Prom.';
- positiveDraftPlan=eligible.map((review,i)=>({...review,comment:templates[i%templates.length]}));
+ const savedDrafts=positiveLocalDrafts(day);
+ positiveDraftPlan=eligible.map((review,i)=>({...review,comment:savedDrafts[String(review.company_id)+':'+String(review.id)]??templates[i%templates.length]}));
+ // Restore cross-device drafts from D1 without blocking plan preparation.
+ try{
+  const remote=await positiveLoadD1Drafts(day);
+  positiveDraftPlan.forEach(item=>{const key=String(item.company_id)+':'+String(item.id);if(key in remote)item.comment=remote[key]});
+ }catch(e){status.textContent+=' ℹ️ D1 недоступна, використовуються локальні чернетки.'}
+ // New plans are saved locally immediately and synchronized to D1 in the background.
+ for(const item of positiveDraftPlan){
+  const key=String(item.company_id)+':'+String(item.id);
+  positiveStoreDraftLocal(day,key,item.comment);
+  positiveSaveD1Draft(day,key,item.comment).catch(()=>{});
+ }
  const fragment=document.createDocumentFragment();
  for(let i=0;i<eligible.length;i++){
   const review=eligible[i],wrap=document.createElement('div');
@@ -813,7 +851,13 @@ async function positiveBuildDrafts(button){
   const heading=document.createElement('div');heading.style.cssText='font-size:12px;color:#64748b;font-weight:700';
   heading.textContent=review.shop_name+' · № '+review.id+' · Шаблон '+(i%templates.length+1);
   const buyer=document.createElement('p');buyer.textContent='Покупець: '+(review.text||'Без тексту');buyer.style.cssText='font-size:13px';
-  const reply=document.createElement('p');reply.textContent='Чернетка: '+templates[i%templates.length];reply.style.cssText='font-size:14px;white-space:pre-wrap;font-weight:600';
+  const reply=document.createElement('textarea');reply.value=positiveDraftPlan[i].comment;reply.rows=3;reply.style.cssText='display:block;width:100%;box-sizing:border-box;font-size:14px;padding:8px;margin:8px 0;border:1px solid #cbd5e1;border-radius:8px';
+  let saveTimer;reply.addEventListener('input',()=>{
+   positiveDraftPlan[i].comment=reply.value;
+   const key=String(review.company_id)+':'+String(review.id);
+   positiveStoreDraftLocal(day,key,reply.value);
+   clearTimeout(saveTimer);saveTimer=setTimeout(()=>positiveSaveD1Draft(day,key,reply.value).catch(()=>{}),900);
+  });
   const send=document.createElement('button');send.type='button';send.className='run';
   send.style.cssText='background:#b45309;margin-top:6px';
   send.textContent='🧪 Надіслати лише цю відповідь';
@@ -825,7 +869,7 @@ async function positiveBuildDrafts(button){
    if(!stored||!stored.complete||stored.error||!current||current.reply_status!=='unanswered'||(fresh.flags||[]).includes(String(review.company_id)+':'+String(review.id))){
     alert('Відгук уже виключено або його статус змінився. Публікацію скасовано.');return;
    }
-   const message=templates[i%templates.length];
+   const message=positiveDraftPlan[i].comment;
    const confirmation=prompt('УВАГА: це СПРАВЖНЯ публікація в Prom.\\nМагазин: '+review.shop_name+'\\nВідгук: №'+review.id+'\\nТекст: '+message+'\\n\\nДля надсилання рівно ОДНІЄЇ відповіді введіть НАДІСЛАТИ');
    if(confirmation!=='НАДІСЛАТИ')return;
    const key=String(review.company_id)+':'+String(review.id);
@@ -844,8 +888,7 @@ async function positiveBuildDrafts(button){
     })});
     const result=await positiveParsePublishResponse(res,startedAt);
     const updated=positiveJournalRead();
-    updated[key]={...updated[key],status:'verified',verified_at:new Date().toISOString()};
-    positiveJournalWrite(updated);
+    delete updated[key];positiveJournalWrite(updated);
     current.reply_status='answered';positiveSave(day,fresh);
     send.textContent='✅ Перевірено в Prom';send.disabled=true;
     status.textContent='✅ Відповідь №'+review.id+' підтверджено повторним читанням Prom.';
@@ -862,7 +905,7 @@ async function positiveBuildDrafts(button){
 }
 async function positiveRestoreTemplates(){
  try{const templates=JSON.parse(localStorage.getItem('teh-positive-templates-v1')||'[]');const el=document.getElementById('positiveTemplates');if(el&&Array.isArray(templates))el.value=templates.join('\\n')}catch(e){}
- try{await positiveLoadShared()}catch(e){positiveSharedReady=false;try{positiveSharedJournal=JSON.parse(localStorage.getItem(positiveJournalKey())||'{}')}catch(_){};positiveShowJournal()}
+ try{await positiveLoadShared()}catch(e){positiveSharedReady=false;try{positiveSharedJournal=positiveFailureJournal(JSON.parse(localStorage.getItem(positiveJournalKey())||'{}'))}catch(_){};positiveShowJournal()}
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',positiveRestoreTemplates);
 else positiveRestoreTemplates();
