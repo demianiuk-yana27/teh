@@ -9,6 +9,12 @@ from negative_reviews import run_analytics, run_order_review_check
 from review_export import run_review_export
 
 app = legacy.app
+
+@app.route("/healthz", methods=["GET"])
+def render_healthz():
+    # Lightweight readiness check: no Google Sheets or Prom calls.
+    return jsonify({"status": "ok", "service": "teh-new"}), 200
+
 negative_lock = threading.Lock()
 negative_status = {
     "running": False,
