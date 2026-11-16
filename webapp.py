@@ -591,9 +591,11 @@ def _analytics_bulk_worker(sheet_id):
                                    for row, col, value in work_cells], value_input_option="USER_ENTERED")
                 reviews.batch_update([{"range": rowcol_to_a1(row, col), "values": [[value]]}
                                       for row, col, value in review_cells], value_input_option="USER_ENTERED")
-                work.batch_format([{"range": rowcol_to_a1(row, col),
-                                    "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
-                                   for row, col, value in work_cells if type(value) in (int, float)])
+                numeric_work_formats = [{"range": rowcol_to_a1(row, col),
+                                         "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
+                                        for row, col, value in work_cells if type(value) in (int, float)]
+                if numeric_work_formats:
+                    work.batch_format(numeric_work_formats)
                 reviews.batch_format([{"range": rowcol_to_a1(row, col),
                                        "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
                                       for offset, (row, col, value) in enumerate(review_cells)
