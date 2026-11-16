@@ -551,7 +551,7 @@ def _analytics_bulk_worker(sheet_id):
                 wcol = next(iter(work_columns))
                 acol = next(iter(review_columns)) if review_columns else None
                 if any(not blank(old(wdata, wstart + offset, wcol)) for offset in range(3)) or (
-                    acol is not None and any(not blank(old(adata, arow, acol + offset)) for offset in range(8))
+                    acol is not None and any(not blank(old(adata, arow, acol + offset)) for offset in (0, 1, 3, 4, 6, 7))
                 ):
                     skipped += 1
                     analytics_bulk_status["skipped"] = skipped
@@ -584,14 +584,14 @@ def _analytics_bulk_worker(sheet_id):
                 if acol is not None:
                     pos, neg = metrics["monthlyPositive"], metrics["monthlyNegative"]
                     ypos, yneg = metrics["yearlyPositive"], metrics["yearlyNegative"]
-                    ratio = lambda a, b: a / (a + b) if a + b else 0
-                    # The ninth column has a spreadsheet formula; never overwrite it.
-                    vals = [pos, neg, ratio(pos, neg), ypos, yneg, ratio(ypos, yneg),
-                            metrics["affectingOrders"], metrics["affectingCancellations"]]
+                    # Percentage columns 3, 6 and 9 contain sheet formulas.
+                    vals = [(0, pos), (1, neg), (3, ypos), (4, yneg),
+                            (6, metrics["affectingOrders"]),
+                            (7, metrics["affectingCancellations"])]
                 wvals = [metrics["successfulOrdersPercent"], metrics["positiveReviewsPercent"],
                          metrics["readyToShipPercent"]]
                 work_cells = [(wstart + offset, wcol, value) for offset, value in enumerate(wvals)]
-                review_cells = [(arow, acol + offset, value) for offset, value in enumerate(vals)] if acol is not None else []
+                review_cells = [(arow, acol + offset, value) for offset, value in vals] if acol is not None else []
                 # Check cached values; keep the cache current after successful writes.
                 # A previously populated cell is never overwritten.
                 for grid, cells, sheet in ((wdata, work_cells, work), (adata, review_cells, reviews)):
@@ -614,8 +614,7 @@ def _analytics_bulk_worker(sheet_id):
                     sheets_retry(lambda: reviews.batch_format(
                         [{"range": rowcol_to_a1(row, col),
                           "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
-                         for offset, (row, col, value) in enumerate(review_cells)
-                         if offset in (0, 1, 3, 4, 6, 7)]))
+                         for row, col, value in review_cells]))
                 for row, col, value in work_cells:
                     if row <= len(wdata):
                         while len(wdata[row - 1]) < col:
