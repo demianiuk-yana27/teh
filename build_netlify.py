@@ -306,8 +306,8 @@ questions_script = """<script>
    const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
    try{
      for(let offset=0;offset<150;offset++){
-       let data=null,lastError='',throttled=false;
-       for(let attempt=1;attempt<=8;attempt++){
+       let data=null,lastError='',throttled=false,fatal=false;
+       for(let attempt=1;attempt<=3;attempt++){
          let waitHint=0;
          try{
            const response=await fetch('/api/questions/shops-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({offset,page:1}),cache:'no-store'});
@@ -316,6 +316,12 @@ questions_script = """<script>
            if(retryAfter){
              const seconds=Number(retryAfter);
              waitHint=Number.isFinite(seconds)?seconds*1000:Math.max(0,Date.parse(retryAfter)-Date.now());
+           }
+           if(response.status===502||response.status===500||response.status===504){
+             fatal=true;
+             let message='';
+             if(contentType.includes('application/json')){try{const body=await response.json();message=body.message||''}catch(_){}}
+             throw Error('HTTP '+response.status+(message?' — '+message:' — помилка сервера або проксі'));
            }
            if(response.status===429||response.status===503){
              throttled=true;
@@ -328,17 +334,22 @@ questions_script = """<script>
            }
            if(!contentType.includes('application/json')){
              if(response.status===403&&contentType.includes('text/html')){
-               throttled=true;
+               fatal=true;
                throw Error('Cloudflare вимагає перевірку браузера (HTTP 403)');
              }
+             fatal=true;
              throw Error('HTTP '+response.status+' (не JSON)');
            }
            const result=await response.json();
-           if(!response.ok||result.status==='error')throw Error(result.message||'HTTP '+response.status);
+           if(!response.ok||result.status==='error'){
+             if(response.status>=500||result.status==='error')fatal=true;
+             throw Error(result.message||'HTTP '+response.status);
+           }
            data=result;break;
          }catch(e){
            lastError=e.message;
-           if(attempt<8){
+           if(fatal)break;
+           if(attempt<3){
              const delay=throttled?Math.max(waitHint,Math.min(60000,3000*Math.pow(2,attempt-1))):Math.min(15000,1500*attempt);
              status.textContent='⏳ Магазин №'+(offset+1)+': повтор '+attempt+'/8. '+lastError+'. Очікування '+Math.ceil(delay/1000)+' с…';
              await sleep(delay+Math.floor(Math.random()*700));
@@ -346,12 +357,12 @@ questions_script = """<script>
          }
        }
        if(!data){
-         if(throttled){
+         if(fatal||throttled){
            failures++;
-           status.textContent='⚠️ Збір призупинено на магазині №'+(offset+1)+' через обмеження сервера: '+lastError+'. Уже зібрано '+questions.length+' запитань. Спробуйте пізніше.';
+           status.textContent='⛔ Збір зупинено на магазині №'+(offset+1)+': '+lastError+'. Уже зібрано '+questions.length+' запитань. Це помилка сервера/з’єднання, а не ознака відсутності запитань у магазині.';
            return;
          }
-         failures++;status.textContent='⚠️ Магазин №'+(offset+1)+' не вдалося прочитати після 8 спроб: '+lastError+'. Продовжуємо.';
+         failures++;status.textContent='⚠️ Магазин №'+(offset+1)+' не вдалося прочитати після 3 спроб: '+lastError+'. Продовжуємо.';
          continue;
        }
        if(data.done)break;
