@@ -48,31 +48,35 @@ def _build_driver():
 
 
 def _open_asteril(driver):
-    driver.get(ASTERIL_ORDERS_URL)
-    time.sleep(2)
-
-    cookies_path = legacy._resolve_secret_path("asteril_cookies.json")
-    if os.path.exists(cookies_path):
-        with open(cookies_path, "r") as file:
-            cookies = json.load(file)
-        for raw_cookie in cookies:
-            cookie = dict(raw_cookie)
-            cookie.pop("sameSite", None)
-            try:
-                driver.add_cookie(cookie)
-            except Exception:
-                pass
-        driver.refresh()
-        time.sleep(3)
-
-    if "login" in driver.current_url.lower():
+    """Log in using Render credentials; no cookie file is required."""
+    login = os.environ.get("ASTERIL_LOGIN", "").strip()
+    password = os.environ.get("ASTERIL_PASSWORD", "")
+    if not login or not password:
         raise RuntimeError(
-            "Сесія Asteril завершилась. Оновіть asteril_cookies.json у тестовому Render."
+            "У Render не налаштовано ASTERIL_LOGIN / ASTERIL_PASSWORD."
         )
 
-    WebDriverWait(driver, 45).until(
-        EC.presence_of_element_located((By.TAG_NAME, "body"))
-    )
+    driver.get(ASTERIL_ORDERS_URL)
+    wait = WebDriverWait(driver, 45)
+    if "login" in driver.current_url.lower():
+        email_input = wait.until(
+            EC.presence_of_element_located((By.NAME, "email"))
+        )
+        password_input = driver.find_element(By.NAME, "password")
+        email_input.clear()
+        email_input.send_keys(login)
+        password_input.clear()
+        password_input.send_keys(password)
+        driver.find_element(By.XPATH, "//button[@type='submit']").click()
+        wait.until(
+            lambda browser: "login" not in browser.current_url.lower()
+        )
+        if driver.current_url.rstrip("/") != ASTERIL_ORDERS_URL:
+            driver.get(ASTERIL_ORDERS_URL)
+
+    wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+    if "login" in driver.current_url.lower():
+        raise RuntimeError("Не вдалося авторизуватися в Asteril через Render.")
     legacy.wait_for_crm_loader(driver, timeout=45)
 
 
