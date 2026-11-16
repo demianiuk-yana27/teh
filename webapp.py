@@ -481,9 +481,9 @@ def _analytics_bulk_worker(sheet_id):
     from negative_review_api import collect_analytics_context, extract_analytics_metrics
     from gspread.utils import rowcol_to_a1
     try:
-        shops = load_active_shops(sheet_id, "Список магазинів")
+        shops = load_active_shops("1B8aq-wNhaCoDAGm_nbOu36GNQp8y0ovAkYoO7pjvxMA", "Показник роботи")
         login_map = _positive_login_map()
-        book = get_client().open_by_key(_ANALYTICS_TEST_BOOK)
+        book = get_client().open_by_key("16BqyyMUyTNiQaibRVyd-qXzo_XdAzxCvURPfBtGoiJg")
         work = book.worksheet("Показники роботи")
         reviews = book.worksheet("Аналітика відгуків")
         date = datetime.now().strftime("%d.%m")
