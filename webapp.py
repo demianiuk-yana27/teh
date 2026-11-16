@@ -469,6 +469,179 @@ def negative_analytics_lifestyle_write():
         negative_lock.release()
 
 
+
+analytics_bulk_status = {"status": "idle", "message": "Збір ще не запускався."}
+
+
+def _analytics_bulk_worker(sheet_id):
+    global analytics_bulk_status
+    import time
+    from datetime import datetime
+    from negative_reviews import load_active_shops, get_client
+    from negative_review_api import collect_analytics_context, extract_analytics_metrics
+    from gspread.utils import rowcol_to_a1
+    try:
+        shops = load_active_shops(sheet_id, "Список магазинів")
+        login_map = _positive_login_map()
+        book = get_client().open_by_key(_ANALYTICS_TEST_BOOK)
+        work = book.worksheet("Показники роботи")
+        reviews = book.worksheet("Аналітика відгуків")
+        date = datetime.now().strftime("%d.%m")
+        whead = work.get("A1:ZZ5")
+        ahead = reviews.get("A1:ZZ5")
+        wrows = work.get("A1:B1500")
+        dates = reviews.col_values(1)
+        starts = [i + 1 for i, row in enumerate(wrows) if row and str(row[0]).strip() == date]
+        targets = [i + 1 for i, value in enumerate(dates) if str(value).strip() == date]
+        if len(starts) != 1 or len(targets) != 1:
+            raise ValueError("Неоднозначний або відсутній блок дати " + date + " у двох вкладках.")
+        wstart, arow = starts[0], targets[0]
+        for offset, label in enumerate(("успішні замовлення", "позитивні відгуки", "готово до відправки")):
+            row = wrows[wstart + offset - 1] if wstart + offset - 1 < len(wrows) else []
+            if len(row) < 2 or label not in str(row[1]).strip().casefold():
+                raise ValueError("Невірний підпис B" + str(wstart + offset))
+        def columns(grid):
+            result = {}
+            for row in grid:
+                for index, name in enumerate(row):
+                    key = str(name).strip().casefold()
+                    if key:
+                        result.setdefault(key, set()).add(index + 1)
+            return result
+        wc, ac = columns(whead), columns(ahead)
+        # Read all existing target rows once; preserve values entered manually.
+        wdata = work.get("A1:ZZ1500", value_render_option="UNFORMATTED_VALUE")
+        adata = reviews.get("A1:ZZ1500", value_render_option="UNFORMATTED_VALUE")
+        def old(grid, row, col):
+            return grid[row - 1][col - 1] if row <= len(grid) and col <= len(grid[row - 1]) else None
+        def blank(v):
+            return v is None or v == ""
+        wchanges, achanges = [], []
+        failures = []
+        completed = 0
+        analytics_bulk_status = {"status": "running", "total": len(shops), "current": 0,
+                                 "success": 0, "skipped": 0, "failed": 0, "message": "Перевіряємо магазини…"}
+        for idx, shop in enumerate(shops, 1):
+            name = shop.name.strip().casefold()
+            try:
+                if len(wc.get(name, ())) != 1 or len(ac.get(name, ())) != 1:
+                    raise ValueError("Немає однозначних стовпців у двох вкладках")
+                wcol = next(iter(wc[name]))
+                acol = next(iter(ac[name]))
+                # Never overwrite even one filled cell for a store.
+                if any(not blank(old(wdata, wstart + offset, wcol)) for offset in range(3)) or any(
+                    not blank(old(adata, arow, acol + offset)) for offset in range(9)
+                ):
+                    analytics_bulk_status["skipped"] += 1
+                    continue
+                accounts = login_map.get(str(shop.id)) or []
+                if not accounts:
+                    raise ValueError("Немає sign-to ID")
+                errors = []
+                metrics = None
+                for account in accounts:
+                    try:
+                        candidate = extract_analytics_metrics(collect_analytics_context(account))
+                        required = ("successfulOrdersPercent", "positiveReviewsPercent",
+                                    "monthlyPositive", "monthlyNegative", "yearlyPositive",
+                                    "yearlyNegative", "affectingOrders", "affectingCancellations")
+                        if any(type(candidate.get(key)) not in (int, float) for key in required):
+                            raise ValueError("Не всі числові показники отримано")
+                        if candidate.get("readyToShipPercent") != "—" and type(candidate.get("readyToShipPercent")) not in (int, float):
+                            raise ValueError("Немає показника готовності до відправки")
+                        metrics = candidate
+                        break
+                    except Exception as exc:
+                        errors.append(str(exc)[:130])
+                if metrics is None:
+                    raise ValueError("; ".join(errors))
+                pos, neg = metrics["monthlyPositive"], metrics["monthlyNegative"]
+                ypos, yneg = metrics["yearlyPositive"], metrics["yearlyNegative"]
+                ratio = lambda a, b: a / (a + b) if a + b else None
+                vals = [pos, neg, ratio(pos, neg), ypos, yneg, ratio(ypos, yneg),
+                        metrics["affectingOrders"], metrics["affectingCancellations"],
+                        metrics["successfulOrdersPercent"] / 100]
+                if any(value is None for value in vals):
+                    raise ValueError("Неможливо обчислити відсоток: немає відгуків")
+                wvals = [metrics["successfulOrdersPercent"], metrics["positiveReviewsPercent"],
+                         metrics["readyToShipPercent"]]
+                for offset, value in enumerate(wvals):
+                    wchanges.append((wstart + offset, wcol, value))
+                for offset, value in enumerate(vals):
+                    achanges.append((arow, acol + offset, value))
+                completed += 1
+                analytics_bulk_status["success"] = completed
+            except Exception as exc:
+                failures.append({"shop": shop.name, "error": str(exc)[:200]})
+                analytics_bulk_status["failed"] = len(failures)
+            finally:
+                analytics_bulk_status["current"] = idx
+                analytics_bulk_status["message"] = f"Перевірено {idx} із {len(shops)}: {shop.name}"
+                time.sleep(0.4)
+        # Single batch write per worksheet, after the read-only collection.
+        # Recheck target cells immediately before writing to prevent accidental overwrite.
+        if wchanges or achanges:
+            for sheet, cells in ((work, wchanges), (reviews, achanges)):
+                for row, col, _ in cells:
+                    if not blank(sheet.acell(rowcol_to_a1(row, col)).value):
+                        raise ValueError("Запис зупинено: " + sheet.title + " " + rowcol_to_a1(row, col) + " вже заповнена.")
+            for sheet, cells in ((work, wchanges), (reviews, achanges)):
+                if cells:
+                    sheet.batch_update([{"range": rowcol_to_a1(row, col), "values": [[value]]}
+                                        for row, col, value in cells], value_input_option="USER_ENTERED")
+            work.batch_format([{"range": rowcol_to_a1(row, col),
+                                "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
+                               for row, col, value in wchanges if value != "—"])
+            reviews.batch_format([{"range": rowcol_to_a1(row, col),
+                                   "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
+                                  for row, col, _ in achanges if (col - next(
+                                      iter(ac[shop.name.strip().casefold()]), -1000)
+                                  ) in ()]) if False else None
+            # Counts are explicitly formatted per store; percentage cells retain template formatting.
+            count_formats = []
+            for shop in shops:
+                name = shop.name.strip().casefold()
+                if len(ac.get(name, ())) != 1:
+                    continue
+                base = next(iter(ac[name]))
+                written = {(row, col) for row, col, _ in achanges}
+                for offset in (0, 1, 3, 4, 6, 7):
+                    if (arow, base + offset) in written:
+                        count_formats.append({"range": rowcol_to_a1(arow, base + offset),
+                                              "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}})
+            if count_formats:
+                reviews.batch_format(count_formats)
+        analytics_bulk_status = {"status": "success", "total": len(shops), "current": len(shops),
+                                 "success": completed, "skipped": analytics_bulk_status["skipped"],
+                                 "failed": len(failures), "errors": failures[:80],
+                                 "message": f"Завершено: записано {completed}, пропущено {analytics_bulk_status['skipped']}, помилок {len(failures)}."}
+    except Exception as exc:
+        traceback.print_exc()
+        analytics_bulk_status = {**analytics_bulk_status, "status": "error", "message": str(exc)}
+    finally:
+        negative_lock.release()
+
+
+@app.route("/negative/analytics-bulk", methods=["POST"])
+def negative_analytics_bulk():
+    global analytics_bulk_status
+    if not negative_lock.acquire(blocking=False):
+        return jsonify({"status": "busy", "message": "Інший процес виконується."}), 409
+    try:
+        sheet_id = _sheet_id()
+        analytics_bulk_status = {"status": "running", "message": "Запускаємо збір…"}
+        threading.Thread(target=_analytics_bulk_worker, args=(sheet_id,), daemon=True).start()
+    except Exception:
+        negative_lock.release()
+        raise
+    return jsonify(analytics_bulk_status)
+
+
+@app.route("/negative/analytics-bulk/status", methods=["GET"])
+def negative_analytics_bulk_status():
+    return jsonify(analytics_bulk_status)
+
+
 @app.route("/negative/analytics-preview", methods=["POST"])
 def negative_analytics_preview():
     global analytics_preview_status
