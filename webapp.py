@@ -2564,6 +2564,28 @@ def negative_product_api_probe():
     except Exception as exc:
         return jsonify({"status": "error", "message": type(exc).__name__ + ": " + str(exc)[:160]})
 
+# Buyer-question collection: cache read-only inputs for the duration of a run.
+# Avoid hitting Google Sheets and the Cloudflare cookie vault for every shop.
+_buyer_questions_cache_lock = threading.Lock()
+_buyer_questions_cache = {"expires": 0.0, "shops": None, "cookies": None}
+
+
+def _buyer_questions_inputs():
+    import time
+    from negative_reviews import _prom_session_cookies
+    with _buyer_questions_cache_lock:
+        now = time.monotonic()
+        if (now < _buyer_questions_cache["expires"]
+                and _buyer_questions_cache["shops"] is not None
+                and _buyer_questions_cache["cookies"] is not None):
+            return list(_buyer_questions_cache["shops"]), list(_buyer_questions_cache["cookies"])
+        shops = list({str(x.id): x for x in _operational_shops(_QUESTION_SHOPS_TAB)}.values())
+        cookies = list(_prom_session_cookies())
+        _buyer_questions_cache.update({"expires": time.monotonic() + 180,
+                                       "shops": shops, "cookies": cookies})
+        return list(shops), list(cookies)
+
+
 @app.route("/questions/shops-batch", methods=["POST"])
 def buyer_questions_shops_batch():
     """Read-only, one active shop per request. No question/comment mutation."""
@@ -2582,7 +2604,7 @@ def buyer_questions_shops_batch():
     if not 0 <= offset <= 1000 or not 1 <= page <= 50:
         return jsonify({"status": "error", "message": "Перевищено ліміт сторінок."}), 400
     try:
-        shops = list({str(x.id): x for x in _operational_shops(_QUESTION_SHOPS_TAB)}.values())
+        shops, originals = _buyer_questions_inputs()
         if offset >= len(shops):
             return jsonify({"status": "ok", "done": True, "total_shops": len(shops), "questions": []})
         shop = shops[offset]
@@ -2591,7 +2613,6 @@ def buyer_questions_shops_batch():
             return jsonify({"status": "partial", "company_id": str(shop.id),
                             "shop_name": shop.name, "error": "Немає акаунта перемикання.",
                             "questions": [], "next_offset": offset + 1})
-        originals = _prom_session_cookies()
         last_stage = "перемикання магазину"
         last_reason = "не підтверджено перемикання"
         for account in accounts:
