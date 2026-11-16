@@ -273,7 +273,10 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
                 f"Пропущено магазинів: {result['skipped']}; неповних перевірок: {result['incomplete']}."
             )
             if result["written"] == 0 and not result.get("incomplete") and not result.get("skipped"):
-                message = "🎉 Негативних відгуків не знайдено! " + message
+                if result["collected_company"] + result["collected_product"] == 0:
+                    message = "🎉 Негативних відгуків не знайдено! " + message
+                else:
+                    message = "🎉 Нових негативних відгуків для запису немає — дублікати пропущено! " + message
             if result.get("incomplete_shops"):
                 message += " ⚠️ Неповна перевірка у магазинах: " + ", ".join(result["incomplete_shops"]) + "."
         elif process_name == "analytics":
