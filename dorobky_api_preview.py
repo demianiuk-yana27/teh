@@ -183,3 +183,71 @@ def preview_dorobky_api_extended():
     return jsonify({"status": "preview", "read_only": True,
                     "ready_to_replace_selenium": False,
                     "diagnostics": _probe_pagination_and_fields(key)})
+
+
+def preview_dorobky_status_scan():
+    """Bounded status scan; no order/customer data is returned."""
+    key = os.environ.get("ASTERIL_API_KEY", "").strip()
+    if not key:
+        return jsonify({"status": "error", "message": "Не налаштовано ASTERIL_API_KEY."}), 503
+    max_pages = 12
+    per_page = 100
+    found = {str(i): {"count": 0, "fields": {}} for i in STATUS_IDS.values()}
+    scan = {"pages_checked": 0, "orders_checked": 0, "page_limit": max_pages,
+            "requested_page_size": per_page, "total_pages": None,
+            "completed": False, "errors": []}
+    for page in range(1, max_pages + 1):
+        try:
+            response = requests.get(
+                BASE_URL + "orders",
+                params={"api_key": key, "limit": per_page, "page": page},
+                timeout=30, allow_redirects=False,
+            )
+        except requests.RequestException:
+            scan["errors"].append({"page": page, "error": "network"})
+            break
+        if response.status_code != 200:
+            scan["errors"].append({"page": page, "http_status": response.status_code})
+            break
+        try:
+            payload = response.json()
+        except ValueError:
+            scan["errors"].append({"page": page, "error": "non_json"})
+            break
+        if not isinstance(payload, dict) or payload.get("success") is False or payload.get("error") not in (None, "", [], {}):
+            scan["errors"].append({"page": page, "error": "crm_error"})
+            break
+        orders = payload.get("orders")
+        if not isinstance(orders, list):
+            scan["errors"].append({"page": page, "error": "missing_orders"})
+            break
+        pages = payload.get("pages")
+        if isinstance(pages, int) and not isinstance(pages, bool) and pages >= 0:
+            scan["total_pages"] = pages
+        elif isinstance(pages, str) and pages.isdigit():
+            scan["total_pages"] = int(pages)
+        scan["pages_checked"] += 1
+        scan["orders_checked"] += len(orders)
+        for order in orders:
+            if not isinstance(order, dict):
+                continue
+            status = str(order.get("status", ""))
+            if status not in found:
+                continue
+            entry = found[status]
+            entry["count"] += 1
+            for field in ("responsible_id", "responsible_comment",
+                          "custom_koment_menegera", "custom_kommnary_skladu",
+                          "shop_id"):
+                summary = entry["fields"].setdefault(field, {"present": 0, "nonempty": 0})
+                if field in order:
+                    summary["present"] += 1
+                if order.get(field) not in (None, "", [], {}):
+                    summary["nonempty"] += 1
+        if not orders or (scan["total_pages"] is not None and page >= scan["total_pages"]):
+            scan["completed"] = True
+            break
+    return jsonify({"status": "preview", "read_only": True,
+                    "ready_to_replace_selenium": False,
+                    "scan": scan, "target_statuses": found,
+                    "note": "Обмежений перегляд без запису та без персональних даних. Відсутність статусів у вибірці не означає їх відсутності в CRM."})
