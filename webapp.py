@@ -223,6 +223,7 @@ def _sheet_id():
 # Separate workbook for operational shop filters and buyer-question storage.
 _OPERATIONS_SHEET_DEFAULT = "1B8aq-wNhaCoDAGm_nbOu36GNQp8y0ovAkYoO7pjvxMA"
 _NEGATIVE_SHOPS_TAB = "Негативні відгуки"
+_NEW_NEGATIVE_SHOPS_TAB = "Нові магазини"
 _POSITIVE_SHOPS_TAB = "Позитивні відгуки"
 _QUESTION_SHOPS_TAB = "Позитивні відгуки"
 
@@ -240,7 +241,7 @@ def _operational_shops(tab_name):
 def _negative_worker(process_name, sheet_id, since, until, run_id):
     global negative_status
     try:
-        if process_name == "reviews":
+        if process_name in {"reviews", "new-shops"}:
             # Reuse the confirmed account/company mapping already used by
             # positive reviews. Never guess an account ID from company_id.
             login_map = _positive_login_map()
@@ -250,7 +251,7 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
             def update_shop_progress(current, total, shop_name):
                 negative_status.update({
                     "running": True,
-                    "process": "reviews",
+                    "process": process_name,
                     "status": "running",
                     "message": f"Магазин {current} з {total}: {shop_name}. Перевіряємо відгуки…",
                     "current_shop": current,
@@ -261,7 +262,7 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
                 _operations_sheet_id(), since, until,
                 destination_spreadsheet_id="16BqyyMUyTNiQaibRVyd-qXzo_XdAzxCvURPfBtGoiJg",
                 login_map=login_map, progress_callback=update_shop_progress,
-                shop_worksheet=_NEGATIVE_SHOPS_TAB)
+                shop_worksheet=(_NEW_NEGATIVE_SHOPS_TAB if process_name == "new-shops" else _NEGATIVE_SHOPS_TAB))
             message = (
                 "✅ Результат вигрузки. "
                 f"Знайдено: компанія — {result['collected_company']}, товари — {result['collected_product']}; "
@@ -271,6 +272,8 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
                 f"товари — {result['collected_product'] - result['written_product']}. "
                 f"Пропущено магазинів: {result['skipped']}; неповних перевірок: {result['incomplete']}."
             )
+            if result["written"] == 0 and not result.get("incomplete") and not result.get("skipped"):
+                message = "🎉 Негативних відгуків не знайдено! " + message
             if result.get("incomplete_shops"):
                 message += " ⚠️ Неповна перевірка у магазинах: " + ", ".join(result["incomplete_shops"]) + "."
         elif process_name == "analytics":
@@ -290,8 +293,8 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
             raise ValueError("Невідомий процес негативних відгуків.")
         from export_events import report_export
         report_export(
-            "Негативні відгуки", run_id, result["written"],
-            "відгуків" if process_name == "reviews" else "магазинів" if process_name == "analytics" else "замовлень",
+            "Негативні відгуки — Нові магазини" if process_name == "new-shops" else "Негативні відгуки", run_id, result["written"],
+            "відгуків" if process_name in {"reviews", "new-shops"} else "магазинів" if process_name == "analytics" else "замовлень",
             message,
         )
         negative_status = {
@@ -689,11 +692,16 @@ def negative_analytics_preview_get_status():
 @app.route("/negative/run/<process_name>", methods=["POST"])
 def run_negative(process_name):
     global negative_status
-    if process_name not in {"reviews", "analytics", "order-check"}:
+    if process_name not in {"reviews", "new-shops", "analytics", "order-check"}:
         return jsonify({"status": "error", "message": "Невідомий процес."}), 400
     data = request.get_json(silent=True) or {}
     since = str(data.get("since") or "").strip()
     until = str(data.get("until") or "").strip()
+    if process_name == "new-shops":
+        from zoneinfo import ZoneInfo
+        from datetime import datetime as _now_datetime
+        since = _now_datetime.now(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d")
+        until = since
     if process_name in {"reviews", "order-check"} and not since:
         return jsonify({"status": "error", "message": "Виберіть дату."}), 400
     if process_name == "reviews" and not until:
