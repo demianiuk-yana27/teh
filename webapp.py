@@ -224,7 +224,7 @@ def _sheet_id():
 _OPERATIONS_SHEET_DEFAULT = "1B8aq-wNhaCoDAGm_nbOu36GNQp8y0ovAkYoO7pjvxMA"
 _NEGATIVE_SHOPS_TAB = "Негативні відгуки"
 _POSITIVE_SHOPS_TAB = "Позитивні відгуки"
-_QUESTION_SHOPS_TAB = "Питання покупців - список магазинів для вигрузки питань"
+_QUESTION_SHOPS_TAB = "Позитивні відгуки"
 
 
 def _operations_sheet_id():
