@@ -514,9 +514,20 @@ def _analytics_bulk_worker(sheet_id):
                         result.setdefault(key, set()).add(index + 1)
             return result
         wc, ac = columns(whead), columns(ahead)
-        # Preserve original sheet positions, including separator columns.
-        wdata = work.get("A1:ZZ1500", value_render_option="UNFORMATTED_VALUE")
-        adata = reviews.get("A1:ZZ1500", value_render_option="UNFORMATTED_VALUE")
+        # Cache destination cells once; do not read every cell for every shop.
+        def sheets_retry(operation):
+            import random
+            from gspread.exceptions import APIError
+            for attempt in range(6):
+                try:
+                    return operation()
+                except APIError as exc:
+                    status = getattr(getattr(exc, "response", None), "status_code", None)
+                    if status != 429 or attempt == 5:
+                        raise
+                    time.sleep(min(65, 2 ** attempt * 2) + random.uniform(0, 1.5))
+        wdata = sheets_retry(lambda: work.get("A1:ZZ1500", value_render_option="UNFORMATTED_VALUE"))
+        adata = sheets_retry(lambda: reviews.get("A1:ZZ1500", value_render_option="UNFORMATTED_VALUE"))
         def old(grid, row, col):
             return grid[row - 1][col - 1] if row <= len(grid) and col <= len(grid[row - 1]) else None
         def blank(v):
@@ -582,28 +593,30 @@ def _analytics_bulk_worker(sheet_id):
                          metrics["readyToShipPercent"]]
                 work_cells = [(wstart + offset, wcol, value) for offset, value in enumerate(wvals)]
                 review_cells = [(arow, acol + offset, value) for offset, value in enumerate(vals)] if acol is not None else []
-                # Recheck before each shop write, including both worksheets.
-                for sheet, cells in ((work, work_cells), (reviews, review_cells)):
+                # Check cached values; keep the cache current after successful writes.
+                # A previously populated cell is never overwritten.
+                for grid, cells, sheet in ((wdata, work_cells, work), (adata, review_cells, reviews)):
                     for row, col, _ in cells:
-                        address = rowcol_to_a1(row, col)
-                        if not blank(sheet.acell(address, value_render_option="UNFORMATTED_VALUE").value):
-                            raise ValueError("Клітинка " + sheet.title + "!" + address + " вже заповнена")
-                # Write each shop immediately, not after collecting all shops.
-                work.batch_update([{"range": rowcol_to_a1(row, col), "values": [[value]]}
-                                   for row, col, value in work_cells], value_input_option="USER_ENTERED")
+                        if not blank(old(grid, row, col)):
+                            raise ValueError("Клітинка " + sheet.title + "!" + rowcol_to_a1(row, col) + " вже заповнена")
+                sheets_retry(lambda: work.batch_update(
+                    [{"range": rowcol_to_a1(row, col), "values": [[value]]}
+                     for row, col, value in work_cells], value_input_option="USER_ENTERED"))
                 if review_cells:
-                    reviews.batch_update([{"range": rowcol_to_a1(row, col), "values": [[value]]}
-                                          for row, col, value in review_cells], value_input_option="USER_ENTERED")
+                    sheets_retry(lambda: reviews.batch_update(
+                        [{"range": rowcol_to_a1(row, col), "values": [[value]]}
+                         for row, col, value in review_cells], value_input_option="USER_ENTERED"))
                 numeric_work_formats = [{"range": rowcol_to_a1(row, col),
                                          "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
                                         for row, col, value in work_cells if type(value) in (int, float)]
                 if numeric_work_formats:
-                    work.batch_format(numeric_work_formats)
+                    sheets_retry(lambda: work.batch_format(numeric_work_formats))
                 if review_cells:
-                    reviews.batch_format([{"range": rowcol_to_a1(row, col),
-                                           "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
-                                          for offset, (row, col, value) in enumerate(review_cells)
-                                          if offset in (0, 1, 3, 4, 6, 7)])
+                    sheets_retry(lambda: reviews.batch_format(
+                        [{"range": rowcol_to_a1(row, col),
+                          "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
+                         for offset, (row, col, value) in enumerate(review_cells)
+                         if offset in (0, 1, 3, 4, 6, 7)]))
                 for row, col, value in work_cells:
                     if row <= len(wdata):
                         while len(wdata[row - 1]) < col:
