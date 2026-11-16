@@ -183,8 +183,22 @@ def run_order_count_report():
                 found[column_index] = count
 
         if missing:
+            # Safe structural diagnostics: do not expose order/customer data.
+            from urllib.parse import urlparse
+            current_path = urlparse(driver.current_url).path
+            body = driver.find_element(By.TAG_NAME, "body")
+            body_text = _normalize(body.text)
+            visible_labels = sum(_normalize(name) in body_text for _, name in status_columns)
+            exact_matches = sum(bool(driver.find_elements(
+                By.XPATH,
+                f"//*[normalize-space(text())={json.dumps(name, ensure_ascii=False)}]",
+            )) for _, name in status_columns)
             raise RuntimeError(
-                "У CRM не вдалося прочитати кількість для статусів: " + ", ".join(missing)
+                "Не вдалося прочитати лічильники статусів. "
+                f"Діагностика: сторінка={current_path}; "
+                f"назв у тексті={visible_labels}/{len(status_columns)}; "
+                f"точних HTML-збігів={exact_matches}/{len(status_columns)}. "
+                "Жодних даних у таблиці не змінено."
             )
 
         updates = []
