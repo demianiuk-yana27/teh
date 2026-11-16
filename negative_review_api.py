@@ -407,14 +407,18 @@ def _ready_to_ship_percent(node):
 
 
 def extract_analytics_metrics(context):
-    """Return only observed numeric fields, leaving unknown values unset."""
+    """Extract verified metrics; distinguish a new unrated shop from missing data."""
     grades = context["grades"]
     opinions = context["company_reviews"]
     monthly = {}
+    saw_empty_monthly = False
     def walk(node):
+        nonlocal saw_empty_monthly
         if isinstance(node, dict):
             entries = node.get("countByMonth")
             if isinstance(entries, list):
+                if not entries:
+                    saw_empty_monthly = True
                 for entry in entries:
                     if not isinstance(entry, dict):
                         continue
@@ -430,14 +434,35 @@ def extract_analytics_metrics(context):
             for value in node:
                 walk(value)
     walk(opinions)
+    def count(kind, period):
+        value = monthly.get(kind, {}).get(period)
+        if type(value) in (int, float):
+            return value
+        # An explicitly empty countByMonth list means no reviews, not a parse failure.
+        return 0 if saw_empty_monthly and not monthly else None
+    completed = _find_named_metric(grades, ("completedOrdersPercent",))
+    positive = _find_named_metric(grades, ("percentagePositiveReviews", "positiveOpinionsPercent"))
+    affecting_orders = _find_named_metric(grades, ("orders_in_rating_count",))
+    affecting_cancellations = _find_named_metric(grades, ("canceled_orders_in_rating_count",))
+    no_reviews = all(count(kind, period) == 0
+                     for kind in ("позитивні", "негативні")
+                     for period in ("month", "year"))
+    # For a new, unrated shop with an explicitly empty review-statistics list,
+    # there are no orders contributing to the review rating.
+    if saw_empty_monthly and no_reviews and completed is None:
+        if affecting_orders is None:
+            affecting_orders = 0
+        if affecting_cancellations is None:
+            affecting_cancellations = 0
+    ready = _ready_to_ship_percent(grades)
     return {
-        "monthlyPositive": monthly.get("позитивні", {}).get("month"),
-        "monthlyNegative": monthly.get("негативні", {}).get("month"),
-        "yearlyPositive": monthly.get("позитивні", {}).get("year"),
-        "yearlyNegative": monthly.get("негативні", {}).get("year"),
-        "successfulOrdersPercent": _find_named_metric(grades, ("completedOrdersPercent",)),
-        "positiveReviewsPercent": _find_named_metric(grades, ("percentagePositiveReviews", "positiveOpinionsPercent")),
-        "affectingOrders": _find_named_metric(grades, ("orders_in_rating_count",)),
-        "affectingCancellations": _find_named_metric(grades, ("canceled_orders_in_rating_count",)),
-        "readyToShipPercent": _ready_to_ship_percent(grades),
+        "monthlyPositive": count("позитивні", "month"),
+        "monthlyNegative": count("негативні", "month"),
+        "yearlyPositive": count("позитивні", "year"),
+        "yearlyNegative": count("негативні", "year"),
+        "successfulOrdersPercent": completed if completed is not None else "—",
+        "positiveReviewsPercent": positive if positive is not None else "—",
+        "affectingOrders": affecting_orders,
+        "affectingCancellations": affecting_cancellations,
+        "readyToShipPercent": ready if ready is not None else "—",
     }
