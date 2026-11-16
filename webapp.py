@@ -551,7 +551,7 @@ def _analytics_bulk_worker(sheet_id):
                 wcol = next(iter(work_columns))
                 acol = next(iter(review_columns)) if review_columns else None
                 if any(not blank(old(wdata, wstart + offset, wcol)) for offset in range(3)) or (
-                    acol is not None and any(not blank(old(adata, arow, acol + offset)) for offset in range(9))
+                    acol is not None and any(not blank(old(adata, arow, acol + offset)) for offset in range(8))
                 ):
                     skipped += 1
                     analytics_bulk_status["skipped"] = skipped
@@ -585,10 +585,9 @@ def _analytics_bulk_worker(sheet_id):
                     pos, neg = metrics["monthlyPositive"], metrics["monthlyNegative"]
                     ypos, yneg = metrics["yearlyPositive"], metrics["yearlyNegative"]
                     ratio = lambda a, b: a / (a + b) if a + b else 0
-                    successful = metrics["successfulOrdersPercent"]
+                    # The ninth column has a spreadsheet formula; never overwrite it.
                     vals = [pos, neg, ratio(pos, neg), ypos, yneg, ratio(ypos, yneg),
-                            metrics["affectingOrders"], metrics["affectingCancellations"],
-                            successful / 100 if type(successful) in (int, float) else "—"]
+                            metrics["affectingOrders"], metrics["affectingCancellations"]]
                 wvals = [metrics["successfulOrdersPercent"], metrics["positiveReviewsPercent"],
                          metrics["readyToShipPercent"]]
                 work_cells = [(wstart + offset, wcol, value) for offset, value in enumerate(wvals)]
