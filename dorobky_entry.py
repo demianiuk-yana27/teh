@@ -10,3 +10,6 @@ app = parallel_web.app
 # Read-only diagnostic endpoint; the existing rework export remains unchanged.
 from dorobky_api_preview import preview_dorobky_api
 app.add_url_rule("/dorobky/api-preview", "dorobky_api_preview", preview_dorobky_api, methods=["GET"])
+
+from dorobky_api_preview import preview_dorobky_api_extended
+app.add_url_rule("/dorobky/api-preview-extended", "dorobky_api_preview_extended", preview_dorobky_api_extended, methods=["GET"])
