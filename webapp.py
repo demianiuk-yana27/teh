@@ -592,11 +592,6 @@ def _analytics_bulk_worker(sheet_id):
             work.batch_format([{"range": rowcol_to_a1(row, col),
                                 "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
                                for row, col, value in wchanges if value != "—"])
-            reviews.batch_format([{"range": rowcol_to_a1(row, col),
-                                   "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
-                                  for row, col, _ in achanges if (col - next(
-                                      iter(ac[shop.name.strip().casefold()]), -1000)
-                                  ) in ()]) if False else None
             # Counts are explicitly formatted per store; percentage cells retain template formatting.
             count_formats = []
             for shop in shops:
