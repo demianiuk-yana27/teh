@@ -320,7 +320,7 @@ questions_script = """<script>
            if(response.status===502||response.status===500||response.status===504){
              fatal=true;
              let message='';
-             if(contentType.includes('application/json')){try{const body=await response.json();message=body.message||''}catch(_){}}
+             if(contentType.includes('application/json')){try{const body=await response.json();message=(body.message||'')+(body.error_type?' ['+body.error_type+']':'')}catch(_){}}
              throw Error('HTTP '+response.status+(message?' — '+message:' — помилка сервера або проксі'));
            }
            if(response.status===429||response.status===503){
