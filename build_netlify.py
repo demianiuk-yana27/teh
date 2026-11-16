@@ -319,7 +319,12 @@ questions_script = """<script>
            }
            if(response.status===429||response.status===503){
              throttled=true;
-             throw Error('HTTP '+response.status+' — тимчасове обмеження сервера');
+             const proxy=response.headers.get('x-tech-proxy-handled');
+             const upstream=response.headers.get('x-tech-upstream-status');
+             const source=proxy==='pages-function'
+               ? 'відповідь Render (через проксі'+(upstream?', upstream '+upstream:'')+')'
+               : 'відповідь на рівні Cloudflare/маршрутизації (проксі не підтверджено)';
+             throw Error('HTTP '+response.status+' — '+source);
            }
            if(!contentType.includes('application/json')){
              if(response.status===403&&contentType.includes('text/html')){
