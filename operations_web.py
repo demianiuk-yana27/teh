@@ -9,6 +9,16 @@ app = base.app
 
 def _template():
     html = base._negative_template()
+    # Independent high-control shop export, using today's Kyiv date on the server.
+    html = html.replace(
+        '''            <button class="btn" style="background:#0f766e" onclick="runNegative('analytics')">''',
+        '''            <button class="btn" style="background:#7c3aed" onclick="runNegative('new-shops')">
+                🆕 Нові магазини — негативні відгуки (сьогодні)
+            </button>
+            <div id="newShopsResult" style="margin:8px 0 14px;font-weight:bold;white-space:pre-wrap;font-size:14px"></div>
+
+            <button class="btn" style="background:#0f766e" onclick="runNegative('analytics')">''',
+    )
     block = '''
             <h4 style="margin-top:30px">Звіт по кількості замовлень</h4>
             <button class="btn" style="background:#2563eb" onclick="runOrderCountReport()">
