@@ -582,8 +582,9 @@ def _analytics_bulk_worker(sheet_id):
         # Recheck target cells immediately before writing to prevent accidental overwrite.
         if wchanges or achanges:
             for sheet, cells in ((work, wchanges), (reviews, achanges)):
+                fresh = sheet.get("A1:ZZ1500", value_render_option="UNFORMATTED_VALUE")
                 for row, col, _ in cells:
-                    if not blank(sheet.acell(rowcol_to_a1(row, col)).value):
+                    if not blank(old(fresh, row, col)):
                         raise ValueError("Запис зупинено: " + sheet.title + " " + rowcol_to_a1(row, col) + " вже заповнена.")
             for sheet, cells in ((work, wchanges), (reviews, achanges)):
                 if cells:
