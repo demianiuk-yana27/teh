@@ -2736,8 +2736,14 @@ def buyer_questions_shops_batch():
         return jsonify({"status": "partial", "company_id": str(shop.id),
                         "shop_name": shop.name, "questions": [],
                         "next_offset": offset + 1, "error": "Не вдалося прочитати запитання магазину.", "stage": last_stage, "reason": last_reason})
-    except Exception:
-        return jsonify({"status": "error", "message": "Не вдалося отримати запитання."}), 500
+    except Exception as exc:
+        # Never expose cookie values, vault URLs or exception messages to browsers.
+        import logging
+        logging.exception("Buyer questions collection failed at offset %s", offset)
+        return jsonify({"status": "error",
+                        "message": "Помилка збору запитань на сервері.",
+                        "error_type": type(exc).__name__,
+                        "stage": "підготовка списку магазинів або Prom-сесії"}), 500
 
 
 # Shared buyer-question state in the existing Google spreadsheet (not Render's ephemeral disk).
