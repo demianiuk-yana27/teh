@@ -532,15 +532,15 @@ def _analytics_bulk_worker(sheet_id):
             try:
                 work_columns = wc.get(name, set())
                 review_columns = ac.get(name, set())
-                if len(work_columns) != 1 or len(review_columns) != 1:
+                if len(work_columns) != 1 or len(review_columns) > 1:
                     raise ValueError(
                         "Неоднозначні заголовки: Показники роботи="
                         + str(sorted(work_columns)) + "; Аналітика відгуків="
                         + str(sorted(review_columns)))
                 wcol = next(iter(work_columns))
-                acol = next(iter(review_columns))
-                if any(not blank(old(wdata, wstart + offset, wcol)) for offset in range(3)) or any(
-                    not blank(old(adata, arow, acol + offset)) for offset in range(9)
+                acol = next(iter(review_columns)) if review_columns else None
+                if any(not blank(old(wdata, wstart + offset, wcol)) for offset in range(3)) or (
+                    acol is not None and any(not blank(old(adata, arow, acol + offset)) for offset in range(9))
                 ):
                     skipped += 1
                     analytics_bulk_status["skipped"] = skipped
@@ -556,7 +556,7 @@ def _analytics_bulk_worker(sheet_id):
                         count_keys = ("monthlyPositive", "monthlyNegative", "yearlyPositive",
                                       "yearlyNegative", "affectingOrders", "affectingCancellations")
                         missing = [key for key in count_keys if type(candidate.get(key)) not in (int, float)]
-                        if missing:
+                        if missing and acol is not None:
                             raise ValueError("Відсутні числові поля: " + ", ".join(missing))
                         percent_keys = ("successfulOrdersPercent", "positiveReviewsPercent", "readyToShipPercent")
                         invalid = [key for key in percent_keys if candidate.get(key) != "—"
@@ -569,17 +569,19 @@ def _analytics_bulk_worker(sheet_id):
                         errors.append(str(exc)[:160])
                 if metrics is None:
                     raise ValueError("; ".join(errors))
-                pos, neg = metrics["monthlyPositive"], metrics["monthlyNegative"]
-                ypos, yneg = metrics["yearlyPositive"], metrics["yearlyNegative"]
-                ratio = lambda a, b: a / (a + b) if a + b else 0
-                successful = metrics["successfulOrdersPercent"]
-                vals = [pos, neg, ratio(pos, neg), ypos, yneg, ratio(ypos, yneg),
-                        metrics["affectingOrders"], metrics["affectingCancellations"],
-                        successful / 100 if type(successful) in (int, float) else "—"]
+                vals = []
+                if acol is not None:
+                    pos, neg = metrics["monthlyPositive"], metrics["monthlyNegative"]
+                    ypos, yneg = metrics["yearlyPositive"], metrics["yearlyNegative"]
+                    ratio = lambda a, b: a / (a + b) if a + b else 0
+                    successful = metrics["successfulOrdersPercent"]
+                    vals = [pos, neg, ratio(pos, neg), ypos, yneg, ratio(ypos, yneg),
+                            metrics["affectingOrders"], metrics["affectingCancellations"],
+                            successful / 100 if type(successful) in (int, float) else "—"]
                 wvals = [metrics["successfulOrdersPercent"], metrics["positiveReviewsPercent"],
                          metrics["readyToShipPercent"]]
                 work_cells = [(wstart + offset, wcol, value) for offset, value in enumerate(wvals)]
-                review_cells = [(arow, acol + offset, value) for offset, value in enumerate(vals)]
+                review_cells = [(arow, acol + offset, value) for offset, value in enumerate(vals)] if acol is not None else []
                 # Recheck before each shop write, including both worksheets.
                 for sheet, cells in ((work, work_cells), (reviews, review_cells)):
                     for row, col, _ in cells:
@@ -589,17 +591,19 @@ def _analytics_bulk_worker(sheet_id):
                 # Write each shop immediately, not after collecting all shops.
                 work.batch_update([{"range": rowcol_to_a1(row, col), "values": [[value]]}
                                    for row, col, value in work_cells], value_input_option="USER_ENTERED")
-                reviews.batch_update([{"range": rowcol_to_a1(row, col), "values": [[value]]}
-                                      for row, col, value in review_cells], value_input_option="USER_ENTERED")
+                if review_cells:
+                    reviews.batch_update([{"range": rowcol_to_a1(row, col), "values": [[value]]}
+                                          for row, col, value in review_cells], value_input_option="USER_ENTERED")
                 numeric_work_formats = [{"range": rowcol_to_a1(row, col),
                                          "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
                                         for row, col, value in work_cells if type(value) in (int, float)]
                 if numeric_work_formats:
                     work.batch_format(numeric_work_formats)
-                reviews.batch_format([{"range": rowcol_to_a1(row, col),
-                                       "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
-                                      for offset, (row, col, value) in enumerate(review_cells)
-                                      if offset in (0, 1, 3, 4, 6, 7)])
+                if review_cells:
+                    reviews.batch_format([{"range": rowcol_to_a1(row, col),
+                                           "format": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}
+                                          for offset, (row, col, value) in enumerate(review_cells)
+                                          if offset in (0, 1, 3, 4, 6, 7)])
                 for row, col, value in work_cells:
                     if row <= len(wdata):
                         while len(wdata[row - 1]) < col:
