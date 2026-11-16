@@ -151,14 +151,14 @@ def run_process_with_13(process_num):
 # Reviews use the verified sign-to map and TEST spreadsheet from webapp.
 # Keep independent parallel workers for the other existing processes.
 def run_negative_dispatch(process_name):
-    if process_name == "reviews":
+    if process_name in {"reviews", "new-shops"}:
         return base.run_negative(process_name)
     return run_negative_parallel(process_name)
 
 
 def negative_status_dispatch():
     process_name = str(request.args.get("process") or "").strip()
-    if not process_name or process_name == "reviews":
+    if not process_name or process_name in {"reviews", "new-shops"}:
         return base.get_negative_status()
     return get_negative_status_parallel()
 
@@ -175,6 +175,7 @@ const parallelNegativeTimers = {};
 function negativeResultFor(processName) {
     if (processName === "order-check") return document.getElementById("orderCheckResult");
     if (processName === "reviews") return document.getElementById("reviewsResult");
+    if (processName === "new-shops") return document.getElementById("newShopsResult");
     return document.getElementById("analyticsResult");
 }
 
