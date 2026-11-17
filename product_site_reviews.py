@@ -83,37 +83,82 @@ def _write(book, tab, reviews):
         return 0
     sheet = book.worksheet(tab)
     rows = sheet.get("D:I")
-    existing = set()
+    existing = {}
     last = 2
+
+    def clean_text(value):
+        import re
+        return re.sub(r"^⭐\\s*[1-5]/5\\s*\\n?", "", str(value or "").strip()).strip()
+
     for index, row in enumerate(rows, 1):
         padded = row + [""] * (6 - len(row))
         order, date, shop, text = padded[0], padded[3], padded[4], padded[5]
-        if str(order).strip() or str(date).strip() or str(shop).strip() or str(text).strip():
+        if any(str(v).strip() for v in (order, date, shop, text)):
             last = max(last, index)
         parsed = parse_date(date)
         if parsed:
-            existing.add((str(order).strip(), parsed.strftime("%d.%m.%Y"),
-                          normalize_name(shop), str(text).strip()))
+            key = (str(order).strip(), parsed.strftime("%d.%m.%Y"),
+                   normalize_name(shop), clean_text(text))
+            existing.setdefault(key, index)
+
     fresh = []
+    updates = []
+    link_rows = []
+    seen = set()
     for item in reviews:
-        key = (item["order"], item["date"], normalize_name(item["shop"]), item["text"])
-        if key not in existing:
-            existing.add(key)
+        key = (item["order"], item["date"], normalize_name(item["shop"]),
+               clean_text(item["text"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        if key in existing:
+            row_number = existing[key]
+            # Update formatting of previously exported reviews, without
+            # adding duplicate rows or touching any manager work columns.
+            previous = rows[row_number - 1] if row_number <= len(rows) else []
+            previous_text = previous[5] if len(previous) > 5 else ""
+            display_text = f"⭐ {item['rating']}/5" + (
+                f"\\n{item['text']}" if item["text"] else "")
+            if previous_text != display_text:
+                updates.append({"range": f"'{tab}'!I{row_number}",
+                                "values": [[display_text]]})
+            link_rows.append((row_number, item["order"]))
+        else:
             fresh.append(item)
-    if not fresh:
-        return 0
+
     first = last + 1
-    if sheet.row_count < first + len(fresh) - 1:
+    if fresh and sheet.row_count < first + len(fresh) - 1:
         sheet.add_rows(first + len(fresh) - 1 - sheet.row_count)
-    # Preserve the user's existing D/G/H/I column layout and all other columns.
-    data = []
+
     for offset, item in enumerate(fresh):
         row = first + offset
+        body = f"⭐ {item['rating']}/5" + (
+            f"\\n{item['text']}" if item["text"] else "")
         for col, value in (("D", item["order"]), ("G", item["date"]),
-                           ("H", item["shop"]), ("I", item["text"])):
-            data.append({"range": "'%s'!%s%d" % (tab.replace("'", "''"), col, row),
-                         "values": [[value]]})
-    book.values_batch_update({"valueInputOption": "RAW", "data": data})
+                           ("H", item["shop"]), ("I", body)):
+            updates.append({"range": f"'{tab}'!{col}{row}", "values": [[value]]})
+        link_rows.append((row, item["order"]))
+
+    if updates:
+        book.values_batch_update({"valueInputOption": "RAW", "data": updates})
+    if link_rows:
+        requests = []
+        for row, order in link_rows:
+            if not str(order).isdigit():
+                continue
+            requests.append({
+                "repeatCell": {
+                    "range": {"sheetId": sheet.id, "startRowIndex": row - 1,
+                              "endRowIndex": row, "startColumnIndex": 3,
+                              "endColumnIndex": 4},
+                    "cell": {"userEnteredFormat": {"textFormat": {
+                        "link": {"uri": "https://my.prom.ua/cms/order/edit/" + str(order)}
+                    }}},
+                    "fields": "userEnteredFormat.textFormat.link",
+                }
+            })
+        if requests:
+            book.batch_update({"requests": requests})
     return len(fresh)
 
 
