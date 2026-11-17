@@ -127,7 +127,7 @@ def _write(book, tab, reviews):
             previous = rows[row_number - 1] if row_number <= len(rows) else []
             previous_text = previous[5] if len(previous) > 5 else ""
             display_text = f"⭐ {item['rating']}/5" + (
-                f"\\n{item['text']}" if item["text"] else "")
+                chr(10) + item["text"] if item["text"] else "")
             if previous_text != display_text:
                 updates.append({"range": f"'{tab}'!I{row_number}",
                                 "values": [[display_text]]})
@@ -146,7 +146,7 @@ def _write(book, tab, reviews):
     for offset, item in enumerate(fresh):
         row = first + offset
         body = f"⭐ {item['rating']}/5" + (
-            f"\\n{item['text']}" if item["text"] else "")
+            chr(10) + item["text"] if item["text"] else "")
         for col, value in (("D", item["order"]), ("G", item["date"]),
                            ("H", item["shop"]), ("I", body)):
             updates.append({"range": f"'{tab}'!{col}{row}", "values": [[value]]})
