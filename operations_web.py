@@ -295,3 +295,6 @@ def product_site_reviews_start():
 @app.route("/operations/product-site-reviews/status", methods=["GET"])
 def product_site_reviews_status():
     return jsonify(_product_state)
+
+from call_review_preview import register as _register_call_review_preview
+_register_call_review_preview(app, base._positive_login_map)
