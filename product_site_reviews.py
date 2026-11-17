@@ -97,7 +97,7 @@ def _write(book, tab, reviews):
 
     def clean_text(value):
         import re
-        return re.sub(r"^⭐\\s*[1-5]/5\\s*\\n?", "", str(value or "").strip()).strip()
+        return re.sub(r"^⭐\s*[1-5]/5\s*\n?", "", str(value or "").strip()).strip()
 
     for index, row in enumerate(rows, 1):
         padded = row + [""] * (6 - len(row))
