@@ -33,7 +33,7 @@ def _extract(opinion, shop, day):
         raise ValueError("Відгук за вибрану дату без ID замовлення Prom")
     text = "\n".join(str(opinion[k]).strip() for k in ("title", "text", "pros", "cons")
                      if isinstance(opinion.get(k), str) and opinion[k].strip())
-    return {"order": order, "date": date.strftime("%d.%m.%Y"),
+    return {"order": order, "date": date.strftime("%d.%m"),
             "shop": shop.name, "text": text, "rating": rating,
             "review_id": review_id}, date
 
@@ -86,6 +86,15 @@ def _write(book, tab, reviews):
     existing = {}
     last = 2
 
+    def day_month(value):
+        value = str(value or "").strip()
+        parsed = parse_date(value)
+        if parsed:
+            return parsed.strftime("%d.%m")
+        import re
+        match = re.match(r"^(\d{1,2})\.(\d{1,2})(?:\.|$)", value)
+        return f"{int(match.group(1)):02d}.{int(match.group(2)):02d}" if match else ""
+
     def clean_text(value):
         import re
         return re.sub(r"^⭐\\s*[1-5]/5\\s*\\n?", "", str(value or "").strip()).strip()
@@ -95,9 +104,9 @@ def _write(book, tab, reviews):
         order, date, shop, text = padded[0], padded[3], padded[4], padded[5]
         if any(str(v).strip() for v in (order, date, shop, text)):
             last = max(last, index)
-        parsed = parse_date(date)
-        if parsed:
-            key = (str(order).strip(), parsed.strftime("%d.%m.%Y"),
+        normalized_date = day_month(date)
+        if normalized_date:
+            key = (str(order).strip(), normalized_date,
                    normalize_name(shop), clean_text(text))
             existing.setdefault(key, index)
 
@@ -122,6 +131,10 @@ def _write(book, tab, reviews):
             if previous_text != display_text:
                 updates.append({"range": f"'{tab}'!I{row_number}",
                                 "values": [[display_text]]})
+            existing_date = previous[3] if len(previous) > 3 else ""
+            if str(existing_date).strip() != item["date"]:
+                updates.append({"range": f"'{tab}'!G{row_number}",
+                                "values": [[item["date"]]]})
             link_rows.append((row_number, item["order"]))
         else:
             fresh.append(item)
@@ -143,6 +156,15 @@ def _write(book, tab, reviews):
         book.values_batch_update({"valueInputOption": "RAW", "data": updates})
     if link_rows:
         requests = []
+        for row, _order in link_rows:
+            requests.append({"repeatCell": {
+                "range": {"sheetId": sheet.id, "startRowIndex": row - 1,
+                          "endRowIndex": row, "startColumnIndex": 8,
+                          "endColumnIndex": 9},
+                "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP",
+                                              "verticalAlignment": "TOP"}},
+                "fields": "userEnteredFormat.wrapStrategy,userEnteredFormat.verticalAlignment"
+            }})
         for row, order in link_rows:
             if not str(order).isdigit():
                 continue
