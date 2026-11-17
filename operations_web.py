@@ -228,3 +228,70 @@ def export_diagnostic():
         return jsonify({"status":"diagnostic","http_status":exc.code,"response":exc.read(500).decode("utf-8","replace")})
     except URLError as exc:
         return jsonify({"status":"error","message":"Помилка з'єднання: "+str(exc.reason)}), 502
+
+
+# Independent product-on-company-site reviews export.
+import threading as _product_threading
+import uuid as _product_uuid
+from flask import request as _product_request
+from zoneinfo import ZoneInfo as _product_zoneinfo
+from product_site_reviews import export_product_site_reviews
+
+_product_lock = _product_threading.Lock()
+_product_state = {"status": "idle", "message": "Готово до запуску."}
+
+
+def _product_site_worker(date_text, run_id):
+    global _product_state
+    try:
+        login_map = base._positive_login_map()
+        if not login_map:
+            raise RuntimeError("Немає підтвердженої карти sign-to магазинів.")
+        def progress(current, total, name):
+            _set_product_progress(run_id, current, total, name)
+        result = export_product_site_reviews(date_text, login_map, progress)
+        message = (
+            f"Перевірено магазинів: {result['checked_shops']}. "
+            f"Знайдено негативних: {result['collected_negative']}, позитивних: {result['collected_positive']}. "
+            f"Додано нових: негативних — {result['written_negative']}, "
+            f"позитивних — {result['written_positive']}."
+        )
+        if result["collected_negative"] + result["collected_positive"] == 0:
+            message = "🎉 Відгуків про товари за обрану дату не знайдено! " + message
+        elif result["written"] == 0:
+            message = "🎉 Нових відгуків для запису немає — дублікати пропущено! " + message
+        _product_state = {"status": "success", "run_id": run_id, "message": message}
+    except Exception as exc:
+        _product_state = {"status": "error", "run_id": run_id,
+                          "message": str(exc)[:500]}
+    finally:
+        _product_lock.release()
+
+
+def _set_product_progress(run_id, current, total, name):
+    global _product_state
+    _product_state = {"status": "running", "run_id": run_id,
+                      "message": f"Магазин {current}/{total}: {name}. Перевіряємо відгуки…"}
+
+
+@app.route("/operations/product-site-reviews", methods=["POST"])
+def product_site_reviews_start():
+    global _product_state
+    data = _product_request.get_json(silent=True) or {}
+    date_text = str(data.get("date") or "").strip()
+    from negative_reviews import parse_date
+    if not parse_date(date_text):
+        return jsonify({"status": "error", "message": "Виберіть коректну дату."}), 400
+    if not _product_lock.acquire(blocking=False):
+        return jsonify({"status": "busy", "message": "Вигрузка вже виконується."}), 409
+    run_id = _product_uuid.uuid4().hex
+    _product_state = {"status": "running", "run_id": run_id,
+                      "message": "Розпочато перевірку магазинів."}
+    _product_threading.Thread(target=_product_site_worker,
+                              args=(date_text, run_id), daemon=True).start()
+    return jsonify({"status": "started", "run_id": run_id, "message": "Вигрузку запущено."})
+
+
+@app.route("/operations/product-site-reviews/status", methods=["GET"])
+def product_site_reviews_status():
+    return jsonify(_product_state)
