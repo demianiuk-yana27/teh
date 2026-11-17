@@ -108,6 +108,21 @@ def _worker(start, end, login_map, run_id):
         results = {tab: {"matches": 0, "already_marked": 0} for tab in TABS}
         reviewed = 0
         without_id = 0
+        order_index = {}
+        shop_index = {}
+        for (shop_name, order_id), entries in orders.items():
+            order_index.setdefault(order_id, set()).add(shop_name)
+            shop_index[shop_name] = shop_index.get(shop_name, 0) + len(entries)
+        diagnostics = {
+            "prom_orders_matching_any_tab": 0,
+            "prom_orders_matching_other_shop": 0,
+            "prom_reviews_with_shop_name_in_table": 0,
+            "prom_reviews_without_shop_name_in_table": 0,
+            "unique_prom_orders_checked": 0,
+            "unique_sheet_order_ids": len(order_index),
+            "unique_sheet_shop_names": len(shop_index),
+        }
+        observed_orders = set()
         errors = []
         missing_mapping = []
         for index, shop in enumerate(shops.values(), 1):
@@ -131,11 +146,22 @@ def _worker(start, end, login_map, run_id):
             order_ids, inspected, missed = found
             reviewed += inspected
             without_id += missed
+            normalized_shop = normalize_name(shop.name)
+            if normalized_shop in shop_index:
+                diagnostics["prom_reviews_with_shop_name_in_table"] += inspected
+            else:
+                diagnostics["prom_reviews_without_shop_name_in_table"] += inspected
             for order in order_ids:
-                for tab, _row, status in orders.get((normalize_name(shop.name), order), []):
+                observed_orders.add(order)
+                if order in order_index:
+                    diagnostics["prom_orders_matching_any_tab"] += 1
+                    if normalized_shop not in order_index[order]:
+                        diagnostics["prom_orders_matching_other_shop"] += 1
+                for tab, _row, status in orders.get((normalized_shop, order), []):
                     results[tab]["matches"] += 1
                     if normalize_name(status) == "є відгук":
                         results[tab]["already_marked"] += 1
+        diagnostics["unique_prom_orders_checked"] = len(observed_orders)
         _state = {
             "status": "success" if not errors and not missing_mapping else "partial",
             "run_id": run_id, "read_only": True, "writes": False,
@@ -144,6 +170,7 @@ def _worker(start, end, login_map, run_id):
             "orders_by_tab": counts, "reviews_in_period": reviewed,
             "reviews_without_order_id": without_id,
             "matches_by_tab": results,
+            "match_diagnostics": diagnostics,
             "total_matches": sum(v["matches"] for v in results.values()),
             "unavailable_shops": errors, "unmapped_shops": missing_mapping,
             "message": "Попередній перегляд завершено. Дані таблиці не змінювалися."
