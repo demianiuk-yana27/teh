@@ -272,7 +272,7 @@ def collect_shop(shop, account, since, until=""):
                     raise ValueError("Неочікуваний формат відгуку")
                 cid = opinion.get("companyId" if kind == "product" else "company_id")
                 if str(cid) != str(shop.id):
-                    raise ValueError("Повернуто відгук іншого магазину")
+                    raise ValueError("Повернуто відгук іншого магазину (%s): очікуваний company_id=%s, отриманий=%s" % (kind, shop.id, str(cid)[:30]))
                 oid = opinion.get("id")
                 if oid is None or str(oid) in seen:
                     raise ValueError("Повтор або відсутній ID відгуку на сторінці")
