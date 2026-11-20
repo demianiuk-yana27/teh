@@ -36,11 +36,14 @@ export async function onRequest({request,env,data}){
  if(mode==='requests'&&tab==='Опт/дроп'&&!['Опт','Дроп'].includes(values[1]))return json({error:'Невірний тип запиту'},400);
  if(mode==='requests'&&tab!=='Опт/дроп'&&!TAGS[tab].includes(values[3]))return json({error:'Невірна мітка'},400);
  if(mode==='ttn'&&(!ERROR_TYPES.includes(values[4])||!CHANGE_TYPES.includes(values[5])))return json({error:'Невірна категорія зміни'},400);
- const sheet=mode==='ttn'?'Зміни з ТТН':tab,book=BOOKS[mode],first=mode==='ttn'?'A':'B',last=mode==='ttn'?'G':'E';
+ const sheet=mode==='ttn'?'Зміни з ТТН':tab,book=BOOKS[mode],first='A',last=mode==='ttn'?'G':'E';
  const now=new Date();
  const today=now.toLocaleDateString('en-CA',{timeZone:'Europe/Kyiv'});
+ const kyivParts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Kyiv',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(now);
+ const kyivValue=part=>kyivParts.find(p=>p.type===part)?.value;
+ const requestTimestamp=kyivValue('day')+'.'+kyivValue('month')+'. '+kyivValue('hour')+':'+kyivValue('minute');
  const isTech=mode==='requests'&&tab==='Тех';
- const rowValues=mode==='ttn'?[today,...values]:values;
+ const rowValues=mode==='ttn'?[today,...values]:[requestTimestamp,...values];
  try{
   const token=await accessToken(env);
   let updatedRange='';
@@ -63,8 +66,8 @@ export async function onRequest({request,env,data}){
       target++;
     }
     if(target>12000)throw Error('Не знайдено вільного рядка у вкладці Тех');
-    const range=sheetRange+'B'+target+':E'+target;
-    const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(book)+'/values/'+encodeURIComponent(range)+'?valueInputOption=USER_ENTERED';
+    const range=sheetRange+'A'+target+':E'+target;
+    const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(book)+'/values/'+encodeURIComponent(range)+'?valueInputOption=RAW';
     const r=await fetch(url,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({majorDimension:'ROWS',values:[rowValues]})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw Error(d.error?.message||'Google Sheets HTTP '+r.status);
@@ -72,7 +75,7 @@ export async function onRequest({request,env,data}){
   }else{
     // Preserve existing layouts for other tabs until their column schemas are verified.
     const range="'"+sheet.replace(/'/g,"''")+"'!"+first+'2:'+last;
-    const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(book)+'/values/'+encodeURIComponent(range)+':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
+    const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(book)+'/values/'+encodeURIComponent(range)+':append?valueInputOption='+(mode==='requests'?'RAW':'USER_ENTERED')+'&insertDataOption=INSERT_ROWS';
     const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({majorDimension:'ROWS',values:[rowValues]})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw Error(d.error?.message||'Google Sheets HTTP '+r.status);
