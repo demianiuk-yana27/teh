@@ -24,7 +24,13 @@ async function google(token,book,range,method='GET',values){
  const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error?.message||'Google Sheets HTTP '+r.status);return d;
 }
 export async function onRequest({request,env,data}){
- if(!['boss','manager'].includes(data.role))return json({error:'Потрібен вхід на сайт.'},401);
+ // Desktop clients use a separately provisioned key, never the Google credentials.
+ // Compare full strings without early character-dependent exits.
+ const desktopKey=request.headers.get('X-Teh-Desktop-Key')||'';
+ const expected=env.QUICK_REQUESTS_DESKTOP_KEY||'';
+ const desktopAllowed=expected.length>=32&&desktopKey.length===expected.length&&
+  [...desktopKey].reduce((diff,ch,i)=>diff|(ch.charCodeAt(0)^expected.charCodeAt(i)),0)===0;
+ if(!desktopAllowed&&!['boss','manager'].includes(data.role))return json({error:'Потрібен вхід на сайт або ключ Windows-програми.'},401);
  if(request.method!=='POST')return json({error:'Метод не підтримується'},405);
  if(!configured(env))return json({error:'Google OAuth ще не налаштовано в Cloudflare.'},503);
  const b=await request.json().catch(()=>null);if(!b||typeof b!=='object')return json({error:'Некоректні дані'},400);
