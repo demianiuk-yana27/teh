@@ -52,6 +52,13 @@ export async function onRequest(context) {
     return Response.json({status:'ok'}, {headers:{'Set-Cookie':'asteril_role=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'}});
   }
 
+  // Desktop quick requests authenticate their own key inside the endpoint.
+  // Never bypass auth for ordinary browser requests without this header.
+  if ((path === '/quick-requests' || path === '/quick-requests/') &&
+      request.method === 'POST' && request.headers.has('X-Teh-Desktop-Key')) {
+    context.data.role = null;
+    return next();
+  }
   // Dedicated machine-to-machine endpoint authenticates its own secret.
   if(path==='/export-completed')return next();
   // Machine access to the encrypted Prom vault uses a separate bearer token.
