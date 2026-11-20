@@ -238,6 +238,44 @@ def _candidate(opinion, kind, shop):
             "deletedByBuyer": _deleted_by_buyer(opinion)}
 
 
+# High-volume shops can intermittently return a valid but empty first page.
+# Never treat that as a confirmed zero without refreshing the Prom session.
+_LARGE_REVIEW_SHOP_IDS = frozenset({
+    "3344885",  # GoodChoise
+    "3595592",  # RedMoon
+    "3332249",  # OnlineMarket
+    "3394094",  # HUGO
+    "3163449",  # CoolCat
+    "2369215",  # LifeStyle
+    "2637407",  # BeSimple
+})
+
+
+def _large_shop_first_page(opener, csrf, account, shop, kind, fetch_page):
+    """Retry suspicious empty first pages with fresh sign-to sessions.
+
+    A persistent empty result is *unverified*, not proof that reviews do not exist.
+    Only invoked for the seven named large stores.
+    """
+    for attempt in range(3):
+        data, opinions, pagination = fetch_page(opener, csrf)
+        if not isinstance(opinions, list) or not isinstance(pagination, dict):
+            raise ValueError("Неочікувана структура списку " + kind)
+        if opinions:
+            if attempt:
+                print("[negative-reviews] recovered empty first page: shop=%s kind=%s attempt=%s" %
+                      (shop.id, kind, attempt + 1), flush=True)
+            return opener, csrf, data, opinions, pagination
+        if attempt < 2:
+            print("[negative-reviews] suspicious empty first page: shop=%s kind=%s attempt=%s" %
+                  (shop.id, kind, attempt + 1), flush=True)
+            time.sleep(2 * (attempt + 1) + random.uniform(0, .5))
+            opener, csrf = _switch(account)
+    raise ValueError(
+        "Prom тричі повернув порожній список %s для великого магазину %s. "
+        "Перевірка неповна; нуль відгуків не підтверджено." % (kind, shop.name))
+
+
 def collect_shop(shop, account, since, until=""):
     opener, csrf = _switch(account)
     start, end = parse_date(since), parse_date(until) if until else None
@@ -248,20 +286,24 @@ def collect_shop(shop, account, since, until=""):
         previous = None
         ordered = True
         for page in range(1, 201):
-            if kind == "company":
-                data = _read(opener, "https://my.prom.ua/cms/opinions/company/list",
-                             {"filters": [], "page": page, "pageType": "portal",
-                              "perPage": 20, "searchQuery": "",
-                              "sortingQuery": "default"}, csrf)
-                opinions = data.get("opinions")
-                pagination = data.get("pagination") or {}
-            else:
+            def fetch_page(current_opener, current_csrf):
+                if kind == "company":
+                    data = _read(current_opener, "https://my.prom.ua/cms/opinions/company/list",
+                                 {"filters": [], "page": page, "pageType": "portal",
+                                  "perPage": 20, "searchQuery": "",
+                                  "sortingQuery": "default"}, current_csrf)
+                    return data, data.get("opinions"), data.get("pagination") or {}
                 url = ("https://my.prom.ua/cms/opinions/product/prom/context"
                        "?page=%d&perPage=20&sortingQuery=-date_created&pageType=portal" % page)
-                data = _read(opener, url)
+                data = _read(current_opener, url)
                 context = data.get("context") or {}
-                opinions = context.get("opinions")
-                pagination = context.get("pagination") or {}
+                return data, context.get("opinions"), context.get("pagination") or {}
+
+            if page == 1 and str(shop.id) in _LARGE_REVIEW_SHOP_IDS:
+                opener, csrf, data, opinions, pagination = _large_shop_first_page(
+                    opener, csrf, account, shop, kind, fetch_page)
+            else:
+                data, opinions, pagination = fetch_page(opener, csrf)
             if not isinstance(opinions, list) or not isinstance(pagination, dict):
                 raise ValueError("Неочікувана структура списку " + kind)
             if not opinions:
