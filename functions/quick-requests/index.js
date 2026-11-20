@@ -48,23 +48,16 @@ export async function onRequest({request,env,data}){
   const token=await accessToken(env);
   let updatedRange='';
   if(isTech){
-    // The Tech worksheet has formatted dropdowns far below the last real entry.
-    // Sheets append incorrectly jumps to those rows. Locate the next free row
-    // after the latest populated row in columns A:E instead.
+    // Column B is mandatory for every Tech request, including historical rows.
+    // Read only B instead of all five columns to reduce Sheets API payload.
     const sheetRange="'"+sheet.replace(/'/g,"''")+"'!";
-    const existing=await google(token,book,sheetRange+'A2:E12000');
+    const existing=await google(token,book,sheetRange+'B2:B12000');
     const rows=existing.values||[];
     let lastFilled=1;
     for(let i=0;i<rows.length;i++){
-      const cells=rows[i]||[];
-      if(cells.slice(0,5).some(v=>String(v??'').trim()))lastFilled=i+2;
+      if(String(rows[i]?.[0]??'').trim())lastFilled=i+2;
     }
-    let target=lastFilled+1;
-    while(target<=12000){
-      const cells=rows[target-2]||[];
-      if([0,1,2,3,4].every(i=>!String(cells[i]??'').trim()))break;
-      target++;
-    }
+    const target=lastFilled+1;
     if(target>12000)throw Error('Не знайдено вільного рядка у вкладці Тех');
     const range=sheetRange+'A'+target+':E'+target;
     const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(book)+'/values/'+encodeURIComponent(range)+'?valueInputOption=RAW';
