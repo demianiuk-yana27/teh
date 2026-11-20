@@ -22,7 +22,7 @@ export async function accessToken(env){
   const token=await exchange(env,{grant_type:'refresh_token',refresh_token});
   cachedAccessToken=token.access_token;
   // Refresh well before expiry; a new worker isolate starts with an empty cache.
-  cachedUntil=Date.now()+Math.min(10*60*1000,Math.max(0,(Number(token.expires_in)||3600)-300)*1000);
+  cachedUntil=Date.now()+Math.max(0,(Number(token.expires_in)||3600)-300)*1000;
   return cachedAccessToken;
  })();
  try{return await pendingToken}finally{pendingToken=null}
