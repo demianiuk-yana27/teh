@@ -460,7 +460,7 @@ positive_html = """<section class="view" id="positive-reviews"><div class="pageh
 <button class="run" type="button" onclick="positiveBuildDrafts(this)" style="background:#7c3aed;margin-top:8px">📝 Підготувати план відповідей</button>
 <div style="margin:14px 0;padding:12px;border:1px solid #e2e8f0;border-radius:10px">
 <strong>Контрольована черга відповідей — до всіх доступних відгуків</strong>
-<p style="font-size:12px;color:#64748b">Після кожної відповіді сервер звіряє точний текст у Prom. Пауза 2 секунди. За будь-якої помилки черга зупиняється без повтору. Журнал поки лише в цьому браузері — не запускайте одночасно з інших пристроїв.</p>
+<p style="font-size:12px;color:#64748b">Після кожної відповіді сервер звіряє точний текст у Prom. Помилки окремих відгуків зберігаються в журналі, черга переходить далі без автоматичного повтору. За HTTP 429 додається захисна пауза. Журнал поки лише в цьому браузері — не запускайте одночасно з інших пристроїв.</p>
 <label for="positiveBatchLimit">Кількість</label> <select id="positiveBatchLimit" style="padding:9px;border:1px solid #cbd5e1;border-radius:7px"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="all">Усі доступні</option></select>
 <button class="run" type="button" onclick="positiveStartQueue()" style="background:#b45309">🚀 Запустити підтверджену чергу</button>
 <button class="run" type="button" onclick="positiveStopQueue()" style="background:#64748b">⏹ Зупинити після поточного</button>
@@ -879,35 +879,74 @@ async function positiveStartQueue(){
  const names=candidates.slice(0,12).map(x=>x.shop_name+' №'+x.id).join('\\n')+(candidates.length>12?'\\n…та ще '+(candidates.length-12)+' відгуків':'');
  const confirmation=prompt('СПРАВЖНЯ ПУБЛІКАЦІЯ В PROM.\\nБуде надіслано до '+candidates.length+' відповідей:\\n'+names+'\\n\\nДля запуску введіть НАДІСЛАТИ '+candidates.length);
  if(confirmation!=='НАДІСЛАТИ '+candidates.length)return;
- // Shared Sheets may be slow or unavailable; never block Prom publishing for it.
  positiveQueueStop=false;positiveQueueRunning=true;positiveRunBusy=true;
- let sent=0;
+ let sent=0,failed=0,preflightFailed=0,processed=0;
+ const failedKeys=[];
+ const progress=()=> 'Оброблено '+processed+'/'+candidates.length+' · успішно '+sent+' · невдало '+failed+'.';
  try{
   for(const item of candidates){
    if(positiveQueueStop)break;
    const key=item.company_id+':'+item.id,now=positiveRead(day);
    const shop=now.shops[item.company_id],review=shop&&(shop.reviews||[]).find(r=>String(r.id)===String(item.id));
-   if(!shop||!shop.complete||shop.error||!review||review.reply_status!=='unanswered'||(now.flags||[]).includes(key)){out.textContent='⏹ Статус змінився для '+key+'. Чергу зупинено.';break}
-   if(!positiveMayPublish(key,positiveJournalRead())){out.textContent='⏹ Невизначена або успішна спроба для '+key+'. Чергу зупинено.';break}
+   if(!shop||!shop.complete||shop.error||!review||review.reply_status!=='unanswered'||(now.flags||[]).includes(key)){
+    // Never publish a stale or ambiguous candidate; keep processing other reviews.
+    failed++;processed++;failedKeys.push(key+' — статус відгуку змінився');
+    out.textContent='⚠️ Пропущено '+key+'. '+progress();
+    continue;
+   }
+   if(!positiveMayPublish(key,positiveJournalRead())){
+    failed++;processed++;failedKeys.push(key+' — попередня невизначена спроба');
+    out.textContent='⚠️ Пропущено '+key+'. '+progress();
+    continue;
+   }
    const currentJournal=positiveJournalRead();
    const isRetry=currentJournal[key]?.status==='manually_absent';
    currentJournal[key]={status:'attempted',day,shop:item.shop_name,comment:item.comment,at:new Date().toISOString(),previous_attempt:currentJournal[key]||null};
-   if(!positiveJournalWrite(currentJournal)){out.textContent='⏹ Неможливо записати журнал. Відправлення скасовано.';break}
-   out.textContent='⏳ Надсилаємо '+key+' ('+(sent+1)+'/'+candidates.length+')';
+   if(!positiveJournalWrite(currentJournal)){
+    out.textContent='⛔ Неможливо записати журнал. Публікацію припинено для безпеки. '+progress();
+    break;
+   }
+   out.textContent='⏳ Надсилаємо '+key+' ('+(processed+1)+'/'+candidates.length+'). '+progress();
+   let rateLimited=false;
    try{
     const startedAt=performance.now();
     const res=await fetch('/api/positive/publish-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company_id:item.company_id,opinion_id:item.id,comment:item.comment,retry_verified_absent:isRetry,retry_confirmation:isRetry?'ПЕРЕВІРЕНО НЕМАЄ':null,confirmation:'НАДІСЛАТИ'})});
-    const result=await positiveParsePublishResponse(res,startedAt);
-    const done=positiveJournalRead();delete done[key];positiveJournalWrite(done);
+    rateLimited=res.status===429;
+    await positiveParsePublishResponse(res,startedAt);
+    const done=positiveJournalRead();delete done[key];
+    if(!positiveJournalWrite(done)){out.textContent='⛔ Не вдалося оновити журнал після успішної публікації. Чергу зупинено для безпеки.';break}
     review.reply_status='answered';positiveSave(day,now);sent++;
-    out.textContent='✅ Підтверджено в Prom '+sent+' із '+candidates.length+'.';
+    out.textContent='✅ '+progress();
    }catch(e){
-    if(e.safePreflight){const saved=positiveJournalRead();if(saved[key]?.status==='attempted'){saved[key]={...saved[key],status:'preflight_failed',error:String(e.message),failed_at:new Date().toISOString()};positiveJournalWrite(saved)}out.textContent='⏹ Зупинено після '+sent+' успішних. '+key+': '+e.message+'. Сервер підтвердив, що POST не виконувався; спроба доступна після повторної підготовки плану.';}
-    else out.textContent='⛔ Зупинено після '+sent+' успішних. '+key+': '+e.message+'. Запис позначено як невизначений; перевірте Prom вручну.';
-    break}
-   if(!positiveQueueStop&&sent<candidates.length)await new Promise(resolve=>setTimeout(resolve,2000));
+    failed++;failedKeys.push(key+' — '+String(e.message||e));
+    if(e.safePreflight){
+     const saved=positiveJournalRead();
+     if(saved[key]?.status==='attempted'){
+      saved[key]={...saved[key],status:'preflight_failed',error:String(e.message),failed_at:new Date().toISOString()};
+      if(!positiveJournalWrite(saved)){out.textContent='⛔ Помилка збереження журналу. Чергу зупинено для безпеки.';break}
+     }
+     preflightFailed++;
+    }
+    // Uncertain POSTs remain "attempted" and are not eligible for automatic retry.
+    out.textContent='⚠️ Помилка '+key+'. '+progress()+' Запис у журналі; продовжуємо.';
+   }
+   processed++;
+   if(!positiveQueueStop&&processed<candidates.length){
+    if(rateLimited){
+     out.textContent='⏳ Prom обмежив запити (HTTP 429). Захисна пауза 60 секунд. '+progress();
+     await new Promise(resolve=>setTimeout(resolve,60000));
+    }else{
+     await new Promise(resolve=>setTimeout(resolve,2000));
+    }
+   }
   }
- }finally{positiveQueueRunning=false;positiveRunBusy=false;positiveRender(day);out.textContent+=' Невдалі та невизначені спроби доступні в журналі.'}
+ }finally{
+  positiveQueueRunning=false;positiveRunBusy=false;positiveRender(day);
+  out.textContent=(positiveQueueStop?'⏹ Зупинено на прохання. ':'🏁 Черга завершена. ')+progress()+
+   (preflightFailed?' · без POST (підтверджено сервером): '+preflightFailed+'.':'')+
+   (failedKeys.length?' Невдалі: '+failedKeys.slice(0,12).join('; ')+(failedKeys.length>12?'; ще '+(failedKeys.length-12):'')+'.':'')+
+   ' Перевірте журнал спроб; невизначені публікації автоматично не повторюються.';
+ }
 }
 async function positiveBuildDrafts(button){
  const day=document.getElementById('positiveDay').value, status=document.getElementById('positiveDraftStatus');
