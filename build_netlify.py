@@ -201,7 +201,7 @@ questions_script = """<script>
  function button(text,fn){const b=node('button',text);b.type='button';b.style.cssText='padding:8px 12px;margin:4px 6px 4px 0;border-radius:8px;cursor:pointer';b.addEventListener('click',fn);return b}
  function key(q){return String(q.company_id)+':'+String(q.id)}
  function count(){
-   const ready=questions.filter(q=>String(drafts[key(q)]||'').trim()&&!results[key(q)]).length;
+   const ready=questions.filter(q=>String(drafts[key(q)]||'').trim()&&(!results[key(q)]||results[key(q)].status==='manually_absent')).length;
    el('buyerDraftCounter').textContent='Підготовлено '+ready+' із '+questions.length;
  }
  function templatePicker(q,area){
@@ -272,7 +272,7 @@ questions_script = """<script>
        const answer=area.value.trim();
        if(!answer)return alert('Напишіть відповідь.');
        if(!storeReady)return alert('Спільне сховище недоступне.');
-       if(results[id])return alert('Для цього запитання вже є запис про відправлення або невизначений результат. Перевірте його в Prom.');
+       if(results[id]&&results[id].status!=='manually_absent')return alert('Для цього запитання вже є запис про відправлення або невизначений результат. Перевірте його в Prom.');
        if(q.can_comment===false)return alert('Prom не дозволяє коментувати це запитання.');
        if(!confirm('УВАГА: відповідь буде РЕАЛЬНО опублікована в Prom.\\n\\nМагазин: '+q.shop_name+'\\nТовар: '+q.product_name+'\\nЗапитання: '+q.text+'\\n\\nВідповідь: '+answer+'\\n\\nПідтверджуєте?'))return;
        send.disabled=true;state.textContent='⏳ Відправляємо…';
@@ -291,9 +291,20 @@ questions_script = """<script>
        }catch(e){state.textContent='⚠️ Невідомий результат. Перевірте Prom перед повтором.';count()}finally{persist(RESULTS,results)}
      });
      card.append(send);
-     if(results[id]){send.disabled=true;send.textContent=results[id].status==='sent'?'✅ Відправлено':'⚠️ Потрібна перевірка';}
+     if(results[id]&&results[id].status!=='manually_absent'){send.disabled=true;send.textContent=results[id].status==='sent'?'✅ Відправлено':'⚠️ Потрібна перевірка';}
+     if(results[id]?.status==='review'){
+       const absent=button('❌ Перевірила в Prom — відповіді немає',()=>{
+         if(sending)return alert('Дочекайтеся завершення поточного відправлення.');
+         if(!confirm('Підтверджуєте, що відкрили саме магазин «'+q.shop_name+'», перевірили запитання та впевнилися, що відповіді в Prom немає? Повторна спроба може створити дублікат, якщо відповідь зʼявиться пізніше.'))return;
+         const prior=results[id];
+         results[id]={status:'manually_absent',message:'Відсутність відповіді підтверджена вручну; повтор дозволено після серверної перевірки.',checked_at:new Date().toISOString(),previous_attempt:prior};
+         if(!persist(RESULTS,results)){results[id]=prior;return}
+         renderQuestions();
+       });
+       card.append(absent);
+     }
      const state=node('small',q.can_comment===false?'⚠️ Prom не дозволяє коментувати це запитання.':'Чернетка зберігається локально. Не відправлено.');
-     if(results[id])state.textContent=results[id].status==='sent'?'✅ Опубліковано в Prom. ID коментаря: '+results[id].comment_id:'⚠️ '+(results[id].message||'Перевірте Prom перед повтором.');
+     if(results[id])state.textContent=results[id].status==='sent'?'✅ Опубліковано в Prom. ID коментаря: '+results[id].comment_id:results[id].status==='manually_absent'?'✅ Відсутність відповіді підтверджено вручну. Можна повторити відправлення.':'⚠️ '+(results[id].message||'Перевірте Prom перед повтором.');
      state.style.cssText='display:block;color:#64748b;margin-top:6px';card.append(state);box.append(card);
    }
    count();
@@ -398,7 +409,7 @@ questions_script = """<script>
  window.buyerSendAll=async function(){
    if(sending||loading)return;
    // Sending must not depend on Google Sheets.
-   const ready=questions.filter(q=>String(drafts[key(q)]||'').trim()&&!results[key(q)]&&q.can_comment!==false);
+   const ready=questions.filter(q=>String(drafts[key(q)]||'').trim()&&(!results[key(q)]||results[key(q)].status==='manually_absent')&&q.can_comment!==false);
    if(!ready.length)return alert('Немає підготовлених відповідей для відправлення. Запитання з невизначеним результатом потрібно перевірити в Prom.');
    const preview=ready.slice(0,8).map(q=>'• '+q.shop_name+': '+q.text.slice(0,90)).join('\\n');
    if(!confirm('УВАГА: '+ready.length+' відповідей будуть РЕАЛЬНО опубліковані в Prom по черзі.\\n\\n'+preview+(ready.length>8?'\\n…':'')+'\\n\\nПеревірили тексти, магазини та запитання? Підтвердити публікацію?'))return;
@@ -410,7 +421,7 @@ questions_script = """<script>
      for(const q of ready){
        if(stopRequested)break;
        const id=key(q),answer=String(drafts[id]||'').trim();
-       if(!answer||results[id])continue;
+       if(!answer||(results[id]&&results[id].status!=='manually_absent'))continue;
        results[id]={status:'review',message:'Відправлення розпочато. Якщо сторінку закрито, перевірте Prom.'};
        persist(RESULTS,results); // Keep ambiguous attempts in this browser before POST.
        status.textContent='⏳ Опрацьовано '+(sent+failed)+' із '+ready.length+'; успішно: '+sent+'; перевірити: '+failed+'. Зараз: '+q.shop_name;
