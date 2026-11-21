@@ -128,8 +128,20 @@ class App:
                     clear=True
                 else:raise ValueError(result.get("error","Невідома помилка"))
             except HTTPError as exc:
-                try:msg="❌ "+json.loads(exc.read().decode("utf-8")).get("error",str(exc))
-                except Exception:msg="❌ HTTP "+str(exc.code)
+                raw = exc.read(4096).decode("utf-8", errors="replace")
+                try:
+                    data = json.loads(raw)
+                    detail = data.get("error") or data.get("message") or ""
+                except ValueError:
+                    detail = ""
+                if exc.code == 403:
+                    msg = ("❌ HTTP 403: Доступ заблоковано сервером або Cloudflare. "
+                           + (str(detail)[:160] if detail else
+                              "Перевірте публікацію Cloudflare Pages та правила захисту."))
+                elif exc.code == 401:
+                    msg = "❌ HTTP 401: Ключ програми не прийнято. Перевірте ключ у налаштуваннях."
+                else:
+                    msg = "❌ HTTP " + str(exc.code) + (": " + str(detail)[:180] if detail else "")
                 clear=False
             except (URLError,TimeoutError,ValueError,OSError) as exc:
                 msg="❌ "+str(exc);clear=False
