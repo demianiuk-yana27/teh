@@ -1221,7 +1221,7 @@ negative_export_fix = r'''<script>
   if(exportButton) exportButton.insertAdjacentElement('afterend', retryButton);
   let retryState = null;
   function syncRetry(state){
-    retryState = state?.retry_available ? state : null;
+    retryState = state?.retry_available && state?.process === 'reviews' ? state : null;
     retryButton.style.display = retryState ? 'inline-block' : 'none';
     retryButton.disabled = !!state?.running;
     retryButton.title = retryState ? 'Повторити тільки невдалі магазини за ' + retryState.since + ' — ' + retryState.until : '';
@@ -1239,11 +1239,11 @@ negative_export_fix = r'''<script>
     if(!el) return;
     const date = document.getElementById('negativeReviewsDate')?.value || '';
     const endDate = document.getElementById('negativeReviewsDateTo')?.value || date;
-    if(processName === 'reviews' && !date){
+    if(processName === 'reviews' && !retryFailed && !date){
       el.textContent = '❌ Виберіть дату вигрузки.';
       return;
     }
-    if(processName === 'reviews' && endDate < date){
+    if(processName === 'reviews' && !retryFailed && endDate < date){
       el.textContent = '❌ Дата «до» не може бути раніше дати «від».';
       return;
     }
