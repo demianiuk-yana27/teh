@@ -26,8 +26,9 @@ class App:
     def __init__(self, root):
         self.root=root
         self.root.title("🐿️ Тех.Відділ — Швидкі запити")
-        self.root.geometry("520x690")
-        self.root.minsize(460,620)
+        self.root.geometry("390x530")
+        self.root.minsize(350,490)
+        self.root.resizable(True,True)
         self.settings=load()
         self.mode=tk.StringVar(value="Бурундуки")
         self.tab=tk.StringVar(value=self.settings.get("tab","2 Відділ"))
@@ -35,17 +36,17 @@ class App:
         self.top=tk.BooleanVar(value=False)
         self.fields={}
         self.busy=False
-        self.frame=ttk.Frame(root,padding=18)
+        self.frame=ttk.Frame(root,padding=(12,9))
         self.frame.pack(fill="both",expand=True)
         self.render()
 
     def render(self):
         for child in self.frame.winfo_children():child.destroy()
         self.fields={}
-        ttk.Label(self.frame,text="Швидка подача запитів",font=("Segoe UI",16,"bold")).pack(anchor="w",pady=(0,10))
-        modes=ttk.Frame(self.frame);modes.pack(fill="x",pady=(0,12))
+        ttk.Label(self.frame,text="Швидка подача запитів",font=("Segoe UI",12,"bold")).pack(anchor="w",pady=(0,5))
+        modes=ttk.Frame(self.frame);modes.pack(fill="x",pady=(0,5))
         for mode in ("Бурундуки","Зміни з ТТН"):
-            ttk.Radiobutton(modes,text=("🐿️ " if mode=="Бурундуки" else "📦 ")+mode,variable=self.mode,value=mode,command=self.render).pack(side="left",padx=(0,18))
+            ttk.Radiobutton(modes,text=("🐿️ " if mode=="Бурундуки" else "📦 ")+mode,variable=self.mode,value=mode,command=self.render).pack(side="left",padx=(0,10))
         if self.mode.get()=="Бурундуки":
             self.combo("tab","Вкладка",["2 Відділ","Тех","Опт/дроп"],self.tab,lambda _:self.render())
         self.combo("manager","Менеджер",MANAGERS,self.manager)
@@ -61,18 +62,18 @@ class App:
             self.entry("ttn","Номер ТТН")
             self.combo("error","Чия помилка?",["Менеджера","Прохання клієнта","Нічия"])
             self.combo("change","Тип зміни",CHANGES)
-        ttk.Label(self.frame,text="Суть запиту").pack(anchor="w",pady=(9,3))
-        self.description=tk.Text(self.frame,height=4,wrap="word",font=("Segoe UI",10))
+        ttk.Label(self.frame,text="Суть запиту").pack(anchor="w",pady=(5,2))
+        self.description=tk.Text(self.frame,height=3,wrap="word",font=("Segoe UI",10))
         self.description.pack(fill="x")
-        ttk.Checkbutton(self.frame,text="Поверх інших вікон",variable=self.top,command=lambda:self.root.attributes("-topmost",self.top.get())).pack(anchor="w",pady=(12,5))
+        ttk.Checkbutton(self.frame,text="Поверх інших вікон",variable=self.top,command=lambda:self.root.attributes("-topmost",self.top.get())).pack(anchor="w",pady=(5,2))
         self.send=ttk.Button(self.frame,text="Подати запит",command=self.submit)
-        self.send.pack(fill="x",ipady=8,pady=(5,10))
+        self.send.pack(fill="x",ipady=3,pady=(3,5))
         self.status=tk.StringVar(value="Готово до надсилання")
-        ttk.Label(self.frame,textvariable=self.status,wraplength=460,foreground="#25634d").pack(anchor="w")
-        ttk.Button(self.frame,text="Налаштувати підключення до Google",command=self.configure_key).pack(anchor="w",pady=(12,0))
+        ttk.Label(self.frame,textvariable=self.status,wraplength=350,foreground="#25634d").pack(anchor="w")
+        ttk.Button(self.frame,text="Налаштувати підключення до Google",command=self.configure_key).pack(anchor="w",pady=(5,0))
 
     def combo(self,key,title,options,variable=None,changed=None):
-        ttk.Label(self.frame,text=title).pack(anchor="w",pady=(8,3))
+        ttk.Label(self.frame,text=title).pack(anchor="w",pady=(4,1))
         var=variable or tk.StringVar()
         box=ttk.Combobox(self.frame,textvariable=var,values=options,state="readonly")
         box.pack(fill="x")
@@ -128,7 +129,7 @@ class App:
             messagebox.showwarning("Не всі поля", "Заповніть усі поля.");return
         if not self.settings.get("key") or not self.settings.get("endpoint"):
             self.configure_key()
-            if not self.settings.get("key"):return
+            if not self.settings.get("key") or not self.settings.get("endpoint"):return
         self.settings.update(manager=self.manager.get(),tab=self.tab.get())
         save(self.settings)
         self.busy=True;self.send.configure(state="disabled");self.status.set("Надсилаємо…")
@@ -153,9 +154,9 @@ class App:
                 except ValueError:
                     detail = ""
                 if exc.code == 403:
-                    msg = ("❌ HTTP 403: Доступ заблоковано сервером або Cloudflare. "
+                    msg = ("❌ HTTP 403: Google відхилив запит. "
                            + (str(detail)[:160] if detail else
-                              "Перевірте публікацію Cloudflare Pages та правила захисту."))
+                              "Перевірте доступ до Google Apps Script."))
                 elif exc.code == 401:
                     msg = "❌ HTTP 401: Доступ до Google Apps Script не дозволено. Перевірте налаштування публікації."
                 else:
