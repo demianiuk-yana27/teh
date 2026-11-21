@@ -1,22 +1,27 @@
-# Тех.Відділ — Windows
+# Тех.Відділ — Windows Quick Requests
 
-Native Tkinter desktop client for https://teh-7rt.pages.dev/quick-requests/.
+Native Windows application (Tkinter) that sends directly to **Google Apps Script → Google Sheets**. No Cloudflare, Render or new Google account is required.
 
-## Build on Windows
-Install Python 3.11+ and run `build_windows.bat`. The executable is created at `desktop/dist/TehQuickRequests.exe`. The repository contains source code, **not a prebuilt .exe**.
+## Setup (Google account that already has edit access to both sheets)
 
-## One-time admin setup
-1. Generate a random secret of at least 32 characters (prefer 48+ cryptographically random characters).
-2. In Cloudflare Pages project `teh-7rt`, add the secret environment variable `QUICK_REQUESTS_DESKTOP_KEY` for the production environment and redeploy.
-3. Share the executable with approved users and distribute the key separately. Each user enters it once via **Налаштувати ключ програми**. There is no site-account login.
-4. The key is stored in the current Windows user's `%APPDATA%\TehQuickRequests\settings.json`. Treat this file as sensitive. For stronger device security, migrate to Windows Credential Manager.
-5. If a copy or key leaks, rotate the Cloudflare secret and reissue the key. The shared key is **not device-specific**, and anyone possessing it can submit requests. Apply Cloudflare WAF/rate limiting to `/quick-requests/` and monitor usage. Do not embed the key in the executable.
+1. Open https://script.google.com/home/projects and choose **New project**.
+2. Copy all code from [apps_script/Code.gs](apps_script/Code.gs) into the script editor, replacing the default content. Save.
+3. In **Project Settings → Script properties**, add **QUICK_REQUESTS_KEY** with a random 48–64-character secret. The previously generated Cloudflare key may be reused, but keep it private.
+4. Choose **Deploy → New deployment → Web app**. Set **Execute as: Me** and **Who has access: Anyone**. Authorize the requested Google Sheets access in your own Google account. Copy the URL ending in `/exec`.
+5. Open the Windows application → **Налаштувати підключення до Google**, enter the deployment URL and the same key once. No Google login for managers.
+6. Test a harmless request and check the exact row in the target Google Sheet before distributing the program.
 
-## Data
-- `🐿️ Бурундуки`: 2 Відділ / Тех / Опт/дроп
-- `📦 Зміни з ТТН`: order, TTN, error category and change type
-- The backend adds Kyiv timestamps and performs read-after-write verification.
-- The client never has Google Sheets credentials.
+**Security:** The web app is publicly reachable but rejects requests without the shared key. Anyone with the key can write to the two configured spreadsheets, so distribute privately, rotate on suspected leakage, and avoid granting this script any other permissions. A shared key does not provide per-device revocation or rate limiting. Apps Script executions are subject to Google's quotas. The key and URL are stored in `%APPDATA%\\TehQuickRequests\\settings.json` in plain text, readable by the Windows user. Do not commit or embed the key in the executable.
+
+## Build the Windows executable
+
+Open the GitHub Actions workflow **Build Windows Quick Requests** and download the artifact `TehQuickRequests-Windows`. Or run `build_windows.bat` on Windows with Python 3.11+.
 
 ## Notes
-The backend accepts a provisioned desktop key in `functions/quick-requests/index.js`; normal browser authentication is unchanged. The desktop application requires HTTPS connectivity to the Cloudflare site. The secret must be configured before desktop requests can succeed.
+
+- The existing website and its Cloudflare/Render integrations are **not changed**.
+- Google Apps Script `LockService` serializes simultaneous submissions.
+- Request IDs are cached for up to 6 hours to prevent accidental retries of the same ID.
+- The desktop program creates a new ID for each new submission; if a request times out, **check the sheet before submitting again**.
+- For Tech, the last occupied B row determines the next write position.
+- Changes to `Code.gs` require deploying a **new version** of the web app.
