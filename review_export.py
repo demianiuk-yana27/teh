@@ -294,7 +294,7 @@ def _write_reviews(book, sheet_name, reviews, separated_sheets=None):
     return len(fresh)
 
 
-def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_id=None, login_map=None, progress_callback=None, shop_worksheet="Список магазинів"):
+def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_id=None, login_map=None, progress_callback=None, shop_worksheet="Список магазинів", retry_shop_ids=None):
     if not parse_date(since):
         raise ValueError("Некоректна дата початку вигрузки відгуків.")
     if until and not parse_date(until):
@@ -306,6 +306,11 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
     book = client.open_by_key(destination_spreadsheet_id or spreadsheet_id)
     sheet_names = {kind: _sheet_name(book, kind) for kind in REVIEW_URLS}
     shops = load_active_shops(spreadsheet_id, shop_worksheet)
+    if retry_shop_ids is not None:
+        allowed = {str(value) for value in retry_shop_ids}
+        shops = [shop for shop in shops if str(shop.id) in allowed]
+        if len(shops) != len(allowed):
+            raise ValueError("Список магазинів змінився. Запустіть повну вигрузку.")
     from negative_review_api import collect_shop
     if not login_map:
         raise RuntimeError("Немає підтвердженої карти sign-to для магазинів.")
@@ -315,6 +320,7 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
     skipped = 0
     incomplete = 0
     incomplete_shops = []
+    failed_shop_ids = []
     errors = []
     total_shops = len(shops)
     for shop_number, shop in enumerate(shops, 1):
@@ -322,6 +328,7 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
             progress_callback(shop_number, total_shops, shop.name)
         accounts = login_map.get(str(shop.id)) or []
         if not accounts:
+            failed_shop_ids.append(str(shop.id))
             skipped += 1
             errors.append(f"{shop.name}: немає sign-to ID")
             print(f"[{shop.name}] Немає sign-to ID; магазин пропущено.")
@@ -335,6 +342,7 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
                 errors.append(f"{shop.name}: {type(exc).__name__}: {str(exc)[:160]}")
                 print(f"[{shop.name}] API sign-to {account}: {type(exc).__name__}: {exc}")
         if reviews_by_type is None:
+            failed_shop_ids.append(str(shop.id))
             incomplete += 1
             incomplete_shops.append(shop.name)
             continue
@@ -346,6 +354,7 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
             try:
                 written[kind] += _write_reviews(book, sheet_names[kind], reviews, separated_sheets)
             except Exception as exc:
+                failed_shop_ids.append(str(shop.id))
                 incomplete += 1
                 if shop.name not in incomplete_shops:
                     incomplete_shops.append(shop.name)
@@ -354,14 +363,16 @@ def run_review_export(spreadsheet_id, since, until="", destination_spreadsheet_i
 
     # A clean repeat run with zero new reviews is a successful no-op.
     # Keep collection failures visible rather than reporting a false success.
-    if not written["company"] and not written["product"] and (incomplete or skipped):
-        detail = "; ".join(errors[:4]) or "Не всі магазини перевірено."
-        raise RuntimeError("Тестова вигрузка завершилась із неповними перевірками. " + detail)
+    if not written["company"] and not written["product"] and (incomplete or skipped) and retry_shop_ids is None:
+        # Report the failed shops to the caller so they can be retried selectively.
+        print("[negative-reviews] incomplete export: " + "; ".join(errors[:4]), flush=True)
     return {
         "active": len(shops),
         "skipped": skipped,
         "incomplete": incomplete,
         "incomplete_shops": incomplete_shops,
+        "failed_shop_ids": sorted(set(failed_shop_ids)),
+        "errors": errors[:20],
         "collected_company": collected_count["company"],
         "collected_product": collected_count["product"],
         "written_company": written["company"],
