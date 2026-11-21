@@ -58,16 +58,26 @@ function submit_(body) {
     const sheet=SpreadsheetApp.openById(BOOKS[mode]).getSheetByName(sheetName);
     if (!sheet) throw Error('Не знайдено вкладку '+sheetName);
     const now=new Date();
-    const kyivDate=Utilities.formatDate(now,'Europe/Kyiv','dd.MM. HH:mm');
-    const ttnDate=Utilities.formatDate(now,'Europe/Kyiv','yyyy-MM-dd');
-    const rowValues=mode==='ttn'?[ttnDate].concat(values):[kyivDate].concat(values);
+    const dateValue=Utilities.formatDate(now,'Europe/Kyiv',mode==='ttn'?'yyyy-MM-dd':'dd.MM. HH:mm');
+    const rowValues=[dateValue].concat(values);
     let target;
     if (mode==='requests' && tab==='Тех') {
       // B is mandatory and has no gaps, including historical records.
       const last=sheet.getLastRow();
-      const column=last>=2?sheet.getRange(2,2,last-1,1).getDisplayValues():[];
+      // B is contiguous. Check the tail first instead of downloading all historical rows.
+      // Other columns may extend below B, so scan backward in small blocks if needed.
       let lastFilled=1;
-      column.forEach((row,i)=>{if(String(row[0]||'').trim())lastFilled=i+2;});
+      for (let end=last;end>=2;end-=128) {
+        const start=Math.max(2,end-127);
+        const column=sheet.getRange(start,2,end-start+1,1).getDisplayValues();
+        for (let i=column.length-1;i>=0;i--) {
+          if (String(column[i][0]||'').trim()) {
+            lastFilled=start+i;
+            break;
+          }
+        }
+        if (lastFilled>1) break;
+      }
       target=lastFilled+1;
       if (target>12000) throw Error('Не знайдено вільного рядка у вкладці Тех');
       if (target>sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(),target-sheet.getMaxRows());
