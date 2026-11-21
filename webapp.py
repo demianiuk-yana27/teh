@@ -238,7 +238,7 @@ def _operational_shops(tab_name):
     return load_active_shops(_operations_sheet_id(), tab_name)
 
 
-def _negative_worker(process_name, sheet_id, since, until, run_id):
+def _negative_worker(process_name, sheet_id, since, until, run_id, retry_shop_ids=None):
     global negative_status
     try:
         if process_name in {"reviews", "new-shops"}:
@@ -262,7 +262,8 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
                 _operations_sheet_id(), since, until,
                 destination_spreadsheet_id="16BqyyMUyTNiQaibRVyd-qXzo_XdAzxCvURPfBtGoiJg",
                 login_map=login_map, progress_callback=update_shop_progress,
-                shop_worksheet=(_NEW_NEGATIVE_SHOPS_TAB if process_name == "new-shops" else _NEGATIVE_SHOPS_TAB))
+                shop_worksheet=(_NEW_NEGATIVE_SHOPS_TAB if process_name == "new-shops" else _NEGATIVE_SHOPS_TAB),
+                retry_shop_ids=retry_shop_ids)
             message = (
                 "✅ Результат вигрузки. "
                 f"Знайдено: компанія — {result['collected_company']}, товари — {result['collected_product']}; "
@@ -279,6 +280,8 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
                     message = "🎉 Нових негативних відгуків для запису немає — дублікати пропущено! " + message
             if result.get("incomplete_shops"):
                 message += " ⚠️ Неповна перевірка у магазинах: " + ", ".join(result["incomplete_shops"]) + "."
+            if result.get("skipped") and result.get("errors"):
+                message += " ⚠️ Пропущені: " + "; ".join(result["errors"][:3]) + "."
         elif process_name == "analytics":
             result = run_analytics(sheet_id)
             message = (
@@ -306,6 +309,11 @@ def _negative_worker(process_name, sheet_id, since, until, run_id):
             "status": "success",
             "message": message,
             "run_id": run_id,
+            "since": since,
+            "until": until,
+            "retry_shop_ids": result.get("failed_shop_ids", []) if process_name in {"reviews", "new-shops"} else [],
+            "retry_shop_names": result.get("incomplete_shops", []) if process_name in {"reviews", "new-shops"} else [],
+            "retry_available": bool(result.get("failed_shop_ids")) if process_name in {"reviews", "new-shops"} else False,
             "count": result["written"],
             "unit": "відгуків" if process_name == "reviews" else "магазинів" if process_name == "analytics" else "замовлень",
         }
@@ -733,6 +741,38 @@ def run_negative(process_name):
     )
     thread.start()
     return jsonify({"status": "started", "run_id": run_id, "message": "Процес запущено. Очікуємо завершення."})
+
+
+@app.route("/negative/retry-failed", methods=["POST"])
+def retry_failed_negative_reviews():
+    global negative_status
+    previous = negative_status
+    if previous.get("running") or previous.get("status") != "success":
+        return jsonify({"status": "error", "message": "Немає завершеної вигрузки для повтору."}), 409
+    process = previous.get("process")
+    shop_ids = previous.get("retry_shop_ids") or []
+    if process not in {"reviews", "new-shops"} or not shop_ids:
+        return jsonify({"status": "error", "message": "Невдалих магазинів для повтору немає."}), 400
+    if not negative_lock.acquire(blocking=False):
+        return jsonify({"status": "busy", "message": "Інший процес уже виконується."}), 409
+    try:
+        sheet_id = _sheet_id()
+        run_id = __import__("uuid").uuid4().hex
+        negative_status = {
+            "run_id": run_id, "running": True, "process": process,
+            "status": "running", "since": previous.get("since"), "until": previous.get("until"),
+            "message": "Повторно перевіряємо лише невдалі магазини (" + str(len(shop_ids)) + ").",
+        }
+        threading.Thread(
+            target=_negative_worker,
+            args=(process, sheet_id, previous["since"], previous["until"], run_id, list(shop_ids)),
+            daemon=True,
+        ).start()
+    except Exception:
+        negative_status = previous
+        negative_lock.release()
+        raise
+    return jsonify({"status": "started", "run_id": run_id, "message": negative_status["message"]})
 
 
 @app.route("/negative/status")
