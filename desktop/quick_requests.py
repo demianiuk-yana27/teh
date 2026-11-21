@@ -1,13 +1,14 @@
 import json
 import os
 import threading
+import uuid
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk, messagebox
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
-API = "https://teh-7rt.pages.dev/quick-requests/"
+API = ""  # Configured Apps Script /exec URL; no Cloudflare or Render
 CONFIG = Path(os.environ.get("APPDATA") or Path.home()) / "TehQuickRequests" / "settings.json"
 MANAGERS = ["Тех М'якота Владислав","Тех Кріпак Дар'я","Тех Часовська Софія","Тех Дем'янюк Яна","Тех Лагода Наталія","Тех Чернявська Валерія","Тех Русак Тетяна","Тех Скобельська Інна","Тех Гаврилюк Ярослав","Тех Шонія Анастасія","Тех Лесечко Світлана","Тех Васьковець Ольга","Тех Кейван Влада","Тех Братівник Ганна","Тех Мороз Галина"]
 TAGS = {"2 Відділ":["Інше","На вайбер (месенджери)","Оформити","Рахунок/ додаткові дії","Цікавить/консультація","ОПТ собі"],"Тех":["Інше","Оф чати геткол","Обʼєднання замовлень","Питання по замовленню","Дооформити розетка","Пропущений","Бот приїхала"]}
@@ -68,7 +69,7 @@ class App:
         self.send.pack(fill="x",ipady=8,pady=(5,10))
         self.status=tk.StringVar(value="Готово до надсилання")
         ttk.Label(self.frame,textvariable=self.status,wraplength=460,foreground="#25634d").pack(anchor="w")
-        ttk.Button(self.frame,text="Налаштувати ключ програми",command=self.configure_key).pack(anchor="w",pady=(12,0))
+        ttk.Button(self.frame,text="Налаштувати підключення до Google",command=self.configure_key).pack(anchor="w",pady=(12,0))
 
     def combo(self,key,title,options,variable=None,changed=None):
         ttk.Label(self.frame,text=title).pack(anchor="w",pady=(8,3))
@@ -86,14 +87,31 @@ class App:
         self.fields[key]=var
 
     def configure_key(self):
-        dialog=tk.Toplevel(self.root);dialog.title("Ключ програми");dialog.geometry("430x160");dialog.transient(self.root);dialog.grab_set()
-        ttk.Label(dialog,text="Ключ доступу, виданий адміністратором:",wraplength=390).pack(anchor="w",padx=15,pady=(15,5))
-        var=tk.StringVar(value=self.settings.get("key",""))
-        entry=ttk.Entry(dialog,textvariable=var,show="*");entry.pack(fill="x",padx=15);entry.focus_set()
+        dialog=tk.Toplevel(self.root)
+        dialog.title("Google Apps Script — підключення")
+        dialog.geometry("560x245")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        ttk.Label(dialog,text="Адреса вебзастосунку Google Apps Script (/exec):").pack(anchor="w",padx=15,pady=(15,5))
+        endpoint=tk.StringVar(value=self.settings.get("endpoint",""))
+        ttk.Entry(dialog,textvariable=endpoint).pack(fill="x",padx=15)
+        ttk.Label(dialog,text="Ключ доступу (Script Properties → QUICK_REQUESTS_KEY):").pack(anchor="w",padx=15,pady=(12,5))
+        key=tk.StringVar(value=self.settings.get("key",""))
+        entry=ttk.Entry(dialog,textvariable=key,show="*")
+        entry.pack(fill="x",padx=15)
         def accept():
-            self.settings["key"]=var.get().strip()
-            save(self.settings);dialog.destroy()
-        ttk.Button(dialog,text="Зберегти",command=accept).pack(pady=14)
+            url=endpoint.get().strip()
+            secret=key.get().strip()
+            if not (url.startswith("https://script.google.com/macros/s/") and url.endswith("/exec")):
+                messagebox.showerror("Невірна адреса","Вставте URL Google Apps Script, що закінчується на /exec.",parent=dialog)
+                return
+            if len(secret)<32:
+                messagebox.showerror("Ключ","Ключ має містити щонайменше 32 символи.",parent=dialog)
+                return
+            self.settings.update(endpoint=url,key=secret)
+            save(self.settings)
+            dialog.destroy()
+        ttk.Button(dialog,text="Зберегти",command=accept).pack(pady=15)
 
     def submit(self):
         if self.busy:return
@@ -108,16 +126,16 @@ class App:
             mode="ttn"
         if not all(values):
             messagebox.showwarning("Не всі поля", "Заповніть усі поля.");return
-        if not self.settings.get("key"):
+        if not self.settings.get("key") or not self.settings.get("endpoint"):
             self.configure_key()
             if not self.settings.get("key"):return
         self.settings.update(manager=self.manager.get(),tab=self.tab.get())
         save(self.settings)
         self.busy=True;self.send.configure(state="disabled");self.status.set("Надсилаємо…")
-        payload=json.dumps({"mode":mode,"tab":self.tab.get(),"values":values},ensure_ascii=False).encode("utf-8")
+        payload=json.dumps({"mode":mode,"tab":self.tab.get(),"values":values,"key":self.settings["key"],"requestId":str(uuid.uuid4())},ensure_ascii=False).encode("utf-8")
         def worker():
             try:
-                req=Request(API,data=payload,headers={"Content-Type":"application/json","X-Teh-Desktop-Key":self.settings["key"]},method="POST")
+                req=Request(self.settings["endpoint"],data=payload,headers={"Content-Type":"text/plain;charset=utf-8"},method="POST")
                 with urlopen(req,timeout=35) as response:
                     result=json.loads(response.read().decode("utf-8"))
                 if result.get("unverified"):
@@ -139,7 +157,7 @@ class App:
                            + (str(detail)[:160] if detail else
                               "Перевірте публікацію Cloudflare Pages та правила захисту."))
                 elif exc.code == 401:
-                    msg = "❌ HTTP 401: Ключ програми не прийнято. Перевірте ключ у налаштуваннях."
+                    msg = "❌ HTTP 401: Доступ до Google Apps Script не дозволено. Перевірте налаштування публікації."
                 else:
                     msg = "❌ HTTP " + str(exc.code) + (": " + str(detail)[:180] if detail else "")
                 clear=False
