@@ -1212,7 +1212,29 @@ s = s.replace("setStatus(id,d.status==='started'?'running':'busy','⏳ '+d.messa
 negative_export_fix = r'''<script>
 (function(){
   const apiBase = '/api';
-  window.runNegative = async function(processName, statusId){
+  const retryButton = document.createElement('button');
+  retryButton.type = 'button';
+  retryButton.id = 'negativeRetryFailed';
+  retryButton.textContent = '🔄 Повторити невдалі';
+  retryButton.style.cssText = 'display:none;margin:10px 0 0 10px;padding:11px 16px;border:0;border-radius:9px;background:#e9efff;color:#174ea6;font-weight:700;cursor:pointer';
+  const exportButton = document.querySelector('#negative-reviews button[onclick*="runNegative"]');
+  if(exportButton) exportButton.insertAdjacentElement('afterend', retryButton);
+  let retryState = null;
+  function syncRetry(state){
+    retryState = state?.retry_available ? state : null;
+    retryButton.style.display = retryState ? 'inline-block' : 'none';
+    retryButton.disabled = !!state?.running;
+    retryButton.title = retryState ? 'Повторити тільки невдалі магазини за ' + retryState.since + ' — ' + retryState.until : '';
+  }
+  fetch(apiBase + '/negative/export-status', {cache:'no-store'})
+    .then(r=>r.ok?r.json():null).then(syncRetry).catch(()=>{});
+  retryButton.addEventListener('click', () => {
+    if(!retryState)return;
+    const count = retryState.retry_shop_ids?.length || 0;
+    if(!confirm('Повторити перевірку тільки ' + count + ' невдалих магазинів за попередній період ' + retryState.since + ' — ' + retryState.until + '?'))return;
+    window.runNegative('reviews', 'negativeReviewsStatus', true);
+  });
+  window.runNegative = async function(processName, statusId, retryFailed=false){
     const el = document.getElementById(statusId);
     if(!el) return;
     const date = document.getElementById('negativeReviewsDate')?.value || '';
@@ -1225,17 +1247,20 @@ negative_export_fix = r'''<script>
       el.textContent = '❌ Дата «до» не може бути раніше дати «від».';
       return;
     }
-    el.textContent = '⏳ Запускаємо вигрузку в тестову таблицю…';
+    el.textContent = retryFailed ? '⏳ Повторюємо лише невдалі магазини…' : '⏳ Запускаємо вигрузку в тестову таблицю…';
+    syncRetry(null);
     const button = document.querySelector('#negative-reviews button[onclick*="runNegative"]');
     if(button && processName === 'reviews') button.disabled = true;
+    retryButton.disabled = true;
     let poll;
     const finish = (message, failed) => {
       if(poll) clearInterval(poll);
       if(button) button.disabled = false;
+      retryButton.disabled = false;
       el.textContent = (failed ? '❌ ' : '✅ ') + message;
     };
     try {
-      const response = await fetch(apiBase + '/negative/run/' + encodeURIComponent(processName), {
+      const response = await fetch(apiBase + (retryFailed ? '/negative/retry-failed' : '/negative/run/' + encodeURIComponent(processName)), {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({since:date,until:endDate}),
@@ -1259,8 +1284,8 @@ negative_export_fix = r'''<script>
           }
           const state = await statusResponse.json();
           window.__negativeStatusFailures = 0;
-          if(state.status === 'success') finish(state.message || 'Вигрузку завершено.', false);
-          else if(state.status === 'error') finish(state.message || 'Помилка вигрузки.', true);
+          if(state.status === 'success'){ syncRetry(state); finish(state.message || 'Вигрузку завершено.', false); }
+          else if(state.status === 'error'){ syncRetry(state); finish(state.message || 'Помилка вигрузки.', true); }
           else if(state.status === 'running') el.textContent = '⏳ '+(state.message || 'Вигрузка виконується…');
         } catch (error) {
           // A temporary status-request failure must not be interpreted as
@@ -1274,7 +1299,7 @@ negative_export_fix = r'''<script>
           }
         }
       }, 2500);
-    } catch(error) { finish(error.message, true); }
+    } catch(error) { finish(error.message, true); fetch(apiBase + '/negative/export-status', {cache:'no-store'}).then(r=>r.ok?r.json():null).then(syncRetry).catch(()=>{}); }
   };
 })();
 </script>'''
