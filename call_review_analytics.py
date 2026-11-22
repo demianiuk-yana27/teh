@@ -39,6 +39,8 @@ def _reviews(shop,account,start,end):
     opener,csrf=_switch(account)
     found=defaultdict(list)
     seen=set()
+    inspected=0
+    missing_order_ids=0
     previous=None
     ordered=True
     for page in range(1,201):
@@ -49,7 +51,7 @@ def _reviews(shop,account,start,end):
         pagination=data.get("pagination")
         if not isinstance(opinions,list) or not isinstance(pagination,dict):
             raise RuntimeError("Некоректна відповідь Prom")
-        if not opinions: return found
+        if not opinions: return found,inspected,missing_order_ids
         dates=[]
         for opinion in opinions:
             if not isinstance(opinion,dict) or str(opinion.get("company_id"))!=shop.id:
@@ -65,11 +67,13 @@ def _reviews(shop,account,start,end):
             if previous is not None and published>previous:ordered=False
             previous=published
             if start<=published<=end:
+                inspected+=1
                 order=_order_id(opinion)
                 if order:found[order].append(published)
+                else:missing_order_ids+=1
         pages=int(pagination.get("num_pages") or 1)
         if page>=pages or (ordered and dates and max(dates)<start):
-            return found
+            return found,inspected,missing_order_ids
     raise RuntimeError("Перевищено 200 сторінок Prom")
 
 def _worker(start,end,login_map,run_id):
@@ -81,6 +85,7 @@ def _worker(start,end,login_map,run_id):
         reviewed={}
         failures=[]
         unknown=[]
+        diagnostics={}
         cutoff=min(date.today(),end+timedelta(days=30))
         for i,shop in enumerate(sorted(selected_shops),1):
             _state={"status":"running","run_id":run_id,
@@ -95,7 +100,15 @@ def _worker(start,end,login_map,run_id):
                 continue
             for account in accounts:
                 try:
-                    reviewed[shop]=_reviews(info,account,start,cutoff)
+                    found,inspected,missing_ids=_reviews(info,account,start,cutoff)
+                    reviewed[shop]=found
+                    order_ids={order for name,order in orders if name==shop}
+                    matching_ids=order_ids.intersection(found)
+                    diagnostics[shop]={"prom_reviews_in_period":inspected,
+                        "prom_reviews_with_order_id":sum(len(v) for v in found.values()),
+                        "prom_reviews_without_order_id":missing_ids,
+                        "unique_matching_order_ids":len(matching_ids),
+                        "selected_order_ids":len(order_ids)}
                     break
                 except Exception as exc:
                     print("[review-analytics] failed shop=%s error=%s"%(shop,type(exc).__name__),flush=True)
@@ -131,12 +144,15 @@ def _worker(start,end,login_map,run_id):
                     per_tab[item["tab"]][key]+=1
                     per_shop[shop][key]+=1
                     per_label[label][key]+=1
+        matched_total=sum(x["unique_matching_order_ids"] for x in diagnostics.values())
+        inspected_total=sum(x["prom_reviews_in_period"] for x in diagnostics.values())
+        no_matches=bool(inspected_total and not matched_total)
         def shape(counter):
             d=dict(counter)
             denom=d.get("finalized",0)-d.get("before_call",0)
             d["new_review_rate"]=round(100*d.get("new_after_processing",0)/denom,1) if denom>0 else None
             return d
-        _state={"status":"partial" if failures or unknown or total["unverified"] or total["marked_but_not_found"] else "success",
+        _state={"status":"partial" if failures or unknown or total["unverified"] or total["marked_but_not_found"] or no_matches else "success",
                 "run_id":run_id,"since":start.isoformat(),"until":end.isoformat(),
                 "message":"Перевірку завершено. Показники відображають стан Prom на момент перевірки.",
                 "summary":shape(total),"by_tab":{k:shape(per_tab[k]) for k in TABS},
@@ -144,6 +160,10 @@ def _worker(start,end,login_map,run_id):
                 "by_label":{k:shape(v) for k,v in sorted(per_label.items())},
                 "unavailable_shops":failures,"unmapped_shops":unknown,
                 "missing_identity":stats["missing_identity"],
+                "diagnostics_by_shop":diagnostics,
+                "prom_reviews_inspected":inspected_total,
+                "matching_order_ids":matched_total,
+                "matching_warning":("Prom повернув відгуки, але жоден номер замовлення не збігся. Конверсія 0% НЕ підтверджена — перевірте формат ID і поля відповіді Prom." if no_matches else ""),
                 "note":"Проміжні дані до 30-го дня не фіналізуються. Мітка «є відгук» є історичним свідченням; відсутність відгуку в Prom зараз не доводить, що його не було раніше. Новий відгук після опрацювання не доводить причинності дзвінка."}
     except Exception as exc:
         _state={"status":"error","run_id":run_id,"message":str(exc)[:300]}
