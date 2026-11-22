@@ -13,9 +13,11 @@ _state={"status":"idle","message":"Готово до запуску."}
 EXCLUDED={"смарт"}
 LABELS=("так","нб","ні","є відгук","проста посилка","автовідповідач","смарт","нб2")
 # Names used by call-center staff vs names in the Prom shop directory.
-SHOP_ALIASES={"homstera (був market)":"homstera","easyshop-дроп":"easyshop"}
+SHOP_ALIASES={"homstera (був market)":"homstera","easyshop-дроп":"easyshop","bybka_shop":"bybka","toyvo - дроп":"toyvo"}
 # The supplied sign-to account 44052893 is already mapped to company 3926531.
 BORNIATCO_COMPANY_ID="3926531"
+# Confirmed existing account mapping: sign-to 42325352 -> company 4093192.
+TOYVO_COMPANY_ID="4093192"
 
 def _orders(start,end):
     book=get_client().open_by_key(CALL_BOOK)
@@ -100,6 +102,8 @@ def _worker(start,end,login_map,run_id):
             info=shops.get(directory_name)
             if not info and shop=="borniatco":
                 info=Shop("Borniatco",BORNIATCO_COMPANY_ID)
+            if not info and shop=="toyvo - дроп":
+                info=Shop("ToyVo",TOYVO_COMPANY_ID)
             if not info:
                 unknown.append(shop)
                 continue
