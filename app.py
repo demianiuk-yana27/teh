@@ -878,6 +878,7 @@ def process_one(export_mode="partial"):
         "Дропшипінг",
         "Klik Shop - дроп",
         "самовивіз",
+        "Bybka_shop",
     ]
 
     allowed_utm = [
@@ -1046,6 +1047,7 @@ def process_three(selected_date=None):
         "Skandi",
         "Klik Shop - дроп",
         "самовивіз",
+        "Bybka_shop",
     ]
 
     allowed_utm = ["mobile_catalog_app", "portal"]
@@ -1121,17 +1123,12 @@ def process_three(selected_date=None):
 
     yellow_stores = [
         "Borniatco",
-        "Bybka_shop",
         "Laggi market",
         "TrendVibe",
         "Yellow Monkey",
     ]
 
     new_stores = [
-        "Moods",
-        "Praktix",
-        "MIXORA",
-        "ПІДЕ",
         "Vdalo Shop",
         "Velora",
         "сирник",
@@ -1157,6 +1154,7 @@ def process_three(selected_date=None):
         "Easyshop-дроп",
         "BoTreba -дроп",
         "Two birds",
+        "Moods",
     ]
 
     df_yellow = filtered_df[
