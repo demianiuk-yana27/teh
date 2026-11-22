@@ -3536,3 +3536,8 @@ def buyer_questions_web_research():
         except Exception as fallback_error:
             app.logger.warning("Public web research fallback failed: %s", type(fallback_error).__name__)
         return jsonify({"status": "unavailable", "message": "Обидва безкоштовні пошуковики зараз недоступні. Спробуйте пізніше.", "sources": []}), 503
+
+
+# Read-only analytics of company reviews 30 days after order creation.
+from call_review_analytics import register as _register_call_review_analytics
+_register_call_review_analytics(app, _positive_login_map)
