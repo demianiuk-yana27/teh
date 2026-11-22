@@ -11,13 +11,16 @@ from negative_reviews import Shop
 _lock=threading.Lock()
 _state={"status":"idle","message":"Готово до запуску."}
 EXCLUDED={"смарт"}
+EXCLUDED_SHOPS={"bybka_shop"}
 LABELS=("так","нб","ні","є відгук","проста посилка","автовідповідач","смарт","нб2")
 # Names used by call-center staff vs names in the Prom shop directory.
-SHOP_ALIASES={"homstera (був market)":"homstera","easyshop-дроп":"easyshop","bybka_shop":"bybka","toyvo - дроп":"toyvo"}
+SHOP_ALIASES={"homstera (був market)":"homstera","easyshop-дроп":"easyshop","bybka_shop":"bybka","toyvo - дроп":"toyvo","botreba -дроп":"botreba"}
 # The supplied sign-to account 44052893 is already mapped to company 3926531.
 BORNIATCO_COMPANY_ID="3926531"
 # Confirmed existing account mapping: sign-to 42325352 -> company 4093192.
 TOYVO_COMPANY_ID="4093192"
+# Existing sign-to 42640222 maps to company 4104969.
+BOTREBA_COMPANY_ID="4104969"
 
 def _orders(start,end):
     book=get_client().open_by_key(CALL_BOOK)
@@ -39,6 +42,9 @@ def _orders(start,end):
                 if not created:good_choice_audit[tab]["invalid_date"]+=1
                 elif start<=created<=end:good_choice_audit[tab]["in_selected_period"]+=1
             if not created or not start<=created<=end:continue
+            if shop in EXCLUDED_SHOPS:
+                stats["excluded_shop_rows"]+=1
+                continue
             order=normalize_order(cells[5])
             external_id=normalize_order(cells[4])
             if is_good_choice and not (order or external_id):
@@ -114,6 +120,8 @@ def _worker(start,end,login_map,run_id):
                 info=Shop("Borniatco",BORNIATCO_COMPANY_ID)
             if not info and shop=="toyvo - дроп":
                 info=Shop("ToyVo",TOYVO_COMPANY_ID)
+            if not info and shop=="botreba -дроп":
+                info=Shop("BoTreba",BOTREBA_COMPANY_ID)
             if not info:
                 unknown.append(shop)
                 continue
@@ -185,6 +193,7 @@ def _worker(start,end,login_map,run_id):
                 "by_label":{k:shape(v) for k,v in sorted(per_label.items())},
                 "unavailable_shops":failures,"unmapped_shops":unknown,
                 "missing_identity":stats["missing_identity"],
+                "excluded_shop_rows":stats["excluded_shop_rows"],
                 "good_choice_audit":good_choice_audit,
                 "diagnostics_by_shop":diagnostics,
                 "prom_reviews_inspected":inspected_total,
