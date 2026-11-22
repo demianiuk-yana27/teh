@@ -36,7 +36,7 @@ def _orders(start,end):
             shop=normalize_name(cells[1])
             # Diagnose missing Good Choice without exposing order or customer details.
             shop_key="".join(ch for ch in shop if ch.isalnum())
-            is_good_choice=("goodchoice" in shop_key or "гудчойс" in shop_key or "гудchoice" in shop_key)
+            is_good_choice=("goodchoice" in shop_key or "goodchoise" in shop_key or "гудчойс" in shop_key or "гудchoice" in shop_key)
             if is_good_choice:
                 good_choice_audit[tab]["all_rows"]+=1
                 if not created:good_choice_audit[tab]["invalid_date"]+=1
