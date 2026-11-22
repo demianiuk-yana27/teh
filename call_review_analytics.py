@@ -25,13 +25,14 @@ def _orders(start,end):
             if not created or not start<=created<=end:continue
             shop=normalize_name(cells[1])
             order=normalize_order(cells[5])
-            if not shop or not order:
+            external_id=normalize_order(cells[4])
+            if not shop or not (order or external_id):
                 stats["missing_identity"]+=1
                 continue
             label=normalize_name(cells[6]) or "без мітки"
-            item={"tab":tab,"shop":shop,"order":order,"created":created,
+            item={"tab":tab,"shop":shop,"order":order,"external_id":external_id,"created":created,
                   "label":label,"row":number}
-            result[(shop,order)].append(item)
+            result[(shop,order or external_id)].append(item)
             stats["selected"]+=1
     return result,stats
 
@@ -102,7 +103,7 @@ def _worker(start,end,login_map,run_id):
                 try:
                     found,inspected,missing_ids=_reviews(info,account,start,cutoff)
                     reviewed[shop]=found
-                    order_ids={order for name,order in orders if name==shop}
+                    order_ids={identifier for (name,_),entries in orders.items() if name==shop for item in entries for identifier in (item["order"],item["external_id"]) if identifier}
                     matching_ids=order_ids.intersection(found)
                     diagnostics[shop]={"prom_reviews_in_period":inspected,
                         "prom_reviews_with_order_id":sum(len(v) for v in found.values()),
@@ -120,7 +121,7 @@ def _worker(start,end,login_map,run_id):
         today=date.today()
         for (shop,order),entries in orders.items():
             verified=shop in reviewed
-            published=reviewed.get(shop,{}).get(order,[])
+            published=list({d for item in entries for identifier in (item["order"],item["external_id"]) if identifier for d in reviewed.get(shop,{}).get(identifier,[])})
             for item in entries:
                 label=item["label"]
                 mature=item["created"]+timedelta(days=30)<today
@@ -163,7 +164,7 @@ def _worker(start,end,login_map,run_id):
                 "diagnostics_by_shop":diagnostics,
                 "prom_reviews_inspected":inspected_total,
                 "matching_order_ids":matched_total,
-                "matching_warning":("Prom повернув відгуки, але жоден номер замовлення не збігся. Конверсія 0% НЕ підтверджена — перевірте формат ID і поля відповіді Prom." if no_matches else ""),
+                "matching_warning":("Prom повернув відгуки, але жоден номер замовлення не збігся за колонками G або H. Конверсія 0% НЕ підтверджена." if no_matches else ""),
                 "note":"Проміжні дані до 30-го дня не фіналізуються. Мітка «є відгук» є історичним свідченням; відсутність відгуку в Prom зараз не доводить, що його не було раніше. Новий відгук після опрацювання не доводить причинності дзвінка."}
     except Exception as exc:
         _state={"status":"error","run_id":run_id,"message":str(exc)[:300]}
