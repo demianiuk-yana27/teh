@@ -23,16 +23,26 @@ def _orders(start,end):
     book=get_client().open_by_key(CALL_BOOK)
     result=defaultdict(list)
     stats=Counter()
+    good_choice_audit=defaultdict(Counter)
     for tab in TABS:
         # C:I includes hidden and filtered rows: Sheets API reads them normally.
         rows=book.worksheet(tab).get("C:I")
         for number,row in enumerate(rows,1):
             cells=(row+[""]*7)[:7]
             created=parse_date(cells[0][:10]) if cells[0] else None
-            if not created or not start<=created<=end:continue
             shop=normalize_name(cells[1])
+            # Diagnose missing Good Choice without exposing order or customer details.
+            shop_key="".join(ch for ch in shop if ch.isalnum())
+            is_good_choice=("goodchoice" in shop_key or "гудчойс" in shop_key or "гудchoice" in shop_key)
+            if is_good_choice:
+                good_choice_audit[tab]["all_rows"]+=1
+                if not created:good_choice_audit[tab]["invalid_date"]+=1
+                elif start<=created<=end:good_choice_audit[tab]["in_selected_period"]+=1
+            if not created or not start<=created<=end:continue
             order=normalize_order(cells[5])
             external_id=normalize_order(cells[4])
+            if is_good_choice and not (order or external_id):
+                good_choice_audit[tab]["missing_order_id"]+=1
             if not shop or not (order or external_id):
                 stats["missing_identity"]+=1
                 continue
@@ -41,7 +51,7 @@ def _orders(start,end):
                   "label":label,"row":number}
             result[(shop,order or external_id)].append(item)
             stats["selected"]+=1
-    return result,stats
+    return result,stats,{tab:dict(counts) for tab,counts in good_choice_audit.items()}
 
 def _reviews(shop,account,start,end):
     opener,csrf=_switch(account)
@@ -87,7 +97,7 @@ def _reviews(shop,account,start,end):
 def _worker(start,end,login_map,run_id):
     global _state
     try:
-        orders,stats=_orders(start,end)
+        orders,stats,good_choice_audit=_orders(start,end)
         shops=_shops()
         selected_shops={shop for shop,_ in orders}
         reviewed={}
@@ -175,6 +185,7 @@ def _worker(start,end,login_map,run_id):
                 "by_label":{k:shape(v) for k,v in sorted(per_label.items())},
                 "unavailable_shops":failures,"unmapped_shops":unknown,
                 "missing_identity":stats["missing_identity"],
+                "good_choice_audit":good_choice_audit,
                 "diagnostics_by_shop":diagnostics,
                 "prom_reviews_inspected":inspected_total,
                 "matching_order_ids":matched_total,
