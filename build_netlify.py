@@ -1334,5 +1334,66 @@ operations_ui_js = Path('netlify/operations-training-ui.js').read_text(encoding=
 operations_inline = ('<script>\\n' + operations_guide_js + '\\n' + operations_ui_js + '\\n</script>')
 s = s.replace('</body>', operations_inline + '</body>', 1)
 
+
+# Review conversion analytics: separate call-center view, no changes to existing workflows.
+review_analytics_html = '''<section class="view" id="call-review-analytics">
+<div class="pagehead"><div class="pageicon">📊</div><div><h2>Продзвін — Аналітика відгуків</h2><p>Відгуки про компанію через 30 днів від створення замовлення. Усі чотири вкладки, включно з прихованими рядками.</p></div></div>
+<div class="card"><div class="control"><label>Дата створення замовлень — від</label><input type="date" id="callAnalyticsSince"></div>
+<div class="control"><label>До</label><input type="date" id="callAnalyticsUntil"></div>
+<button class="run" id="callAnalyticsRun" onclick="runCallReviewAnalytics()">📊 Запустити аналітику</button>
+<div class="status" id="callAnalyticsStatus">Готово до запуску.</div>
+<div id="callAnalyticsResults" style="margin-top:16px"></div></div></section>'''
+s = s.replace('<div class="sub" data-view="call-review-check">• Перевірка відгуків</div>',
+              '<div class="sub" data-view="call-review-check">• Перевірка відгуків</div><div class="sub" data-view="call-review-analytics">• Аналітика відгуків</div>',1)
+s = s.replace('<section class="view" id="negative-reviews">',review_analytics_html+'<section class="view" id="negative-reviews">',1)
+review_analytics_js = r'''<script>
+(function(){
+ const $=id=>document.getElementById(id);
+ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const n=v=>Number(v||0).toLocaleString('uk-UA');
+ const columns=[['orders','Замовлень'],['finalized','Завершено 30 днів'],['before_call','Відгук уже був'],['new_after_processing','Нові відгуки'],['without_review','Без відгуку'],['pending_30_days','Очікують 30 днів'],['unverified','Не перевірено'],['new_review_rate','Конверсія, %']];
+ function table(title,rows){
+  const keys=Object.keys(rows||{});
+  if(!keys.length)return '';
+  return '<h3 style="margin:20px 0 10px">'+esc(title)+'</h3><div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th style="padding:8px;text-align:left">Група</th>'+columns.map(c=>'<th style="padding:8px;text-align:right">'+esc(c[1])+'</th>').join('')+'</tr></thead><tbody>'+keys.map(k=>'<tr><td style="padding:8px;border-top:1px solid #e1e7f0">'+esc(k)+'</td>'+columns.map(([field])=>'<td style="padding:8px;text-align:right;border-top:1px solid #e1e7f0">'+(rows[k][field]==null?'—':esc(field==='new_review_rate'?rows[k][field]+'%':n(rows[k][field])))+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
+ }
+ function render(data){
+  const info=data.summary||{};
+  const metrics=[['Усього замовлень',info.orders],['Завершено 30 днів',info.finalized],['Відгук уже був',info.before_call],['Нові відгуки',info.new_after_processing],['Без відгуку',info.without_review],['Конверсія',info.new_review_rate==null?'—':info.new_review_rate+'%']];
+  $('callAnalyticsResults').innerHTML='<div style="display:flex;flex-wrap:wrap;gap:10px">'+metrics.map(([label,value])=>'<div style="background:#f3f7fc;border-radius:10px;padding:12px;min-width:140px"><div style="font-size:12px;color:#52647b">'+esc(label)+'</div><strong style="font-size:22px">'+esc(typeof value==='number'?n(value):value??'0')+'</strong></div>').join('')+'</div>'+
+  table('За вкладками',data.by_tab)+table('За мітками',data.by_label)+table('За магазинами',data.by_shop)+
+  '<p style="margin-top:16px">Не перевірено: '+n(info.unverified)+' · Очікують 30 днів: '+n(info.pending_30_days)+' · Не зіставлено замовлень: '+n(data.missing_identity)+'</p>'+
+  ((data.unavailable_shops||[]).length?'<p>⚠️ Помилки магазинів: '+esc(data.unavailable_shops.join(', '))+'</p>':'')+
+  ((data.unmapped_shops||[]).length?'<p>⚠️ Немає доступу до магазинів: '+esc(data.unmapped_shops.join(', '))+'</p>':'')+
+  '<p style="font-size:12px;color:#65758b">'+esc(data.note||'')+'</p>';
+ }
+ window.runCallReviewAnalytics=async function(){
+  const since=$('callAnalyticsSince').value,until=$('callAnalyticsUntil').value,button=$('callAnalyticsRun'),status=$('callAnalyticsStatus');
+  if(!since||!until||since>until){status.textContent='Виберіть правильний період.';return;}
+  button.disabled=true;$('callAnalyticsResults').innerHTML='';status.textContent='Запускаємо…';
+  try{
+   const response=await fetch('/api/call-reviews/analytics/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({since,until})});
+   const data=await response.json();if(!response.ok)throw Error(data.error||data.message||'Помилка запуску');
+   let attempts=0;
+   const poll=async()=>{
+    try{
+     const response=await fetch('/api/call-reviews/analytics/status',{cache:'no-store'});
+     if(!response.ok)throw Error('Не вдалося отримати статус');
+     const state=await response.json();
+     if(state.run_id!==data.run_id)throw Error('Стан іншого запуску');
+     status.textContent=state.message||state.status;
+     if(state.status==='running'&&attempts++<600){setTimeout(poll,3000);return;}
+     button.disabled=false;
+     if(state.summary)render(state);
+     if(state.status==='error')status.textContent='❌ '+state.message;
+     if(state.status==='partial')status.textContent='⚠️ Частковий результат. Перевірте неповні магазини та розбіжності.';
+    }catch(e){button.disabled=false;status.textContent='⚠️ '+e.message+' — перевірте статус перед повторним запуском';}
+   };poll();
+  }catch(e){button.disabled=false;status.textContent='❌ '+e.message;}
+ };
+})();
+</script>'''
+s = s.replace('</body>',review_analytics_js+'</body>',1)
+
 p.write_text(s, encoding='utf-8')
 print('Cloudflare frontend validated; training, database and role access views are ready.')
