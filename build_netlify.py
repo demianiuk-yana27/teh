@@ -1337,7 +1337,7 @@ s = s.replace('</body>', operations_inline + '</body>', 1)
 
 # Review conversion analytics: separate call-center view, no changes to existing workflows.
 review_analytics_html = '''<section class="view" id="call-review-analytics">
-<div class="pagehead"><div class="pageicon">📊</div><div><h2>Продзвін — Аналітика відгуків</h2><p>Відгуки про компанію через 30 днів від створення замовлення. Усі чотири вкладки, включно з прихованими рядками.</p></div></div>
+<div class="pagehead"><div class="pageicon">📊</div><div><h2>Продзвін — Аналітика відгуків</h2><p>Збір аналітики за обраний період та аналіз ефективності продзвону.</p></div></div>
 <div class="card"><div class="control"><label>Дата створення замовлень — від</label><input type="date" id="callAnalyticsSince"></div>
 <div class="control"><label>До</label><input type="date" id="callAnalyticsUntil"></div>
 <button class="run" id="callAnalyticsRun" onclick="runCallReviewAnalytics()">📊 Запустити аналітику</button>
@@ -1366,10 +1366,6 @@ review_analytics_js = r'''<script>
   ((data.unavailable_shops||[]).length?'<p>⚠️ Помилки магазинів: '+esc(data.unavailable_shops.join(', '))+'</p>':'')+
   ((data.unmapped_shops||[]).length?'<p>⚠️ Немає доступу до магазинів: '+esc(data.unmapped_shops.join(', '))+'</p>':'')+
   (data.matching_warning?'<p style="color:#b45309;font-weight:700">⚠️ '+esc(data.matching_warning)+'</p>':'')+
-  '<h3 style="margin-top:20px">Перевірка Good Choice</h3>'+
-  (Object.keys(data.good_choice_audit||{}).length
-   ? Object.entries(data.good_choice_audit).map(([tab,v])=>'<p>'+esc(tab)+': у таблиці '+n(v.all_rows)+' рядків · за вибраний період '+n(v.in_selected_period)+' · некоректна дата '+n(v.invalid_date)+' · без ID '+n(v.missing_order_id)+'</p>').join('')
-   : '<p>⚠️ У чотирьох вкладках не знайдено рядків із назвою Good Choice / Гудчойс. Перевірте точну назву магазину в колонці D.</p>')+
   '<p>Виключено замовлень закритого магазину Bybka: '+n(data.excluded_shop_rows)+'</p>'+ 
   '<p>Діагностика Prom: отримано відгуків '+n(data.prom_reviews_inspected)+' · збігів за номером замовлення '+n(data.matching_order_ids)+'</p>'+
   '<h3 style="margin:20px 0 10px">Діагностика зіставлення за магазинами</h3><div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'+['Магазин','ID замовлень у таблиці','Відгуків Prom','Відгуків із ID','Без ID','Збігів ID'].map(t=>'<th style="padding:8px;text-align:left">'+esc(t)+'</th>').join('')+'</tr></thead><tbody>'+Object.entries(data.diagnostics_by_shop||{}).map(([k,v])=>'<tr>'+[k,v.selected_order_ids,v.prom_reviews_in_period,v.prom_reviews_with_order_id,v.prom_reviews_without_order_id,v.unique_matching_order_ids].map(x=>'<td style="padding:8px;border-top:1px solid #e1e7f0">'+esc(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'+
