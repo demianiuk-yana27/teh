@@ -114,6 +114,8 @@ def _worker(start,end,login_map,run_id):
                 except Exception as exc:
                     print("[review-analytics] failed shop=%s error=%s"%(shop,type(exc).__name__),flush=True)
             if shop not in reviewed:failures.append(shop)
+        total_matches=sum(v["unique_matching_order_ids"] for v in diagnostics.values())
+        suspicious_zero=bool(sum(v["prom_reviews_in_period"] for v in diagnostics.values()) and total_matches==0)
         total=Counter()
         per_tab=defaultdict(Counter)
         per_shop=defaultdict(Counter)
@@ -132,7 +134,7 @@ def _worker(start,end,login_map,run_id):
                 metrics=["orders"]
                 if not eligible:metrics.append("excluded")
                 elif not mature:metrics.append("pending_30_days")
-                elif not verified:metrics.append("unverified")
+                elif not verified or suspicious_zero:metrics.append("unverified")
                 else:
                     metrics.append("finalized")
                     if before:metrics.append("before_call")
@@ -147,7 +149,7 @@ def _worker(start,end,login_map,run_id):
                     per_label[label][key]+=1
         matched_total=sum(x["unique_matching_order_ids"] for x in diagnostics.values())
         inspected_total=sum(x["prom_reviews_in_period"] for x in diagnostics.values())
-        no_matches=bool(inspected_total and not matched_total)
+        no_matches=suspicious_zero
         def shape(counter):
             d=dict(counter)
             denom=d.get("finalized",0)-d.get("before_call",0)
@@ -164,7 +166,7 @@ def _worker(start,end,login_map,run_id):
                 "diagnostics_by_shop":diagnostics,
                 "prom_reviews_inspected":inspected_total,
                 "matching_order_ids":matched_total,
-                "matching_warning":("Prom повернув відгуки, але жоден номер замовлення не збігся за колонками G або H. Конверсія 0% НЕ підтверджена." if no_matches else ""),
+                "matching_warning":("Prom повернув відгуки, але жоден номер замовлення не збігся за колонками G або H. Результати перевірки Prom позначено як непідтверджені." if no_matches else ""),
                 "note":"Проміжні дані до 30-го дня не фіналізуються. Мітка «є відгук» є історичним свідченням; відсутність відгуку в Prom зараз не доводить, що його не було раніше. Новий відгук після опрацювання не доводить причинності дзвінка."}
     except Exception as exc:
         _state={"status":"error","run_id":run_id,"message":str(exc)[:300]}
