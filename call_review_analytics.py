@@ -6,11 +6,16 @@ from datetime import date, datetime, timedelta
 from flask import jsonify, request
 from negative_reviews import get_client, normalize_name, normalize_order, parse_date
 from call_review_preview import _shops, _switch, _read, _order_id, CALL_BOOK, TABS
+from negative_reviews import Shop
 
 _lock=threading.Lock()
 _state={"status":"idle","message":"Готово до запуску."}
 EXCLUDED={"смарт"}
 LABELS=("так","нб","ні","є відгук","проста посилка","автовідповідач","смарт","нб2")
+# Names used by call-center staff vs names in the Prom shop directory.
+SHOP_ALIASES={"homstera (був market)":"homstera","easyshop-дроп":"easyshop"}
+# The supplied sign-to account 44052893 is already mapped to company 3926531.
+BORNIATCO_COMPANY_ID="3926531"
 
 def _orders(start,end):
     book=get_client().open_by_key(CALL_BOOK)
@@ -91,7 +96,10 @@ def _worker(start,end,login_map,run_id):
         for i,shop in enumerate(sorted(selected_shops),1):
             _state={"status":"running","run_id":run_id,
                     "message":f"Перевіряємо магазини: {i}/{len(selected_shops)}"}
-            info=shops.get(shop)
+            directory_name=SHOP_ALIASES.get(shop,shop)
+            info=shops.get(directory_name)
+            if not info and shop=="borniatco":
+                info=Shop("Borniatco",BORNIATCO_COMPANY_ID)
             if not info:
                 unknown.append(shop)
                 continue
