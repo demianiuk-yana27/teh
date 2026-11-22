@@ -1365,6 +1365,9 @@ review_analytics_js = r'''<script>
   '<p style="margin-top:16px">Не перевірено: '+n(info.unverified)+' · Очікують 30 днів: '+n(info.pending_30_days)+' · Не зіставлено замовлень: '+n(data.missing_identity)+'</p>'+
   ((data.unavailable_shops||[]).length?'<p>⚠️ Помилки магазинів: '+esc(data.unavailable_shops.join(', '))+'</p>':'')+
   ((data.unmapped_shops||[]).length?'<p>⚠️ Немає доступу до магазинів: '+esc(data.unmapped_shops.join(', '))+'</p>':'')+
+  (data.matching_warning?'<p style="color:#b45309;font-weight:700">⚠️ '+esc(data.matching_warning)+'</p>':'')+
+  '<p>Діагностика Prom: отримано відгуків '+n(data.prom_reviews_inspected)+' · збігів за номером замовлення '+n(data.matching_order_ids)+'</p>'+
+  table('Діагностика зіставлення за магазинами',Object.fromEntries(Object.entries(data.diagnostics_by_shop||{}).map(([k,v])=>[k,{orders:v.selected_order_ids,finalized:v.prom_reviews_in_period,before_call:v.prom_reviews_with_order_id,new_after_processing:v.unique_matching_order_ids,without_review:v.prom_reviews_without_order_id}])))+
   '<p style="font-size:12px;color:#65758b">'+esc(data.note||'')+'</p>';
  }
  window.runCallReviewAnalytics=async function(){
