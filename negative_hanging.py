@@ -78,17 +78,33 @@ def _direct_review(opener, order_id, known_link=''):
         if len(raw)>1000000:
             raise ValueError("review_too_large")
         page=html.unescape(raw.decode("utf-8","replace"))
-    # Do not treat unrelated page ratings as the review's rating.
-    patterns=(
-        r'"reviewRating"\s*:\s*\{[^{}]{0,400}?"ratingValue"\s*:\s*"?([1-5])"?',
-        r'"@type"\s*:\s*"Review"[^{}]{0,1500}?"ratingValue"\s*:\s*"?([1-5])"?',
-    )
-    ratings=set()
-    for pattern in patterns:
-        ratings.update(int(x) for x in re.findall(pattern,page,re.I|re.S))
-    if len(ratings)!=1:
-        raise ValueError("review_rating_not_in_structured_data")
-    return {"rating":next(iter(ratings)),"link":link}
+    # The public Prom opinion page embeds its authoritative opinion object in
+    # window.ApolloCacheState, keyed by CompanyOpinionPageQuery.
+    opinion_id=re.search(r'/opinions/view/(\d+)',link)
+    if not opinion_id:
+        raise ValueError("invalid_opinion_url")
+    cache_match=re.search(r'window\.ApolloCacheState\s*=\s*',page)
+    if not cache_match:
+        raise ValueError("apollo_cache_missing")
+    decoder=json.JSONDecoder()
+    try:
+        cache,_=decoder.raw_decode(page[cache_match.end():].lstrip())
+    except (ValueError,TypeError):
+        raise ValueError("apollo_cache_invalid")
+    matches=[]
+    for key,value in cache.items():
+        if not key.startswith("CompanyOpinionPageQuery"):
+            continue
+        opinion=((value or {}).get("result") or {}).get("opinion") or {}
+        if str(opinion.get("id"))==opinion_id.group(1):
+            matches.append(opinion)
+    if len(matches)!=1:
+        raise ValueError("opinion_not_unique_in_cache")
+    opinion=matches[0]
+    rating=opinion.get("rating")
+    if isinstance(rating,bool) or not isinstance(rating,int) or rating not in range(1,6):
+        raise ValueError("opinion_rating_invalid")
+    return {"rating":rating,"link":link,"company_id":str(opinion.get("company_id") or "")}
 
 def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
     opener,csrf=_switch(account)
