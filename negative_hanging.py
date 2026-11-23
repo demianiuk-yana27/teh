@@ -130,14 +130,15 @@ def _opinion_status(op):
     """Read explicit Prom moderation/publication status; never infer deletion from stars."""
     values=[]
     for key in ("status","statusName","status_name","moderationStatus","moderation_status",
-                "publicationStatus","publication_status","state","statusText","status_text"):
+                "publicationStatus","publication_status","state","statusText","status_text",
+                "statusLiteral","status_literal"):
         value=op.get(key)
         if isinstance(value,(str,int)):
             values.append(str(value).lower().replace("_"," ").replace("-"," "))
         elif isinstance(value,dict):
             values.extend(str(v).lower() for v in value.values() if isinstance(v,str))
     joined=" ".join(values)
-    if op.get("isRemovedByBuyer") is True or op.get("isRemovedByClient") is True or op.get("deletedByBuyer") is True:
+    if op.get("deleted") is True or op.get("isRemovedByBuyer") is True or op.get("isRemovedByClient") is True or op.get("deletedByBuyer") is True:
         return "відгук видалено"
     if any(x in joined for x in ("видалено покупцем","удален покупателем","deleted by buyer","removed by buyer","deleted by client","removed by client")):
         return "відгук видалено"
