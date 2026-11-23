@@ -1,5 +1,6 @@
 """Read-only 30-day company review analytics for the four call-center tabs."""
 import threading
+import time
 import uuid
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
@@ -21,6 +22,7 @@ BORNIATCO_COMPANY_ID="3926531"
 TOYVO_COMPANY_ID="4093192"
 # Existing sign-to 42640222 maps to company 4104969.
 BOTREBA_COMPANY_ID="4104969"
+SVIY_COMPANY_ID="4191142"
 
 def _orders(start,end):
     book=get_client().open_by_key(CALL_BOOK)
@@ -116,6 +118,8 @@ def _worker(start,end,login_map,run_id):
                     "message":f"Перевіряємо магазини: {i}/{len(selected_shops)}"}
             directory_name=SHOP_ALIASES.get(shop,shop)
             info=shops.get(directory_name)
+            if not info and shop=="свій":
+                info=Shop("Свій інтернет магазин",SVIY_COMPANY_ID)
             if not info and shop=="borniatco":
                 info=Shop("Borniatco",BORNIATCO_COMPANY_ID)
             if not info and shop=="toyvo - дроп":
@@ -131,7 +135,17 @@ def _worker(start,end,login_map,run_id):
                 continue
             for account in accounts:
                 try:
-                    found,inspected,missing_ids=_reviews(info,account,start,cutoff)
+                    # Some Prom shops intermittently fail to load opinions on the first request.
+                    # Retry the whole read to avoid treating a partial page set as complete.
+                    for attempt in range(3):
+                        try:
+                            found,inspected,missing_ids=_reviews(info,account,start,cutoff)
+                            break
+                        except Exception as transient:
+                            print("[review-analytics] shop=%s attempt=%s/3 error=%s" %
+                                  (shop,attempt+1,type(transient).__name__),flush=True)
+                            if attempt==2:raise
+                            time.sleep(1.5*(attempt+1))
                     reviewed[shop]=found
                     order_ids={identifier for (name,_),entries in orders.items() if name==shop for item in entries for identifier in (item["order"],item["external_id"]) if identifier}
                     matching_ids=order_ids.intersection(found)
