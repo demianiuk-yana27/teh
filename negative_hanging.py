@@ -41,32 +41,44 @@ def _rows():
 
 
 def _direct_review(opener, order_id, known_link=''):
-    """Resolve a real public opinion URL from the authenticated order page."""
+    """Resolve the opinion from the order's context_misc JSON, then verify its rating."""
     if not str(order_id).isdigit():
-        return None
-    url="https://my.prom.ua/cms/order/edit/"+str(order_id)
-    # A link already recorded in the sheet avoids loading the order page.
-    direct_match=re.search(r"https://(?:www\\.)?prom\\.ua/(?:ua/)?opinions/view/[0-9]+",known_link or "")
-    link=direct_match.group(0) if direct_match else None
-    headers={"User-Agent":"Mozilla/5.0","Accept":"text/html"}
+        raise ValueError("invalid_order_id")
+    headers={"User-Agent":"Mozilla/5.0","Accept":"application/json, text/html"}
+    link_match=re.search(r'https?://(?:www\.)?prom\.ua/(?:ua/)?opinions/view/\d+',known_link or "")
+    link=link_match.group(0) if link_match else None
     if not link:
+        url="https://my.prom.ua/cms/order/edit/"+str(order_id)+"/context_misc"
         with opener.open(urllib.request.Request(url,headers=headers),timeout=12) as response:
-            if response.geturl().split("?")[0].rstrip("/")!=url:
-                raise ValueError("order_redirect")
+            if not response.geturl().startswith(url):
+                raise ValueError("context_redirect")
             raw=response.read(1500001)
             if len(raw)>1500000:
-                raise ValueError("order_too_large")
-            page=html.unescape(raw.decode("utf-8","replace")).replace("\\/", "/")
-        paths=set(re.findall(r"/(?:ua/)?opinions/view/[0-9]+",page))
-        if len(paths)!=1:
-            raise ValueError("order_opinion_link_missing")
-        link="https://prom.ua"+next(iter(paths))
-    with urllib.request.urlopen(urllib.request.Request(link,headers=headers),timeout=12) as response:
+                raise ValueError("context_too_large")
+        data=json.loads(raw.decode("utf-8"))
+        # The review URL is inside processedMessage of client_left_opinion events.
+        links=set()
+        def walk(obj):
+            if isinstance(obj,dict):
+                if obj.get("actionType")=="client_left_opinion":
+                    message=html.unescape(str(obj.get("processedMessage") or ""))
+                    links.update(re.findall(r'https?://(?:www\.)?prom\.ua/(?:ua/)?opinions/view/\d+',message))
+                for value in obj.values():
+                    if isinstance(value,(dict,list)):
+                        walk(value)
+            elif isinstance(obj,list):
+                for value in obj:
+                    walk(value)
+        walk(data)
+        if len(links)!=1:
+            raise ValueError("context_opinion_link_missing_or_ambiguous")
+        link=next(iter(links))
+    with urllib.request.urlopen(urllib.request.Request(link,headers={"User-Agent":"Mozilla/5.0"}),timeout=12) as response:
         raw=response.read(1000001)
         if len(raw)>1000000:
-            raise ValueError("Завелика сторінка відгуку")
+            raise ValueError("review_too_large")
         page=html.unescape(raw.decode("utf-8","replace"))
-    # Require an unambiguous review-specific structured rating; never guess from stars.
+    # Do not treat unrelated page ratings as the review's rating.
     patterns=(
         r'"reviewRating"\s*:\s*\{[^{}]{0,400}?"ratingValue"\s*:\s*"?([1-5])"?',
         r'"@type"\s*:\s*"Review"[^{}]{0,1500}?"ratingValue"\s*:\s*"?([1-5])"?',
