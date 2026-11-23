@@ -97,20 +97,34 @@ def _direct_review(opener, order_id, known_link=''):
         cache,_=decoder.raw_decode(page[cache_match.end():].lstrip())
     except (ValueError,TypeError):
         raise ValueError("apollo_cache_invalid")
-    matches=[]
-    for key,value in cache.items():
-        if not key.startswith("CompanyOpinionPageQuery"):
-            continue
-        opinion=((value or {}).get("result") or {}).get("opinion") or {}
-        if str(opinion.get("id"))==opinion_id.group(1):
-            matches.append(opinion)
-    if len(matches)!=1:
-        raise ValueError("opinion_not_unique_in_cache")
-    opinion=matches[0]
-    rating=opinion.get("rating")
-    if isinstance(rating,bool) or not isinstance(rating,int) or rating not in range(1,6):
-        raise ValueError("opinion_rating_invalid")
-    return {"rating":rating,"link":link,"company_id":str(opinion.get("company_id") or "")}
+    # Apollo caches can store query results in different nesting layouts.
+    # Only accept objects with the exact opinion ID AND a valid own rating.
+    expected_id=opinion_id.group(1)
+    candidates=[]
+    def inspect(node,depth=0):
+        if depth>24:
+            return
+        if isinstance(node,dict):
+            if str(node.get("id",""))==expected_id:
+                rating=node.get("rating")
+                company=node.get("company_id",node.get("companyId"))
+                if type(rating) is int and 1<=rating<=5 and company is not None:
+                    candidates.append((rating,str(company)))
+            for value in node.values():
+                if isinstance(value,(dict,list)):
+                    inspect(value,depth+1)
+        elif isinstance(node,list):
+            for value in node:
+                if isinstance(value,(dict,list)):
+                    inspect(value,depth+1)
+    inspect(cache)
+    unique=set(candidates)
+    if not unique:
+        raise ValueError("opinion_id_or_rating_not_found_in_cache")
+    if len(unique)!=1:
+        raise ValueError("opinion_rating_ambiguous_in_cache")
+    rating,company_id=next(iter(unique))
+    return {"rating":rating,"link":link,"company_id":company_id}
 
 def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
     opener,csrf=_switch(account)
@@ -197,6 +211,8 @@ def _worker(login_map,shop_book,run_id):
                                 "message":f"Магазин {idx}/{len(groups)}: {items[0]['shop']} · замовлення {n}/{len(items)}"}
                         try:
                             hit=_direct_review(opener,item["order_id"],item["link"])
+                            if hit and hit.get("company_id") and str(hit["company_id"])!=str(shop.id):
+                                raise ValueError("opinion_company_mismatch")
                             if hit:
                                 direct[item["order_id"]]=hit
                                 direct_stats["resolved"]+=1
