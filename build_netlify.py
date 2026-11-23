@@ -1399,8 +1399,6 @@ review_analytics_js = r'''<script>
 </script>'''
 s = s.replace('</body>',review_analytics_js+'</body>',1)
 
-p.write_text(s, encoding='utf-8')
-print('Cloudflare frontend validated; training, database and role access views are ready.')
 # Replace the old read-only review preview with order-date verification and Sheets updates.
 s = s.replace(
     'Відгуки про компанію на Prom за датою залишення. Тестовий перегляд без змін у робочій таблиці.',
@@ -1453,3 +1451,6 @@ check_js = r'''<script>
 })();
 </script>'''
 s = s.replace('</body>',check_js+'</body>',1)
+
+p.write_text(s, encoding='utf-8')
+print('Cloudflare frontend validated; training, database and role access views are ready.')
