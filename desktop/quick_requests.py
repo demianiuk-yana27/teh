@@ -40,6 +40,27 @@ class App:
         self.frame.pack(fill="both",expand=True)
         self.render()
 
+    @staticmethod
+    def layout_independent_shortcuts(widget):
+        """Use Windows virtual key codes so Ctrl+V works with Ukrainian layout."""
+        shortcuts={65:"<<SelectAll>>",67:"<<Copy>>",86:"<<Paste>>",88:"<<Cut>>"}
+        def on_key(event):
+            # Windows virtual-key codes are independent of the active keyboard layout.
+            # Avoid treating AltGr (Ctrl+Alt) as a shortcut.
+            if (event.state & 0x4) and not (event.state & 0x8):
+                action=shortcuts.get(event.keycode)
+                if action:
+                    if event.keycode==65:
+                        if isinstance(widget,tk.Text):
+                            widget.tag_add("sel","1.0","end-1c")
+                        else:
+                            widget.selection_range(0,"end")
+                            widget.icursor("end")
+                    else:
+                        widget.event_generate(action)
+                    return "break"
+        widget.bind("<KeyPress>",on_key,add="+")
+
     def render(self):
         for child in self.frame.winfo_children():child.destroy()
         self.fields={}
@@ -65,6 +86,7 @@ class App:
         ttk.Label(self.frame,text="Суть запиту").pack(anchor="w",pady=(5,2))
         self.description=tk.Text(self.frame,height=3,wrap="word",font=("Segoe UI",10))
         self.description.pack(fill="x")
+        self.layout_independent_shortcuts(self.description)
         ttk.Checkbutton(self.frame,text="Поверх інших вікон",variable=self.top,command=lambda:self.root.attributes("-topmost",self.top.get())).pack(anchor="w",pady=(5,2))
         self.send=ttk.Button(self.frame,text="Подати запит",command=self.submit)
         self.send.pack(fill="x",ipady=3,pady=(3,5))
@@ -84,7 +106,9 @@ class App:
     def entry(self,key,title):
         ttk.Label(self.frame,text=title).pack(anchor="w",pady=(8,3))
         var=tk.StringVar()
-        ttk.Entry(self.frame,textvariable=var).pack(fill="x")
+        input_widget=ttk.Entry(self.frame,textvariable=var)
+        input_widget.pack(fill="x")
+        self.layout_independent_shortcuts(input_widget)
         self.fields[key]=var
 
     def configure_key(self):
@@ -95,11 +119,14 @@ class App:
         dialog.grab_set()
         ttk.Label(dialog,text="Адреса вебзастосунку Google Apps Script (/exec):").pack(anchor="w",padx=15,pady=(15,5))
         endpoint=tk.StringVar(value=self.settings.get("endpoint",""))
-        ttk.Entry(dialog,textvariable=endpoint).pack(fill="x",padx=15)
+        endpoint_entry=ttk.Entry(dialog,textvariable=endpoint)
+        endpoint_entry.pack(fill="x",padx=15)
+        self.layout_independent_shortcuts(endpoint_entry)
         ttk.Label(dialog,text="Ключ доступу (Script Properties → QUICK_REQUESTS_KEY):").pack(anchor="w",padx=15,pady=(12,5))
         key=tk.StringVar(value=self.settings.get("key",""))
         entry=ttk.Entry(dialog,textvariable=key,show="*")
         entry.pack(fill="x",padx=15)
+        self.layout_independent_shortcuts(entry)
         def accept():
             url=endpoint.get().strip()
             secret=key.get().strip()
