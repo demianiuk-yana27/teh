@@ -1,5 +1,8 @@
 """Read-only review-edit follow-up report for negative-review managers."""
 import re
+import html
+import urllib.request
+import urllib.error
 import threading
 import time
 import uuid
@@ -34,6 +37,41 @@ def _rows():
                            "original_rating":original,"review_text":str(row[8])[:220],
                            "link":str(row[11]).strip() if str(row[11]).strip().startswith("https://") else ""})
     return result
+
+
+def _direct_review(opener, order_id):
+    """Resolve a real public opinion URL from the authenticated order page."""
+    if not str(order_id).isdigit():
+        return None
+    url="https://my.prom.ua/cms/order/edit/"+str(order_id)
+    headers={"User-Agent":"Mozilla/5.0","Accept":"text/html"}
+    with opener.open(urllib.request.Request(url,headers=headers),timeout=12) as response:
+        if response.geturl().split("?")[0].rstrip("/")!=url:
+            raise ValueError("Prom перенаправив зі сторінки замовлення")
+        raw=response.read(1500001)
+        if len(raw)>1500000:
+            raise ValueError("Завелика сторінка замовлення")
+        page=html.unescape(raw.decode("utf-8","replace")).replace("\\/", "/")
+    paths=set(re.findall(r"/(?:ua/)?opinions/view/[0-9]+",page))
+    if len(paths)!=1:
+        return None
+    link="https://prom.ua"+next(iter(paths))
+    with urllib.request.urlopen(urllib.request.Request(link,headers=headers),timeout=12) as response:
+        raw=response.read(1000001)
+        if len(raw)>1000000:
+            raise ValueError("Завелика сторінка відгуку")
+        page=html.unescape(raw.decode("utf-8","replace"))
+    # Require an unambiguous review-specific structured rating; never guess from stars.
+    patterns=(
+        r'"reviewRating"\\s*:\\s*\\{[^{}]{0,400}?"ratingValue"\\s*:\\s*"?([1-5])"?',
+        r'"@type"\\s*:\\s*"Review"[^{}]{0,1500}?"ratingValue"\\s*:\\s*"?([1-5])"?',
+    )
+    ratings=set()
+    for pattern in patterns:
+        ratings.update(int(x) for x in re.findall(pattern,page,re.I|re.S))
+    if len(ratings)!=1:
+        return None
+    return {"rating":next(iter(ratings)),"link":link}
 
 def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
     opener,csrf=_switch(account)
@@ -108,35 +146,53 @@ def _worker(login_map,shop_book,run_id):
                     "message":f"Перевіряємо магазин {idx}/{len(groups)}: {items[0]['shop']}"}
             shop=directory.get(key)
             data=None
+            direct={}
             if shop and login_map.get(str(shop.id)):
+                # Fast path: inspect only the orders we need.
+                try:
+                    opener,_=_switch(login_map[str(shop.id)][0])
+                    for n,item in enumerate(items,1):
+                        _state={"status":"running","run_id":run_id,
+                                "message":f"Магазин {idx}/{len(groups)}: {items[0]['shop']} · замовлення {n}/{len(items)}"}
+                        try:
+                            hit=_direct_review(opener,item["order_id"])
+                            if hit:
+                                direct[item["order_id"]]=hit
+                        except (ValueError,urllib.error.HTTPError,urllib.error.URLError,TimeoutError) as exc:
+                            print("[negative-hanging] direct order=%s error=%s"%(item["order_id"],type(exc).__name__),flush=True)
+                except Exception as exc:
+                    print("[negative-hanging] direct shop=%s error=%s"%(key,type(exc).__name__),flush=True)
                 deadline=time.monotonic()+75
                 def progress(kind,page):
                     global _state
                     _state={"status":"running","run_id":run_id,
                             "message":f"Магазин {idx}/{len(groups)}: {items[0]['shop']} · {kind} · сторінка {page}"}
-                for account in login_map[str(shop.id)]:
+                missing={item["order_id"] for item in items if item["order_id"] and item["order_id"] not in direct}
+                for account in (login_map[str(shop.id)] if missing else []):
                     for attempt in range(2):
                         if time.monotonic()>deadline:break
                         try:
                             data=_collect(shop,account,date(2026,1,1),progress,deadline,
-                                          {item["order_id"] for item in items if item["order_id"]})
+                                          missing)
                             break
                         except Exception as exc:
                             print("[negative-hanging] shop=%s attempt=%s error=%s"%(key,attempt+1,type(exc).__name__),flush=True)
                             if attempt<1 and time.monotonic()<deadline:time.sleep(1.5)
                     if data is not None:break
-            if data is None:errors.append(items[0]["shop"])
+            if data is None and not direct:errors.append(items[0]["shop"])
             for row in items:
-                matches=data.get(row["order_id"],[]) if data is not None and row["order_id"] else []
+                hit=direct.get(row["order_id"])
+                matches=([hit] if hit else
+                         data.get(row["order_id"],[]) if data is not None and row["order_id"] else [])
                 # An order may have multiple product reviews: ambiguous matches are not classified.
                 unique={m["rating"] for m in matches}
-                if data is None or not row["order_id"] or row["original_rating"] is None or not matches or len(unique)!=1:
+                if not row["order_id"] or row["original_rating"] is None or not matches or len(unique)!=1:
                     status="не вдалося перевірити"
                     current=None
                 else:
                     current=next(iter(unique))
                     status="оцінку змінено" if current!=row["original_rating"] else "ще не редагували"
-                results.append({**row,"current_rating":current,"status":status})
+                results.append({**row,"current_rating":current,"status":status,"link":hit["link"] if hit else row["link"]})
         counts=dict(Counter(r["status"] for r in results))
         _state={"status":"partial" if errors or counts.get("не вдалося перевірити") else "success",
                 "run_id":run_id,"message":"Перевірку завершено. Google-таблицю не змінено.",
