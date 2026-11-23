@@ -33,6 +33,24 @@ function doPost(e) {
   try { return output_(submit_(JSON.parse(e.postData.contents))); }
   catch (error) { return output_({ok:false,error:String(error.message||error)}); }
 }
+// Only write into a visible, editable, fully empty row.
+// Hidden rows must never receive requests: managers would not see them.
+function nextWritableRow_(sheet, firstRow, width) {
+  const limit=15000;
+  for (let row=Math.max(2,firstRow);row<=limit;row++) {
+    if (row>sheet.getMaxRows()) {
+      // Extend only when necessary; don't unhide or modify existing rows.
+      sheet.insertRowsAfter(sheet.getMaxRows(),Math.min(100,limit-sheet.getMaxRows()));
+    }
+    if (sheet.isRowHiddenByUser(row) || sheet.isRowHiddenByFilter(row)) continue;
+    const range=sheet.getRange(row,1,1,width);
+    if (!range.canEdit()) continue;
+    if (range.getValues()[0].some(value=>value!=='' && value!==null)) continue;
+    return row;
+  }
+  throw Error('Не знайдено вільного видимого рядка з доступом на редагування. Зверніться до власника таблиці.');
+}
+
 function submit_(body) {
   if (!body || typeof body !== 'object') throw Error('Некоректний запит');
   const expected=PropertiesService.getScriptProperties().getProperty('QUICK_REQUESTS_KEY');
@@ -78,14 +96,11 @@ function submit_(body) {
         }
         if (lastFilled>1) break;
       }
-      target=lastFilled+1;
-      if (target>12000) throw Error('Не знайдено вільного рядка у вкладці Тех');
-      if (target>sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(),target-sheet.getMaxRows());
+      target=nextWritableRow_(sheet,lastFilled+1,rowValues.length);
       sheet.getRange(target,1,1,5).setNumberFormat('@').setValues([rowValues]);
     } else {
       // Insert below last occupied row; preserve existing headers and values.
-      target=Math.max(2,sheet.getLastRow()+1);
-      if (target>sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(),target-sheet.getMaxRows());
+      target=nextWritableRow_(sheet,Math.max(2,sheet.getLastRow()+1),rowValues.length);
       sheet.getRange(target,1,1,rowValues.length).setNumberFormat('@').setValues([rowValues]);
     }
     SpreadsheetApp.flush();
