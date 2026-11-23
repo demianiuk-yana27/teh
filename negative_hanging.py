@@ -126,6 +126,25 @@ def _direct_review(opener, order_id, known_link=''):
     rating,company_id=next(iter(unique))
     return {"rating":rating,"link":link,"company_id":company_id}
 
+def _opinion_status(op):
+    """Read explicit Prom moderation/publication status; never infer deletion from stars."""
+    values=[]
+    for key in ("status","statusName","status_name","moderationStatus","moderation_status",
+                "publicationStatus","publication_status","state","statusText","status_text"):
+        value=op.get(key)
+        if isinstance(value,(str,int)):
+            values.append(str(value).lower().replace("_"," ").replace("-"," "))
+        elif isinstance(value,dict):
+            values.extend(str(v).lower() for v in value.values() if isinstance(v,str))
+    joined=" ".join(values)
+    if op.get("isRemovedByBuyer") is True or op.get("isRemovedByClient") is True or op.get("deletedByBuyer") is True:
+        return "відгук видалено"
+    if any(x in joined for x in ("видалено покупцем","удален покупателем","deleted by buyer","removed by buyer","deleted by client","removed by client")):
+        return "відгук видалено"
+    if op.get("isInApprovalPendingStatuses") is True or any(x in joined for x in ("очікує на публікацію","ожидает публикации","pending publication","awaiting publication")):
+        return "очікує публікації"
+    return None
+
 def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
     opener,csrf=_switch(account)
     found=defaultdict(list)
@@ -173,7 +192,7 @@ def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
                 if type(rating) is not int or rating not in range(1,6):
                     continue
                 oid=_order_id(op)
-                if oid:found[oid].append({"rating":rating,"id":rid,"kind":kind})
+                if oid:found[oid].append({"rating":rating,"id":rid,"kind":kind,"opinion_status":_opinion_status(op)})
             # Stop once each requested order has a matching review in both
             # categories scanned so far; do not traverse unrelated history.
             if targets and targets.issubset(found.keys()):
@@ -254,6 +273,10 @@ def _worker(login_map,shop_book,run_id):
                 # An order may have multiple product reviews: ambiguous matches are not classified.
                 if hit and hit.get("deleted"):
                     results.append({**row,"current_rating":None,"status":"відгук видалено","link":hit["link"]})
+                    continue
+                statuses={m.get("opinion_status") for m in matches if m.get("opinion_status")}
+                if statuses=={"відгук видалено"}:
+                    results.append({**row,"current_rating":None,"status":"відгук видалено","link":row["link"]})
                     continue
                 unique={m["rating"] for m in matches}
                 if not row["order_id"] or row["original_rating"] is None or not matches or len(unique)!=1:
