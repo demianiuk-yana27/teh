@@ -1475,7 +1475,7 @@ hanging_js=r'''<script>
    ' · Причини: '+Object.entries(d.direct_reasons||{}).map(([k,v])=>k+' ('+v+')').join(', ');
   el('hangingSummary').textContent+=' · '+diagnostics;
   const fallback=(d.fallback_orders||[]);
-  const fallbackHtml=fallback.length?'<details style="margin-top:14px" open><summary><strong>🔍 Замовлення з резервною перевіркою ('+fallback.length+')</strong></summary><div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'+['Магазин','Замовлення','Менеджер','Вкладка / рядок','Причина'].map(x=>'<th style="text-align:left;padding:8px">'+x+'</th>').join('')+'</tr></thead><tbody>'+fallback.map(r=>'<tr>'+[r.shop,r.order_id,r.manager,r.tab+' / '+r.row,r.reason].map(x=>'<td style="padding:8px;border-top:1px solid #e1e7f0">'+esc(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div></details>':'';
+  const fallbackHtml=fallback.length?'<details style="margin-top:14px" open><summary><strong>🔍 Замовлення з резервною перевіркою ('+fallback.length+')</strong></summary><div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'+['Магазин','Замовлення','Менеджер','Вкладка / рядок','Причина','Поля статусу Prom'].map(x=>'<th style="text-align:left;padding:8px">'+x+'</th>').join('')+'</tr></thead><tbody>'+fallback.map(r=>'<tr>'+[r.shop,r.order_id,r.manager,r.tab+' / '+r.row,r.reason,JSON.stringify(r.prom_status_fields||[])].map(x=>'<td style="padding:8px;border-top:1px solid #e1e7f0">'+esc(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div></details>':'';
 
   el('hangingResults').innerHTML=fallbackHtml+groups.map(([status,title])=>{
    const rows=(d.results||[]).filter(r=>r.status===status);
