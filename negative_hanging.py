@@ -294,6 +294,13 @@ def _worker(login_map,shop_book,run_id):
                 if statuses=={"відгук видалено"}:
                     results.append({**row,"current_rating":None,"status":"відгук видалено","link":row["link"]})
                     continue
+                # An order can have multiple opinions over time. Without the original
+                # opinion ID, a different rating is not proof that it was edited.
+                if not hit and matches and any(m["rating"]!=row["original_rating"] for m in matches):
+                    results.append({**row,"current_rating":None,"status":"не вдалося перевірити",
+                                    "link":row["link"],
+                                    "verification_note":"За замовленням знайдено іншу оцінку, але ID початкового відгуку невідомий"})
+                    continue
                 unique={m["rating"] for m in matches}
                 if not row["order_id"] or row["original_rating"] is None or not matches or len(unique)!=1:
                     status="не вдалося перевірити"
