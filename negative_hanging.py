@@ -1,6 +1,7 @@
 """Read-only review-edit follow-up report for negative-review managers."""
 import re
 import html
+import json
 import urllib.request
 import urllib.error
 import threading
@@ -39,23 +40,27 @@ def _rows():
     return result
 
 
-def _direct_review(opener, order_id):
+def _direct_review(opener, order_id, known_link=''):
     """Resolve a real public opinion URL from the authenticated order page."""
     if not str(order_id).isdigit():
         return None
     url="https://my.prom.ua/cms/order/edit/"+str(order_id)
+    # A link already recorded in the sheet avoids loading the order page.
+    direct_match=re.search(r"https://(?:www\\.)?prom\\.ua/(?:ua/)?opinions/view/[0-9]+",known_link or "")
+    link=direct_match.group(0) if direct_match else None
     headers={"User-Agent":"Mozilla/5.0","Accept":"text/html"}
-    with opener.open(urllib.request.Request(url,headers=headers),timeout=12) as response:
-        if response.geturl().split("?")[0].rstrip("/")!=url:
-            raise ValueError("Prom перенаправив зі сторінки замовлення")
-        raw=response.read(1500001)
-        if len(raw)>1500000:
-            raise ValueError("Завелика сторінка замовлення")
-        page=html.unescape(raw.decode("utf-8","replace")).replace("\\/", "/")
-    paths=set(re.findall(r"/(?:ua/)?opinions/view/[0-9]+",page))
-    if len(paths)!=1:
-        return None
-    link="https://prom.ua"+next(iter(paths))
+    if not link:
+        with opener.open(urllib.request.Request(url,headers=headers),timeout=12) as response:
+            if response.geturl().split("?")[0].rstrip("/")!=url:
+                raise ValueError("order_redirect")
+            raw=response.read(1500001)
+            if len(raw)>1500000:
+                raise ValueError("order_too_large")
+            page=html.unescape(raw.decode("utf-8","replace")).replace("\\/", "/")
+        paths=set(re.findall(r"/(?:ua/)?opinions/view/[0-9]+",page))
+        if len(paths)!=1:
+            raise ValueError("order_opinion_link_missing")
+        link="https://prom.ua"+next(iter(paths))
     with urllib.request.urlopen(urllib.request.Request(link,headers=headers),timeout=12) as response:
         raw=response.read(1000001)
         if len(raw)>1000000:
@@ -70,7 +75,7 @@ def _direct_review(opener, order_id):
     for pattern in patterns:
         ratings.update(int(x) for x in re.findall(pattern,page,re.I|re.S))
     if len(ratings)!=1:
-        return None
+        raise ValueError("review_rating_not_in_structured_data")
     return {"rating":next(iter(ratings)),"link":link}
 
 def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
@@ -141,6 +146,8 @@ def _worker(login_map,shop_book,run_id):
         for row in rows:groups[normalize_name(row["shop"])].append(row)
         results=[]
         errors=[]
+        direct_stats=Counter()
+        direct_reasons=Counter()
         for idx,(key,items) in enumerate(groups.items(),1):
             _state={"status":"running","run_id":run_id,
                     "message":f"Перевіряємо магазин {idx}/{len(groups)}: {items[0]['shop']}"}
@@ -155,12 +162,17 @@ def _worker(login_map,shop_book,run_id):
                         _state={"status":"running","run_id":run_id,
                                 "message":f"Магазин {idx}/{len(groups)}: {items[0]['shop']} · замовлення {n}/{len(items)}"}
                         try:
-                            hit=_direct_review(opener,item["order_id"])
+                            hit=_direct_review(opener,item["order_id"],item["link"])
                             if hit:
                                 direct[item["order_id"]]=hit
+                                direct_stats["resolved"]+=1
                         except (ValueError,urllib.error.HTTPError,urllib.error.URLError,TimeoutError) as exc:
-                            print("[negative-hanging] direct order=%s error=%s"%(item["order_id"],type(exc).__name__),flush=True)
+                            direct_stats["fallback"]+=1
+                            reason=str(exc) if isinstance(exc,ValueError) else type(exc).__name__
+                            direct_reasons[reason[:70]]+=1
+                            print("[negative-hanging] direct order=%s reason=%s"%(item["order_id"],reason[:70]),flush=True)
                 except Exception as exc:
+                    direct_reasons["shop_auth_"+type(exc).__name__]+=1
                     print("[negative-hanging] direct shop=%s error=%s"%(key,type(exc).__name__),flush=True)
                 deadline=time.monotonic()+75
                 def progress(kind,page):
@@ -197,7 +209,10 @@ def _worker(login_map,shop_book,run_id):
         _state={"status":"partial" if errors or counts.get("не вдалося перевірити") else "success",
                 "run_id":run_id,"message":"Перевірку завершено. Google-таблицю не змінено.",
                 "total":len(results),"counts":counts,"results":results,
-                "unavailable_shops":errors}
+                "unavailable_shops":errors,
+                "direct_resolved":direct_stats["resolved"],
+                "direct_fallback":direct_stats["fallback"],
+                "direct_reasons":dict(direct_reasons)}
     except Exception as exc:
         _state={"status":"error","run_id":run_id,"message":str(exc)[:250]}
     finally:_lock.release()
