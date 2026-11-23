@@ -1401,3 +1401,55 @@ s = s.replace('</body>',review_analytics_js+'</body>',1)
 
 p.write_text(s, encoding='utf-8')
 print('Cloudflare frontend validated; training, database and role access views are ready.')
+# Replace the old read-only review preview with order-date verification and Sheets updates.
+s = s.replace(
+    'Відгуки про компанію на Prom за датою залишення. Тестовий перегляд без змін у робочій таблиці.',
+    'Оберіть дати створення замовлень. Перевіряємо відгуки на Prom та проставляємо «є відгук» у таблиці.',
+    1,
+)
+s = s.replace('onclick="runCallReviewPreview()">🔎 Перевірити відгуки (без запису)</button>',
+              'onclick="runCallReviewCheck()">🔎 Перевірити та оновити таблицю</button>',1)
+check_js = r'''<script>
+(function(){
+ const el=id=>document.getElementById(id);
+ const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ window.runCallReviewCheck=async function(){
+  const since=el('callReviewSince').value,until=el('callReviewUntil').value;
+  if(!since||!until||since>until){el('callReviewStatus').textContent='❌ Оберіть коректний діапазон дат.';return}
+  if(!confirm('Перевірити замовлення за вибраний період та проставити «є відгук» у Google-таблиці лише для підтверджених відгуків?'))return;
+  const btn=document.querySelector('#call-review-check button.run');
+  btn.disabled=true;
+  el('callReviewResult').textContent='';
+  try{
+   const response=await fetch('/api/call-reviews/check/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({since,until})});
+   const started=await response.json();
+   if(!response.ok||started.status!=='started')throw Error(started.error||'Не вдалося запустити перевірку');
+   const began=Date.now();
+   while(Date.now()-began<900000){
+    await new Promise(resolve=>setTimeout(resolve,3000));
+    const poll=await fetch('/api/call-reviews/check/status',{cache:'no-store'});
+    if(!poll.ok)throw Error('Не вдалося отримати результат');
+    const d=await poll.json();
+    if(d.run_id!==started.run_id)continue;
+    el('callReviewStatus').textContent='⏳ '+(d.message||'Перевіряємо…');
+    if(d.status==='running')continue;
+    if(d.status==='error')throw Error(d.message||'Помилка перевірки');
+    el('callReviewStatus').textContent=(d.status==='success'?'✅ ':'⚠️ ')+d.message;
+    el('callReviewResult').innerHTML='<strong>Замовлень: '+safe(d.total_orders)+'</strong>'+
+     '\nЗнайдено відгуків: '+safe(d.matched)+
+     '\nВже було позначено: '+safe(d.already_marked)+
+     '\nОновлено рядків: '+safe(d.written)+
+     '\nНе перевірено: '+safe(d.unverified)+
+     '\nПропущено при записі: '+safe(d.skipped)+
+     '\nПомилки магазинів: '+safe((d.unavailable_shops||[]).join(', ')||'немає')+
+     '\nНемає доступу: '+safe((d.unmapped_shops||[]).join(', ')||'немає')+
+     '\nПомилки запису у вкладках: '+safe((d.write_error_tabs||[]).join(', ')||'немає');
+    return;
+   }
+   throw Error('Перевірка триває надто довго. Перевірте стан перед повторним запуском.');
+  }catch(e){el('callReviewStatus').textContent='❌ '+e.message}
+  finally{btn.disabled=false}
+ };
+})();
+</script>'''
+s = s.replace('</body>',check_js+'</body>',1)
