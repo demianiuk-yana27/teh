@@ -196,6 +196,7 @@ def _worker(login_map,shop_book,run_id):
         errors=[]
         direct_stats=Counter()
         direct_reasons=Counter()
+        fallback_orders=[]
         for idx,(key,items) in enumerate(groups.items(),1):
             _state={"status":"running","run_id":run_id,
                     "message":f"Перевіряємо магазин {idx}/{len(groups)}: {items[0]['shop']}"}
@@ -218,6 +219,10 @@ def _worker(login_map,shop_book,run_id):
                                 direct_stats["resolved"]+=1
                         except (ValueError,urllib.error.HTTPError,urllib.error.URLError,TimeoutError) as exc:
                             direct_stats["fallback"]+=1
+                            fallback_orders.append({"manager":item["manager"],"shop":item["shop"],
+                                                    "order_id":item["order_id"],"tab":item["tab"],
+                                                    "row":item["row"],"reason":str(exc)[:100] if isinstance(exc,ValueError) else type(exc).__name__,
+                                                    "link":item["link"]})
                             reason=str(exc) if isinstance(exc,ValueError) else type(exc).__name__
                             direct_reasons[reason[:70]]+=1
                             print("[negative-hanging] direct order=%s reason=%s"%(item["order_id"],reason[:70]),flush=True)
@@ -265,7 +270,8 @@ def _worker(login_map,shop_book,run_id):
                 "unavailable_shops":errors,
                 "direct_resolved":direct_stats["resolved"],
                 "direct_fallback":direct_stats["fallback"],
-                "direct_reasons":dict(direct_reasons)}
+                "direct_reasons":dict(direct_reasons),
+                "fallback_orders":fallback_orders}
     except Exception as exc:
         _state={"status":"error","run_id":run_id,"message":str(exc)[:250]}
     finally:_lock.release()
