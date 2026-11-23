@@ -3541,3 +3541,7 @@ def buyer_questions_web_research():
 # Read-only analytics of company reviews 30 days after order creation.
 from call_review_analytics import register as _register_call_review_analytics
 _register_call_review_analytics(app, _positive_login_map)
+
+# Date-scoped review verification with confirmed Sheets updates.
+from call_review_check import register as _register_call_review_check
+_register_call_review_check(app, _positive_login_map)
