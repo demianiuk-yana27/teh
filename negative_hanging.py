@@ -63,8 +63,8 @@ def _direct_review(opener, order_id):
         page=html.unescape(raw.decode("utf-8","replace"))
     # Require an unambiguous review-specific structured rating; never guess from stars.
     patterns=(
-        r'"reviewRating"\\s*:\\s*\\{[^{}]{0,400}?"ratingValue"\\s*:\\s*"?([1-5])"?',
-        r'"@type"\\s*:\\s*"Review"[^{}]{0,1500}?"ratingValue"\\s*:\\s*"?([1-5])"?',
+        r'"reviewRating"\s*:\s*\{[^{}]{0,400}?"ratingValue"\s*:\s*"?([1-5])"?',
+        r'"@type"\s*:\s*"Review"[^{}]{0,1500}?"ratingValue"\s*:\s*"?([1-5])"?',
     )
     ratings=set()
     for pattern in patterns:
