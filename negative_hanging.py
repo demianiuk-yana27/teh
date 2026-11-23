@@ -73,7 +73,13 @@ def _direct_review(opener, order_id, known_link=''):
         if len(links)!=1:
             raise ValueError("context_opinion_link_missing_or_ambiguous")
         link=next(iter(links))
-    with urllib.request.urlopen(urllib.request.Request(link,headers={"User-Agent":"Mozilla/5.0"}),timeout=12) as response:
+    try:
+        response=urllib.request.urlopen(urllib.request.Request(link,headers={"User-Agent":"Mozilla/5.0"}),timeout=12)
+    except urllib.error.HTTPError as exc:
+        if exc.code in (404,410):
+            return {"rating":None,"link":link,"deleted":True}
+        raise
+    with response:
         raw=response.read(1000001)
         if len(raw)>1000000:
             raise ValueError("review_too_large")
@@ -225,6 +231,9 @@ def _worker(login_map,shop_book,run_id):
                 matches=([hit] if hit else
                          data.get(row["order_id"],[]) if data is not None and row["order_id"] else [])
                 # An order may have multiple product reviews: ambiguous matches are not classified.
+                if hit and hit.get("deleted"):
+                    results.append({**row,"current_rating":None,"status":"відгук видалено","link":hit["link"]})
+                    continue
                 unique={m["rating"] for m in matches}
                 if not row["order_id"] or row["original_rating"] is None or not matches or len(unique)!=1:
                     status="не вдалося перевірити"
