@@ -1452,5 +1452,58 @@ check_js = r'''<script>
 </script>'''
 s = s.replace('</body>',check_js+'</body>',1)
 
+
+# Negative reviews follow-up: read-only manager-facing report.
+s=s.replace('<div class="sub" data-view="negative-new-shops">• Нові магазини</div>',
+            '<div class="sub" data-view="negative-new-shops">• Нові магазини</div><div class="sub" data-view="negative-hanging">• Висяки</div>',1)
+hanging_html='''<section class="view" id="negative-hanging">
+<div class="pagehead"><div class="pageicon">⏳</div><div><h2>Негативні відгуки — Висяки</h2>
+<p>Перевіряємо відгуки зі статусом «Перевірити чи редагували» та показуємо зміни оцінок за менеджерами. Таблиця не змінюється.</p></div></div>
+<div class="card"><button class="run" id="hangingRun" onclick="runNegativeHanging()">🔎 Перевірити висяки</button>
+<div class="status" id="hangingStatus">Готово до перевірки.</div>
+<div id="hangingSummary" style="margin-top:12px"></div>
+<div id="hangingResults" style="margin-top:12px"></div></div></section>'''
+s=s.replace('<section class="view" id="negative-reviews">',hanging_html+'<section class="view" id="negative-reviews">',1)
+hanging_js=r'''<script>
+(function(){
+ const el=id=>document.getElementById(id);
+ const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\u0027':'&#39;'}[c]));
+ function render(d){
+  const groups=[['оцінку змінено','✅ Оцінку змінено'],['ще не редагували','⏳ Ще не редагували'],['не вдалося перевірити','⚠️ Не вдалося перевірити']];
+  el('hangingSummary').textContent='Усього: '+d.total+' · Змінено: '+(d.counts?.['оцінку змінено']||0)+' · Не редагували: '+(d.counts?.['ще не редагували']||0)+' · Не перевірено: '+(d.counts?.['не вдалося перевірити']||0);
+  el('hangingResults').innerHTML=groups.map(([status,title])=>{
+   const rows=(d.results||[]).filter(r=>r.status===status);
+   if(!rows.length)return '';
+   return '<h3 style="margin:20px 0 10px">'+title+' ('+rows.length+')</h3><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'+['Менеджер','Магазин','Замовлення','Було','Зараз','Вкладка / рядок','Посилання'].map(x=>'<th style="padding:8px;text-align:left">'+x+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+[r.manager,r.shop,r.order_id||'—',r.original_rating==null?'—':r.original_rating+'/5',r.current_rating==null?'—':r.current_rating+'/5',r.tab+' / '+r.row].map(x=>'<td style="padding:8px;border-top:1px solid #e1e7f0">'+esc(x)+'</td>').join('')+'<td style="padding:8px;border-top:1px solid #e1e7f0">'+(r.link?'<a href="'+esc(r.link)+'" target="_blank" rel="noopener noreferrer">Відгук</a>':'—')+'</td></tr>').join('')+'</tbody></table></div>';
+  }).join('');
+ }
+ window.runNegativeHanging=async function(){
+  const button=el('hangingRun');button.disabled=true;
+  el('hangingSummary').textContent='';el('hangingResults').innerHTML='';
+  try{
+   const response=await fetch('/api/negative/hanging/start',{method:'POST'});
+   const start=await response.json();
+   if(!response.ok||start.status!=='started')throw Error(start.error||'Не вдалося запустити');
+   const began=Date.now();
+   while(Date.now()-began<900000){
+    await new Promise(resolve=>setTimeout(resolve,3000));
+    const response=await fetch('/api/negative/hanging/status',{cache:'no-store'});
+    if(!response.ok)throw Error('Не вдалося отримати стан перевірки');
+    const d=await response.json();
+    if(d.run_id!==start.run_id)continue;
+    el('hangingStatus').textContent='⏳ '+d.message;
+    if(d.status==='running')continue;
+    if(d.status==='error')throw Error(d.message);
+    el('hangingStatus').textContent=(d.status==='success'?'✅ ':'⚠️ ')+d.message;
+    render(d);return;
+   }
+   throw Error('Час очікування вичерпано. Перевірте стан перед повторним запуском.');
+  }catch(e){el('hangingStatus').textContent='❌ '+e.message}
+  finally{button.disabled=false}
+ };
+})();
+</script>'''
+s=s.replace('</body>',hanging_js+'</body>',1)
+
 p.write_text(s, encoding='utf-8')
 print('Cloudflare frontend validated; training, database and role access views are ready.')
