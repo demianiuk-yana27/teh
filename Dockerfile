@@ -4,6 +4,7 @@ FROM python:3.10-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     chromium-driver \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -15,5 +16,8 @@ COPY . .
 
 ENV MALLOC_ARENA_MAX=1
 ENV PYTHONUNBUFFERED=1
+ENV TZ=Europe/Kyiv
 
-CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:$PORT --timeout 600"]
+# One worker keeps the in-process lock meaningful when Cloud Run
+# is configured with max-instances=1 and concurrency=1.
+CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 1 --timeout 3600"]
