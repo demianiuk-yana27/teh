@@ -1474,7 +1474,10 @@ hanging_js=r'''<script>
   const diagnostics='Прямо перевірено: '+(d.direct_resolved||0)+' · Резервна перевірка: '+(d.direct_fallback||0)+
    ' · Причини: '+Object.entries(d.direct_reasons||{}).map(([k,v])=>k+' ('+v+')').join(', ');
   el('hangingSummary').textContent+=' · '+diagnostics;
-  el('hangingResults').innerHTML=groups.map(([status,title])=>{
+  const fallback=(d.fallback_orders||[]);
+  const fallbackHtml=fallback.length?'<details style="margin-top:14px" open><summary><strong>🔍 Замовлення з резервною перевіркою ('+fallback.length+')</strong></summary><div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'+['Магазин','Замовлення','Менеджер','Вкладка / рядок','Причина'].map(x=>'<th style="text-align:left;padding:8px">'+x+'</th>').join('')+'</tr></thead><tbody>'+fallback.map(r=>'<tr>'+[r.shop,r.order_id,r.manager,r.tab+' / '+r.row,r.reason].map(x=>'<td style="padding:8px;border-top:1px solid #e1e7f0">'+esc(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div></details>':'';
+
+  el('hangingResults').innerHTML=fallbackHtml+groups.map(([status,title])=>{
    const rows=(d.results||[]).filter(r=>r.status===status);
    if(!rows.length)return '';
    return '<h3 style="margin:20px 0 10px">'+title+' ('+rows.length+')</h3><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'+['Менеджер','Магазин','Замовлення','Було','Зараз','Вкладка / рядок','Посилання'].map(x=>'<th style="padding:8px;text-align:left">'+x+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+[r.manager,r.shop,r.order_id||'—',r.original_rating==null?'—':r.original_rating+'/5',r.current_rating==null?'—':r.current_rating+'/5',r.tab+' / '+r.row].map(x=>'<td style="padding:8px;border-top:1px solid #e1e7f0">'+esc(x)+'</td>').join('')+'<td style="padding:8px;border-top:1px solid #e1e7f0">'+(r.link?'<a href="'+esc(r.link)+'" target="_blank" rel="noopener noreferrer">Відгук</a>':'—')+'</td></tr>').join('')+'</tbody></table></div>';
