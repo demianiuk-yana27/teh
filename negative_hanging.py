@@ -35,7 +35,7 @@ def _rows():
                            "link":str(row[11]).strip() if str(row[11]).strip().startswith("https://") else ""})
     return result
 
-def _collect(shop,account,earliest):
+def _collect(shop,account,earliest,progress=None,deadline=None):
     opener,csrf=_switch(account)
     found=defaultdict(list)
     for kind in ("company","product"):
@@ -43,6 +43,9 @@ def _collect(shop,account,earliest):
         ordered=True
         seen=set()
         for page in range(1,201):
+            if deadline and time.monotonic()>deadline:
+                raise TimeoutError("Ліміт часу перевірки магазину; результат не підтверджено")
+            if progress:progress(kind,page)
             if kind=="company":
                 data=_read(opener,"https://my.prom.ua/cms/opinions/company/list",
                            {"filters":[],"page":page,"pageType":"portal","perPage":20,
@@ -101,14 +104,20 @@ def _worker(login_map,shop_book,run_id):
             shop=directory.get(key)
             data=None
             if shop and login_map.get(str(shop.id)):
+                deadline=time.monotonic()+75
+                def progress(kind,page):
+                    global _state
+                    _state={"status":"running","run_id":run_id,
+                            "message":f"Магазин {idx}/{len(groups)}: {items[0]['shop']} · {kind} · сторінка {page}"}
                 for account in login_map[str(shop.id)]:
-                    for attempt in range(3):
+                    for attempt in range(2):
+                        if time.monotonic()>deadline:break
                         try:
-                            data=_collect(shop,account,date(2026,1,1))
+                            data=_collect(shop,account,date(2026,1,1),progress,deadline)
                             break
                         except Exception as exc:
                             print("[negative-hanging] shop=%s attempt=%s error=%s"%(key,attempt+1,type(exc).__name__),flush=True)
-                            if attempt<2:time.sleep(1.5*(attempt+1))
+                            if attempt<1 and time.monotonic()<deadline:time.sleep(1.5)
                     if data is not None:break
             if data is None:errors.append(items[0]["shop"])
             for row in items:
