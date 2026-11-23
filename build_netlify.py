@@ -1471,6 +1471,9 @@ hanging_js=r'''<script>
  function render(d){
   const groups=[['оцінку змінено','✅ Оцінку змінено'],['ще не редагували','⏳ Ще не редагували'],['не вдалося перевірити','⚠️ Не вдалося перевірити']];
   el('hangingSummary').textContent='Усього: '+d.total+' · Змінено: '+(d.counts?.['оцінку змінено']||0)+' · Не редагували: '+(d.counts?.['ще не редагували']||0)+' · Не перевірено: '+(d.counts?.['не вдалося перевірити']||0);
+  const diagnostics='Прямо перевірено: '+(d.direct_resolved||0)+' · Резервна перевірка: '+(d.direct_fallback||0)+
+   ' · Причини: '+Object.entries(d.direct_reasons||{}).map(([k,v])=>k+' ('+v+')').join(', ');
+  el('hangingSummary').textContent+=' · '+diagnostics;
   el('hangingResults').innerHTML=groups.map(([status,title])=>{
    const rows=(d.results||[]).filter(r=>r.status===status);
    if(!rows.length)return '';
