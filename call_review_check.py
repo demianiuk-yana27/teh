@@ -73,8 +73,9 @@ def _worker(start,end,login_map,run_id):
                 matched+=1
                 if item["label"]=="є відгук":
                     already+=1
-                else:
+                elif not item["label"] or item["label"]=="без мітки":
                     candidates[item["tab"]].append(item)
+                # Preserve every manager-entered call status.
         book=get_client().open_by_key(CALL_BOOK)
         written=0
         skipped=0
@@ -94,8 +95,10 @@ def _worker(start,end,login_map,run_id):
                         normalize_order(cells[5])!=item["order"]):
                         skipped+=1
                         continue
-                    if normalize_name(cells[6])=="є відгук":
-                        already+=1
+                    # Only empty cells are eligible. Never overwrite a manager's label,
+                    # including a label entered after the initial sheet read.
+                    if str(cells[6]).strip():
+                        skipped+=1
                         continue
                     sheet.update_acell(f"I{row}","є відгук")
                     written+=1
