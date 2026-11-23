@@ -35,9 +35,10 @@ def _rows():
                            "link":str(row[11]).strip() if str(row[11]).strip().startswith("https://") else ""})
     return result
 
-def _collect(shop,account,earliest,progress=None,deadline=None):
+def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
     opener,csrf=_switch(account)
     found=defaultdict(list)
+    targets=set(targets or ())
     for kind in ("company","product"):
         previous=None
         ordered=True
@@ -82,6 +83,10 @@ def _collect(shop,account,earliest,progress=None,deadline=None):
                     continue
                 oid=_order_id(op)
                 if oid:found[oid].append({"rating":rating,"id":rid,"kind":kind})
+            # Stop once each requested order has a matching review in both
+            # categories scanned so far; do not traverse unrelated history.
+            if targets and targets.issubset(found.keys()):
+                return found
             pages=int(pagination.get("num_pages") or 1)
             if page>=pages or (ordered and dates and max(dates)<earliest):break
             if not opinions:break
@@ -113,7 +118,8 @@ def _worker(login_map,shop_book,run_id):
                     for attempt in range(2):
                         if time.monotonic()>deadline:break
                         try:
-                            data=_collect(shop,account,date(2026,1,1),progress,deadline)
+                            data=_collect(shop,account,date(2026,1,1),progress,deadline,
+                                          {item["order_id"] for item in items if item["order_id"]})
                             break
                         except Exception as exc:
                             print("[negative-hanging] shop=%s attempt=%s error=%s"%(key,attempt+1,type(exc).__name__),flush=True)
