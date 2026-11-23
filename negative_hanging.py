@@ -192,7 +192,15 @@ def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
                 if type(rating) is not int or rating not in range(1,6):
                     continue
                 oid=_order_id(op)
-                if oid:found[oid].append({"rating":rating,"id":rid,"kind":kind,"opinion_status":_opinion_status(op)})
+                if oid:
+                    # Safe diagnostic: only status-related fields, never buyer details.
+                    status_fields={k:str(v)[:100] for k,v in op.items()
+                                   if any(token in k.lower() for token in
+                                          ("status","remov","delet","publish","approv","moderat","state"))
+                                   and isinstance(v,(str,int,bool,dict))}
+                    found[oid].append({"rating":rating,"id":rid,"kind":kind,
+                                       "opinion_status":_opinion_status(op),
+                                       "status_fields":status_fields})
             # Stop once each requested order has a matching review in both
             # categories scanned so far; do not traverse unrelated history.
             if targets and targets.issubset(found.keys()):
@@ -268,6 +276,13 @@ def _worker(login_map,shop_book,run_id):
             if data is None and not direct:errors.append(items[0]["shop"])
             for row in items:
                 hit=direct.get(row["order_id"])
+                if not hit and data is not None and row["order_id"]:
+                    for diagnostic in fallback_orders:
+                        if diagnostic["order_id"]==row["order_id"] and diagnostic["shop"]==row["shop"]:
+                            diagnostic["prom_status_fields"]=[
+                                {"review_id":m.get("id"),"kind":m.get("kind"),
+                                 "fields":m.get("status_fields",{})}
+                                for m in data.get(row["order_id"],[])]
                 matches=([hit] if hit else
                          data.get(row["order_id"],[]) if data is not None and row["order_id"] else [])
                 # An order may have multiple product reviews: ambiguous matches are not classified.
