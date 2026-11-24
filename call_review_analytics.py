@@ -15,7 +15,20 @@ EXCLUDED={"смарт"}
 EXCLUDED_SHOPS={"bybka_shop"}
 LABELS=("так","нб","ні","є відгук","проста посилка","автовідповідач","смарт","нб2")
 # Names used by call-center staff vs names in the Prom shop directory.
-SHOP_ALIASES={"homstera (був market)":"homstera","easyshop-дроп":"easyshop","bybka_shop":"bybka","toyvo - дроп":"toyvo","botreba -дроп":"botreba"}
+SHOP_ALIASES={
+    "homstera (був market)":"homstera",
+    "easyshop-дроп":"easyshop",
+    "bybka_shop":"bybka",
+    "toyvo - дроп":"toyvo",
+    "botreba -дроп":"botreba",
+    "botreba дроп":"botreba",
+    "свій":"свій інтернет магазин",
+    "borniatco":"borniatco🥇",
+    "trendomania -дроп":"trendomania",
+    "megashop -дроп":"megashop",
+    "все для вас":"все для вас",
+}
+
 # The supplied sign-to account 44052893 is already mapped to company 3926531.
 BORNIATCO_COMPANY_ID="3926531"
 # Confirmed existing account mapping: sign-to 42325352 -> company 4093192.
