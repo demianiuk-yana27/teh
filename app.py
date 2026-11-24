@@ -1159,8 +1159,23 @@ def process_three(selected_date=None):
                 "Дроп" if name in CALL_GROUP_DROP else "Наші"
             )
         )
+        # Read the authoritative Prom names from the company's operational directory.
+        # This also keeps new names in sync without editing the CRM export code.
+        shop_rows = get_gspread_client().open_by_key(
+            "1B8aq-wNhaCoDAGm_nbOu36GNQp8y0ovAkYoO7pjvxMA"
+        ).worksheet("Продзвін - відгуки").get("A:H")
+        prom_names = {}
+        for shop_row in shop_rows[1:]:
+            cells = (shop_row + [""] * 8)[:8]
+            for column in (0, 2, 4, 6):
+                name = str(cells[column]).strip()
+                if name:
+                    prom_names[name.casefold()] = name
         filtered_df["Магазин"] = filtered_df["Магазин"].map(
-            lambda value: CALL_PROM_NAME_ALIASES.get(str(value).strip().casefold(), str(value).strip())
+            lambda value: (
+                prom_names.get(CALL_PROM_NAME_ALIASES.get(str(value).strip().casefold(), str(value).strip()).casefold())
+                or CALL_PROM_NAME_ALIASES.get(str(value).strip().casefold(), str(value).strip())
+            )
         )
         filtered_df = filtered_df.sort_values(by="Магазин", ascending=True)
 
