@@ -130,7 +130,7 @@ def _write_daily(start,end,orders,reviewed,run_id):
             ids=[x for x in (item["order"],item["external_id"]) if x]
             if not ids or shop not in reviewed:
                 c["unverified"]+=1
-            elif label!="є відгук" and any(d>=item["created"] for x in ids for d in reviewed[shop].get(x,[])):
+            elif any(d>=item["created"] for x in ids for d in reviewed[shop].get(x,[])):
                 c["after"]+=1
     updates=[]
     incomplete=[]
