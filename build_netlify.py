@@ -1341,6 +1341,7 @@ review_analytics_html = '''<section class="view" id="call-review-analytics">
 <div class="card"><div class="control"><label>Дата створення замовлень — від</label><input type="date" id="callAnalyticsSince"></div>
 <div class="control"><label>До</label><input type="date" id="callAnalyticsUntil"></div>
 <button class="run" id="callAnalyticsRun" onclick="runCallReviewAnalytics()">📊 Запустити аналітику</button>
+<button class="run" id="callAnalyticsWrite" onclick="runCallReviewAnalytics(true)">📝 Записати аналітику в таблицю</button>
 <div class="status" id="callAnalyticsStatus">Готово до запуску.</div>
 <div id="callAnalyticsResults" style="margin-top:16px"></div></div></section>'''
 s = s.replace('<div class="sub" data-view="call-review-check">• Перевірка відгуків</div>',
@@ -1371,12 +1372,14 @@ review_analytics_js = r'''<script>
   '<h3 style="margin:20px 0 10px">Діагностика зіставлення за магазинами</h3><div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'+['Магазин','ID замовлень у таблиці','Відгуків Prom','Відгуків із ID','Без ID','Збігів ID'].map(t=>'<th style="padding:8px;text-align:left">'+esc(t)+'</th>').join('')+'</tr></thead><tbody>'+Object.entries(data.diagnostics_by_shop||{}).map(([k,v])=>'<tr>'+[k,v.selected_order_ids,v.prom_reviews_in_period,v.prom_reviews_with_order_id,v.prom_reviews_without_order_id,v.unique_matching_order_ids].map(x=>'<td style="padding:8px;border-top:1px solid #e1e7f0">'+esc(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'+
   '<p style="font-size:12px;color:#65758b">'+esc(data.note||'')+'</p>';
  }
- window.runCallReviewAnalytics=async function(){
+ window.runCallReviewAnalytics=async function(write=false){
   const since=$('callAnalyticsSince').value,until=$('callAnalyticsUntil').value,button=$('callAnalyticsRun'),status=$('callAnalyticsStatus');
   if(!since||!until||since>until){status.textContent='Виберіть правильний період.';return;}
+  if(write&&!confirm('Оновити аналітику B–L за вибрані дати у вкладці Аналітика нова?'))return;
+  const writeButton=$('callAnalyticsWrite');writeButton.disabled=true;
   button.disabled=true;$('callAnalyticsResults').innerHTML='';status.textContent='Запускаємо…';
   try{
-   const response=await fetch('/api/call-reviews/analytics/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({since,until})});
+   const response=await fetch('/api/call-reviews/analytics/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({since,until,write})});
    const data=await response.json();if(!response.ok)throw Error(data.error||data.message||'Помилка запуску');
    let attempts=0;
    const poll=async()=>{
@@ -1387,13 +1390,13 @@ review_analytics_js = r'''<script>
      if(state.run_id!==data.run_id)throw Error('Стан іншого запуску');
      status.textContent=state.message||state.status;
      if(state.status==='running'&&attempts++<600){setTimeout(poll,3000);return;}
-     button.disabled=false;
+     button.disabled=false;writeButton.disabled=false;
      if(state.summary)render(state);
      if(state.status==='error')status.textContent='❌ '+state.message;
-     if(state.status==='partial')status.textContent='⚠️ Частковий результат. Перевірте неповні магазини та розбіжності.';
-    }catch(e){button.disabled=false;status.textContent='⚠️ '+e.message+' — перевірте статус перед повторним запуском';}
+     if(state.status==='partial'&&!write)status.textContent='⚠️ Частковий результат. Перевірте неповні магазини та розбіжності.';
+    }catch(e){button.disabled=false;writeButton.disabled=false;status.textContent='⚠️ '+e.message+' — перевірте статус перед повторним запуском';}
    };poll();
-  }catch(e){button.disabled=false;status.textContent='❌ '+e.message;}
+  }catch(e){button.disabled=false;writeButton.disabled=false;status.textContent='❌ '+e.message;}
  };
 })();
 </script>'''
