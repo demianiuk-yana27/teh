@@ -115,12 +115,12 @@ def _reviews(shop,account,start,end,current=False):
             return found,inspected,missing_order_ids
     raise RuntimeError("Перевищено 200 сторінок Prom")
 
-def _write_daily(start,end,orders,reviewed,run_id):
-    sheet=get_client().open_by_key("1Ci_AoA6PBtlglbY_CY4d16tRX-7rxZ8_1YbEFft_hGs").worksheet("Аналітика нова")
-    dates=sheet.col_values(1)
+def _write_daily(start,end,orders,reviewed,run_id,mode):
+    sheet=get_client().open_by_key("1Ci_AoA6PBtlglbY_CY4d16tRX-7rxZ8_1YbEFft_hGs").worksheet("Аналітика 2.0")
+    dates=sheet.col_values(15)
     positions=defaultdict(list)
     for number,value in enumerate(dates,1):
-        if number<4:continue
+        if number<3:continue
         raw=str(value).strip()
         parsed=None
         for fmt in ("%d.%m.%Y","%d.%m.%y","%Y-%m-%d","%d.%m"):
@@ -142,6 +142,7 @@ def _write_daily(start,end,orders,reviewed,run_id):
             c["negative"]+=label in ("ні","проста посилка")
             c["agreed"]+=label=="так"
             ids=[x for x in (item["order"],item["external_id"]) if x]
+            if mode=="labels":continue
             if not ids or shop not in reviewed:
                 c["unverified"]+=1
                 reason="магазин не перевірено" if shop not in reviewed else "немає ID замовлення"
@@ -153,7 +154,7 @@ def _write_daily(start,end,orders,reviewed,run_id):
     day=start
     while day<=end:
         if len(positions[day])!=1:
-            raise ValueError("У колонці A немає єдиного рядка для "+day.isoformat())
+            raise ValueError("У колонці O немає єдиного рядка для "+day.isoformat())
         row=positions[day][0]
         c=daily[day]
         n=c["orders"]
@@ -163,18 +164,24 @@ def _write_daily(start,end,orders,reviewed,run_id):
         if c["unverified"]:
             incomplete.append(day.isoformat()+": "+str(c["unverified"])+" неперевірених; "+
                               ", ".join(k+" — "+str(v) for k,v in sorted(missing_by_day[day].items())))
-        values.extend([c["after"],pct(c["after"])])
-        updates.append({"range":f"B{row}:L{row}","values":[values]})
+        if mode=="labels":
+            updates.append({"range":f"N{row}","values":[[n]]})
+            updates.append({"range":f"P{row}:W{row}","values":[values[1:]]})
+        else:
+            updates.append({"range":f"X{row}:Y{row}","values":[[c["after"],pct(c["after"])]]})
         day+=timedelta(days=1)
     sheet.batch_update(updates,value_input_option="USER_ENTERED")
     return {"status":"partial" if incomplete else "success","run_id":run_id,
-            "message":"Записано аналітику за "+str(len(updates))+" дн. "+("Колонки B–L оновлено. ⚠️ K–L містять часткові дані: "+"; ".join(incomplete) if incomplete else "Колонки B–L оновлено."),
-            "written_days":len(updates),"incomplete_dates":incomplete}
+            "message":"Записано аналітику за вибрані дати. "+("N, P–W оновлено." if mode=="labels" else "X–Y оновлено.")+(" ⚠️ Часткові дані: "+"; ".join(incomplete) if incomplete else ""),
+            "written_days":(end-start).days+1,"incomplete_dates":incomplete}
 
-def _worker(start,end,login_map,run_id,write=False):
+def _worker(start,end,login_map,run_id,write=False,mode=None):
     global _state
     try:
         orders,stats,good_choice_audit=_orders(start,end,write)
+        if mode=="labels":
+            _state=_write_daily(start,end,orders,{},run_id,mode)
+            return
         shops=_shops()
         selected_shops={shop for shop,_ in orders}
         reviewed={}
@@ -228,7 +235,7 @@ def _worker(start,end,login_map,run_id,write=False):
                     print("[review-analytics] failed shop=%s error=%s"%(shop,type(exc).__name__),flush=True)
             if shop not in reviewed:failures.append(shop)
         if write:
-            _state=_write_daily(start,end,orders,reviewed,run_id)
+            _state=_write_daily(start,end,orders,reviewed,run_id,"reviews")
             return
         total_matches=sum(v["unique_matching_order_ids"] for v in diagnostics.values())
         suspicious_zero=bool(sum(v["prom_reviews_in_period"] for v in diagnostics.values()) and total_matches==0)
@@ -305,8 +312,10 @@ def register(app,login_map_fn):
         run_id=uuid.uuid4().hex
         _state={"status":"running","run_id":run_id,"message":"Зчитуємо таблиці продзвону…"}
         try:
-            mapping=login_map_fn()
-            threading.Thread(target=_worker,args=(start,end,mapping,run_id,body.get('write') is True),daemon=True).start()
+            mode=body.get("mode")
+            write=mode in ("labels","reviews") or body.get("write") is True
+            mapping={} if mode=="labels" else login_map_fn()
+            threading.Thread(target=_worker,args=(start,end,mapping,run_id,write,mode),daemon=True).start()
         except Exception:
             _lock.release()
             raise
