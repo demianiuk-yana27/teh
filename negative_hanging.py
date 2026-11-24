@@ -160,7 +160,7 @@ def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
     opener,csrf=_switch(account)
     found=defaultdict(list)
     targets=set(targets or ())
-    for kind in ("company","product"):
+    for kind in ("company_negative","company","product"):
         previous=None
         ordered=True
         seen=set()
@@ -168,7 +168,19 @@ def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
             if deadline and time.monotonic()>deadline:
                 raise TimeoutError("Ліміт часу перевірки магазину; результат не підтверджено")
             if progress:progress(kind,page)
-            if kind=="company":
+            if kind=="company_negative":
+                try:
+                    data=_read(opener,"https://my.prom.ua/cms/opinions/company/context"
+                               "?opinion_rating=negative&filterSetId=temporary_filter_set_id&page=%d&perPage=20"%page)
+                except Exception:
+                    break
+                ctx=data.get("context") or data
+                opinions=ctx.get("opinions")
+                pagination=ctx.get("pagination")
+                if not isinstance(opinions,list) or not isinstance(pagination,dict):
+                    break
+                if not opinions:break
+            elif kind=="company":
                 data=_read(opener,"https://my.prom.ua/cms/opinions/company/list",
                            {"filters":[],"page":page,"pageType":"portal","perPage":20,
                             "searchQuery":"","sortingQuery":"default"},csrf)
@@ -209,7 +221,8 @@ def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
                                    if any(token in k.lower() for token in
                                           ("status","remov","delet","publish","approv","moderat","state"))
                                    and isinstance(v,(str,int,bool,dict))}
-                    found[oid].append({"rating":rating,"id":rid,"kind":kind,
+                    if any(m["id"]==rid and m["kind"]==("company" if kind=="company_negative" else kind) for m in found[oid]):continue
+                    found[oid].append({"rating":rating,"id":rid,"kind":"company" if kind=="company_negative" else kind,
                                        "opinion_status":_opinion_status(op),
                                        "status_fields":status_fields})
             # Stop once each requested order has a matching review in both
