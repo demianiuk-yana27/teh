@@ -24,7 +24,7 @@ TOYVO_COMPANY_ID="4093192"
 BOTREBA_COMPANY_ID="4104969"
 SVIY_COMPANY_ID="4191142"
 
-def _orders(start,end):
+def _orders(start,end,write=False):
     book=get_client().open_by_key(CALL_BOOK)
     result=defaultdict(list)
     stats=Counter()
@@ -44,7 +44,7 @@ def _orders(start,end):
                 if not created:good_choice_audit[tab]["invalid_date"]+=1
                 elif start<=created<=end:good_choice_audit[tab]["in_selected_period"]+=1
             if not created or not start<=created<=end:continue
-            if shop in EXCLUDED_SHOPS:
+            if shop in EXCLUDED_SHOPS and not write:
                 stats["excluded_shop_rows"]+=1
                 continue
             order=normalize_order(cells[5])
@@ -53,7 +53,7 @@ def _orders(start,end):
                 good_choice_audit[tab]["missing_order_id"]+=1
             if not shop or not (order or external_id):
                 stats["missing_identity"]+=1
-                continue
+                if not write:continue
             label=normalize_name(cells[6]) or "без мітки"
             item={"tab":tab,"shop":shop,"order":order,"external_id":external_id,"created":created,
                   "label":label,"row":number}
@@ -61,7 +61,7 @@ def _orders(start,end):
             stats["selected"]+=1
     return result,stats,{tab:dict(counts) for tab,counts in good_choice_audit.items()}
 
-def _reviews(shop,account,start,end):
+def _reviews(shop,account,start,end,current=False):
     opener,csrf=_switch(account)
     found=defaultdict(list)
     seen=set()
@@ -92,7 +92,7 @@ def _reviews(shop,account,start,end):
             dates.append(published)
             if previous is not None and published>previous:ordered=False
             previous=published
-            if start<=published<=end:
+            if start<=published<=end and (not current or (opinion.get('deleted') is not True and str(opinion.get('status'))!='11')):
                 inspected+=1
                 order=_order_id(opinion)
                 if order:found[order].append(published)
@@ -102,17 +102,71 @@ def _reviews(shop,account,start,end):
             return found,inspected,missing_order_ids
     raise RuntimeError("Перевищено 200 сторінок Prom")
 
-def _worker(start,end,login_map,run_id):
+def _write_daily(start,end,orders,reviewed,run_id):
+    sheet=get_client().open_by_key("1Ci_AoA6PBtlglbY_CY4d16tRX-7rxZ8_1YbEFft_hGs").worksheet("Аналітика нова")
+    dates=sheet.col_values(1)
+    positions=defaultdict(list)
+    for number,value in enumerate(dates,1):
+        if number<4:continue
+        raw=str(value).strip()
+        parsed=None
+        for fmt in ("%d.%m.%Y","%d.%m.%y","%Y-%m-%d","%d.%m"):
+            try:
+                parsed=datetime.strptime(raw,fmt).date()
+                if fmt=="%d.%m":parsed=parsed.replace(year=start.year)
+                break
+            except ValueError:pass
+        if parsed:positions[parsed].append(number)
+    daily=defaultdict(Counter)
+    for (shop,_),entries in orders.items():
+        for item in entries:
+            c=daily[item["created"]]
+            label=item["label"]
+            c["orders"]+=1
+            c["before"]+=label=="є відгук"
+            c["success"]+=label in ("так","ні","проста посилка")
+            c["negative"]+=label in ("ні","проста посилка")
+            c["agreed"]+=label=="так"
+            ids=[x for x in (item["order"],item["external_id"]) if x]
+            if not ids or shop not in reviewed:
+                c["unverified"]+=1
+            elif label!="є відгук" and any(d>=item["created"] for x in ids for d in reviewed[shop].get(x,[])):
+                c["after"]+=1
+    updates=[]
+    incomplete=[]
+    day=start
+    while day<=end:
+        if len(positions[day])!=1:
+            raise ValueError("У колонці A немає єдиного рядка для "+day.isoformat())
+        row=positions[day][0]
+        c=daily[day]
+        n=c["orders"]
+        def pct(v):return (str(round(100*v/n,2)).replace(".",",")+"%") if n else "0%"
+        values=[n,c["before"],pct(c["before"]),c["success"],pct(c["success"]),
+                c["negative"],pct(c["negative"]),c["agreed"],pct(c["agreed"])]
+        # Preserve existing Prom figures if any order could not be verified.
+        if c["unverified"]:
+            incomplete.append(day.isoformat())
+        else:
+            values.extend([c["after"],pct(c["after"])])
+        updates.append({"range":f"B{row}:{'L' if len(values)==11 else 'J'}{row}","values":[values]})
+        day+=timedelta(days=1)
+    sheet.batch_update(updates,value_input_option="USER_ENTERED")
+    return {"status":"partial" if incomplete else "success","run_id":run_id,
+            "message":"Записано аналітику за "+str(len(updates))+" дн. "+("K–L не змінено для неповних дат: "+", ".join(incomplete) if incomplete else "Колонки B–L оновлено."),
+            "written_days":len(updates),"incomplete_dates":incomplete}
+
+def _worker(start,end,login_map,run_id,write=False):
     global _state
     try:
-        orders,stats,good_choice_audit=_orders(start,end)
+        orders,stats,good_choice_audit=_orders(start,end,write)
         shops=_shops()
         selected_shops={shop for shop,_ in orders}
         reviewed={}
         failures=[]
         unknown=[]
         diagnostics={}
-        cutoff=min(date.today(),end+timedelta(days=30))
+        cutoff=date.today() if write else min(date.today(),end+timedelta(days=30))
         for i,shop in enumerate(sorted(selected_shops),1):
             _state={"status":"running","run_id":run_id,
                     "message":f"Перевіряємо магазини: {i}/{len(selected_shops)}"}
@@ -139,7 +193,7 @@ def _worker(start,end,login_map,run_id):
                     # Retry the whole read to avoid treating a partial page set as complete.
                     for attempt in range(3):
                         try:
-                            found,inspected,missing_ids=_reviews(info,account,start,cutoff)
+                            found,inspected,missing_ids=_reviews(info,account,start,cutoff,write)
                             break
                         except Exception as transient:
                             print("[review-analytics] shop=%s attempt=%s/3 error=%s" %
@@ -158,6 +212,9 @@ def _worker(start,end,login_map,run_id):
                 except Exception as exc:
                     print("[review-analytics] failed shop=%s error=%s"%(shop,type(exc).__name__),flush=True)
             if shop not in reviewed:failures.append(shop)
+        if write:
+            _state=_write_daily(start,end,orders,reviewed,run_id)
+            return
         total_matches=sum(v["unique_matching_order_ids"] for v in diagnostics.values())
         suspicious_zero=bool(sum(v["prom_reviews_in_period"] for v in diagnostics.values()) and total_matches==0)
         total=Counter()
@@ -234,7 +291,7 @@ def register(app,login_map_fn):
         _state={"status":"running","run_id":run_id,"message":"Зчитуємо таблиці продзвону…"}
         try:
             mapping=login_map_fn()
-            threading.Thread(target=_worker,args=(start,end,mapping,run_id),daemon=True).start()
+            threading.Thread(target=_worker,args=(start,end,mapping,run_id,body.get('write') is True),daemon=True).start()
         except Exception:
             _lock.release()
             raise
