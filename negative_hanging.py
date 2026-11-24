@@ -170,7 +170,7 @@ def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
     opener,csrf=_switch(account)
     found=defaultdict(list)
     targets=set(targets or ())
-    for kind in ("company_negative","company","product"):
+    for kind in ("company","company_negative","product"):
         previous=None
         ordered=True
         seen=set()
@@ -224,7 +224,9 @@ def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
                 rating=op.get("rating")
                 if type(rating) is not int or rating not in range(1,6):
                     continue
-                oid=_order_id(op)
+                oid=str(op.get("linked_order_id") or op.get("linkedOrderId") or _order_id(op) or "")
+                if not oid.isdigit():
+                    continue
                 if oid:
                     # Safe diagnostic: only status-related fields, never buyer details.
                     status_fields={k:str(v)[:100] for k,v in op.items()
