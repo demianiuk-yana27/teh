@@ -1005,6 +1005,39 @@ def process_one(export_mode="partial"):
 # ПРОЦЕС 3 — ВІДГУКИ
 # ============================================================
 
+# CRM labels -> verified Prom company titles from the "Продзвін - відгуки" directory.
+# Match on normalized text; do not guess unrelated names.
+CALL_PROM_NAME_ALIASES = {
+    "homstera (був market)": "Homstera",
+    "свій": "Свій інтернет магазин",
+    "все для вас": "все для вас",
+    "be store": "Be Store",
+    "borniatco": "Borniatco🥇",
+    "toyvo - дроп": "ToyVo",
+    "botreba -дроп": "BoTreba",
+    "botreba дроп": "BoTreba",
+    "trendomania -дроп": "TrendoMania",
+    "megashop -дроп": "MegaShop",
+    "easyshop-дроп": "Easyshop",
+    "сирник": "Сирник",
+    "bybka_shop": "Bybka",
+}
+# Subset of names is sufficient to classify the destination tab;
+# it is determined from the CRM name before canonicalization.
+CALL_GROUP_YELLOW = {
+    "borniatco", "laggi market", "trendvibe", "yellow monkey", "bybka_shop",
+}
+CALL_GROUP_NEW = {
+    "vdalo shop", "velora", "сирник", "огошоп", "хапай", "требасик",
+    "вибирайко", "покупайко", "praktix", "mixora", "пiде", "піде",
+}
+CALL_GROUP_DROP = {
+    "shopik", "croko", "vsemarket", "hataspace", "zevs-market - дроп",
+    "trendomania -дроп", "megashop -дроп", "toyvo - дроп",
+    "yatka -дроп", "botreba дроп", "fenix-ua - дроп", "easyshop-дроп",
+    "botreba -дроп", "two birds", "moods",
+}
+
 def process_three(selected_date=None):
     input_file = download_report_from_asteril(
         "https://crm2006091.asteril.com/orders",
@@ -1108,10 +1141,20 @@ def process_three(selected_date=None):
             ]
 
     if "Магазин" in filtered_df.columns:
-        filtered_df = filtered_df.sort_values(
-            by="Магазин",
-            ascending=True,
+        filtered_df = filtered_df.copy()
+        # Keep routing based on CRM names before replacing them with Prom titles.
+        crm_keys = filtered_df["Магазин"].fillna("").astype(str).str.strip().str.casefold()
+        filtered_df["_call_target"] = crm_keys.map(
+            lambda name: (
+                "Yellow/Laggi/Born/Bybka/TrendVibe" if name in CALL_GROUP_YELLOW else
+                "Нові" if name in CALL_GROUP_NEW else
+                "Дроп" if name in CALL_GROUP_DROP else "Наші"
+            )
         )
+        filtered_df["Магазин"] = filtered_df["Магазин"].map(
+            lambda value: CALL_PROM_NAME_ALIASES.get(str(value).strip().casefold(), str(value).strip())
+        )
+        filtered_df = filtered_df.sort_values(by="Магазин", ascending=True)
 
     if filtered_df.empty:
         return 0
@@ -1121,65 +1164,9 @@ def process_three(selected_date=None):
         "1Ci_AoA6PBtlglbY_CY4d16tRX-7rxZ8_1YbEFft_hGs"
     )
 
-    yellow_stores = [
-        "Borniatco",
-        "Laggi market",
-        "TrendVibe",
-        "Yellow Monkey",
-    ]
-
-    new_stores = [
-        "Vdalo Shop",
-        "Velora",
-        "сирник",
-        "ОгоШоп",
-        "Хапай",
-        "Требасик",
-        "Вибирайко",
-        "Покупайко",
-    ]
-
-    drop_stores = [
-        "Shopik",
-        "Croko",
-        "Vsemarket",
-        "HataSpace",
-        "Zevs-market - дроп",
-        "TrendoMania -дроп",
-        "MegaShop -дроп",
-        "ToyVo - дроп",
-        "Yatka -дроп",
-        "BoTreba дроп",
-        "FENIX-UA - дроп",
-        "Easyshop-дроп",
-        "BoTreba -дроп",
-        "Two birds",
-        "Moods",
-    ]
-
-    df_yellow = filtered_df[
-        filtered_df["Магазин"].isin(yellow_stores)
-    ]
-
-    df_new = filtered_df[
-        filtered_df["Магазин"].isin(new_stores)
-    ]
-
-    df_drop = filtered_df[
-        filtered_df["Магазин"].isin(drop_stores)
-    ]
-
-    df_nashi = filtered_df[
-        ~filtered_df["Магазин"].isin(yellow_stores)
-        & ~filtered_df["Магазин"].isin(drop_stores)
-        & ~filtered_df["Магазин"].isin(new_stores)
-    ]
-
     targets = [
-        (df_yellow, "Yellow/Laggi/Born/Bybka/TrendVibe"),
-        (df_drop, "Дроп"),
-        (df_nashi, "Наші"),
-        (df_new, "Нові"),
+        (filtered_df[filtered_df["_call_target"] == tab], tab)
+        for tab in ("Yellow/Laggi/Born/Bybka/TrendVibe", "Дроп", "Наші", "Нові")
     ]
 
     cols_order = [
