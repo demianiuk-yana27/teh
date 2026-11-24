@@ -3549,3 +3549,6 @@ _register_call_review_check(app, _positive_login_map)
 # Read-only follow-up on negative reviews awaiting customer edits.
 from negative_hanging import register as _register_negative_hanging
 _register_negative_hanging(app, _positive_login_map, _operations_sheet_id)
+
+from ktv_analytics import register as _register_ktv_analytics
+_register_ktv_analytics(app)
