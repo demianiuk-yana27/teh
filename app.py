@@ -948,6 +948,9 @@ def process_one(export_mode="partial"):
         "1sNWKNZhmE-DXancPOX5RtLhtbQ_-ThwhfqlwyVmSzSE"
     ).worksheet("КТВ")
 
+    if not filtered_df.empty:
+        filtered_df = _canonicalize_call_shop_names(filtered_df, client)
+
     raw_values = (
         filtered_df[["Магазин", "№", "Статус"]]
         .fillna("")
@@ -1045,6 +1048,29 @@ CALL_GROUP_DROP = {
     "yatka -дроп", "botreba дроп", "fenix-ua - дроп", "easyshop-дроп",
     "botreba -дроп", "two birds", "moods",
 }
+
+def _canonicalize_call_shop_names(filtered_df, client):
+    filtered_df = filtered_df.copy()
+    # Read the authoritative Prom names from the company's operational directory.
+    # This also keeps new names in sync without editing the CRM export code.
+    shop_rows = client.open_by_key(
+        "1B8aq-wNhaCoDAGm_nbOu36GNQp8y0ovAkYoO7pjvxMA"
+    ).worksheet("Продзвін - відгуки").get("A:H")
+    prom_names = {}
+    for shop_row in shop_rows[1:]:
+        cells = (shop_row + [""] * 8)[:8]
+        for column in (0, 2, 4, 6):
+            name = str(cells[column]).strip()
+            if name:
+                prom_names[name.casefold()] = name
+    filtered_df["Магазин"] = filtered_df["Магазин"].map(
+        lambda value: (
+            prom_names.get(CALL_PROM_NAME_ALIASES.get(str(value).strip().casefold(), str(value).strip()).casefold())
+            or CALL_PROM_NAME_ALIASES.get(str(value).strip().casefold(), str(value).strip())
+        )
+    )
+    return filtered_df
+
 
 def process_three(selected_date=None):
     input_file = download_report_from_asteril(
@@ -1159,24 +1185,7 @@ def process_three(selected_date=None):
                 "Дроп" if name in CALL_GROUP_DROP else "Наші"
             )
         )
-        # Read the authoritative Prom names from the company's operational directory.
-        # This also keeps new names in sync without editing the CRM export code.
-        shop_rows = get_gspread_client().open_by_key(
-            "1B8aq-wNhaCoDAGm_nbOu36GNQp8y0ovAkYoO7pjvxMA"
-        ).worksheet("Продзвін - відгуки").get("A:H")
-        prom_names = {}
-        for shop_row in shop_rows[1:]:
-            cells = (shop_row + [""] * 8)[:8]
-            for column in (0, 2, 4, 6):
-                name = str(cells[column]).strip()
-                if name:
-                    prom_names[name.casefold()] = name
-        filtered_df["Магазин"] = filtered_df["Магазин"].map(
-            lambda value: (
-                prom_names.get(CALL_PROM_NAME_ALIASES.get(str(value).strip().casefold(), str(value).strip()).casefold())
-                or CALL_PROM_NAME_ALIASES.get(str(value).strip().casefold(), str(value).strip())
-            )
-        )
+        filtered_df = _canonicalize_call_shop_names(filtered_df, get_gspread_client())
         filtered_df = filtered_df.sort_values(by="Магазин", ascending=True)
 
     if filtered_df.empty:
