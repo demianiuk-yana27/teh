@@ -8,7 +8,7 @@ import threading
 import time
 import uuid
 from collections import Counter, defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from flask import jsonify
 from negative_reviews import get_client, normalize_name, load_active_shops, Shop
 from negative_review_api import _switch, _read, _order_id
@@ -21,6 +21,16 @@ _state={"status":"idle","message":"Готово до перевірки."}
 def _rating(value):
     match=re.search(r"(?:⭐|★|☆)\s*([1-5])\s*/\s*5",str(value or ""))
     return int(match.group(1)) if match else None
+
+def _sheet_review_date(value):
+    raw=str(value or "").strip()
+    for fmt in ("%d.%m.%Y","%d.%m.%y","%Y-%m-%d","%d.%m"):
+        try:
+            parsed=datetime.strptime(raw,fmt).date()
+            return parsed.replace(year=2026) if fmt=="%d.%m" else parsed
+        except ValueError:
+            continue
+    return None
 
 def _rows():
     book=get_client().open_by_key(BOOK_ID)
@@ -35,7 +45,7 @@ def _rows():
             order=re.search(r"\b\d{6,15}\b",str(row[3]))
             result.append({"tab":sheet.title,"row":index,"manager":str(row[1]).strip() or "Не призначено",
                            "shop":str(row[7]).strip(),"order_id":order.group(0) if order else "",
-                           "original_rating":original,"review_text":str(row[8])[:220],
+                           "original_rating":original,"review_date":str(_sheet_review_date(row[6]) or ""),"review_text":str(row[8])[:220],
                            "link":str(row[11]).strip() if str(row[11]).strip().startswith("https://") else ""})
     return result
 
@@ -265,11 +275,14 @@ def _worker(login_map,shop_book,run_id):
                     _state={"status":"running","run_id":run_id,
                             "message":f"Магазин {idx}/{len(groups)}: {items[0]['shop']} · {kind} · сторінка {page}"}
                 missing={item["order_id"] for item in items if item["order_id"] and item["order_id"] not in direct}
+                pending_dates=[item["review_date"] for item in items if item["order_id"] in missing]
+                earliest=(min(date.fromisoformat(d) for d in pending_dates)-timedelta(days=2)
+                          if pending_dates and all(pending_dates) else date(2026,1,1))
                 for account in (login_map[str(shop.id)] if missing else []):
                     for attempt in range(2):
                         if time.monotonic()>deadline:break
                         try:
-                            data=_collect(shop,account,date(2026,1,1),progress,deadline,
+                            data=_collect(shop,account,earliest,progress,deadline,
                                           missing)
                             break
                         except Exception as exc:
