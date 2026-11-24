@@ -1337,15 +1337,20 @@ s = s.replace('</body>', operations_inline + '</body>', 1)
 
 # Review conversion analytics: separate call-center view, no changes to existing workflows.
 review_analytics_html = '''<section class="view" id="call-review-analytics">
-<div class="pagehead"><div class="pageicon">📊</div><div><h2>Продзвін — Аналітика відгуків</h2><p>Збір аналітики за обраний період та аналіз ефективності продзвону.</p></div></div>
-<div class="card"><div class="control"><label>Дата створення замовлень — від</label><input type="date" id="callAnalyticsSince"></div>
+<div class="pagehead"><div class="pageicon">📊</div><div><h2>Продзвін — Аналітика</h2><p>Збір аналітики за обраний період та аналіз ефективності продзвону.</p></div></div>
+<div class="card"><h3>Аналітика відгуків</h3><div class="control"><label>Дата створення замовлень — від</label><input type="date" id="callAnalyticsSince"></div>
 <div class="control"><label>До</label><input type="date" id="callAnalyticsUntil"></div>
 <button class="run" id="callAnalyticsRun" onclick="runCallReviewAnalytics()">📊 Запустити аналітику</button>
 <button class="run" id="callAnalyticsWrite" onclick="runCallReviewAnalytics(true)">📝 Записати аналітику в таблицю</button>
 <div class="status" id="callAnalyticsStatus">Готово до запуску.</div>
-<div id="callAnalyticsResults" style="margin-top:16px"></div></div></section>'''
+<div id="callAnalyticsResults" style="margin-top:16px"></div></div>
+<div class="card"><h3>Аналітика КТВ</h3><div class="control"><label>Дата від</label><input type="date" id="ktvSince" min="2026-11-01"></div>
+<div class="control"><label>До</label><input type="date" id="ktvUntil"></div>
+<button class="run" id="ktvRun" onclick="runKtvAnalytics(false)">📊 Розрахувати КТВ</button>
+<button class="run" id="ktvWrite" onclick="runKtvAnalytics(true)">📝 Записати КТВ в Аналітика 2.0</button>
+<div class="status" id="ktvStatus">Готово до запуску.</div><div id="ktvResults" style="margin-top:16px;overflow:auto"></div></div></section>'''
 s = s.replace('<div class="sub" data-view="call-review-check">• Перевірка відгуків</div>',
-              '<div class="sub" data-view="call-review-check">• Перевірка відгуків</div><div class="sub" data-view="call-review-analytics">• Аналітика відгуків</div>',1)
+              '<div class="sub" data-view="call-review-check">• Перевірка відгуків</div><div class="sub" data-view="call-review-analytics">• Аналітика</div>',1)
 s = s.replace('<section class="view" id="negative-reviews">',review_analytics_html+'<section class="view" id="negative-reviews">',1)
 review_analytics_js = r'''<script>
 (function(){
@@ -1400,7 +1405,7 @@ review_analytics_js = r'''<script>
  };
 })();
 </script>'''
-s = s.replace('</body>',review_analytics_js+'</body>',1)
+s = s.replace('</body>',review_analytics_js+"<script>\nwindow.runKtvAnalytics=async function(write){\n const $=id=>document.getElementById(id),status=$('ktvStatus'),since=$('ktvSince').value,until=$('ktvUntil').value;\n if(!since||!until||since>until){status.textContent='Виберіть правильний період.';return;}\n if(write&&!confirm('Записати КТВ за вибрані дати у Аналітика 2.0?'))return;\n $('ktvRun').disabled=$('ktvWrite').disabled=true;$('ktvResults').textContent='';status.textContent='Розраховуємо…';\n try{\n const response=await fetch('/api/ktv/analytics/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({since,until,write})});\n const data=await response.json();if(!response.ok)throw Error(data.error||'Помилка запуску');\n for(let i=0;i<600;i++){\n await new Promise(resolve=>setTimeout(resolve,3000));\n const r=await fetch('/api/ktv/analytics/status',{cache:'no-store'});if(!r.ok)throw Error('Помилка статусу');\n const state=await r.json();if(state.run_id!==data.run_id)throw Error('Стан іншого запуску');\n status.textContent=state.message||state.status;\n if(state.status==='running')continue;\n if(state.status==='error')throw Error(state.message);\n const cols=[['orders','КТВ'],['successful','Успішні'],['success_pct','% успішних'],['agreed','Погодились чекати'],['agreed_pct','% погодились'],['saved','Врятовані'],['saved_pct','% врятованих'],['refused','Неврятовані'],['refused_pct','% неврятованих']];\n const table=document.createElement('table');table.style.cssText='width:100%;border-collapse:collapse;font-size:13px';\n function row(values,head=false){const tr=table.insertRow();for(const v of values){const td=document.createElement(head?'th':'td');td.style.padding='8px';td.textContent=v??'—';tr.appendChild(td);}}\n row(['Дата',...cols.map(c=>c[1])],true);\n for(const day of [...state.days,{date:'Разом',...state.summary}])row([day.date,...cols.map(([k])=>day[k]==null?'—':day[k]+(k.endsWith('_pct')?'%':''))]);\n $('ktvResults').appendChild(table);return;\n }\n throw Error('Перевищено час очікування.');\n }catch(e){status.textContent='❌ '+e.message;}finally{$('ktvRun').disabled=$('ktvWrite').disabled=false;}\n};\n</script>"+'</body>',1)
 
 # Replace the old read-only review preview with order-date verification and Sheets updates.
 s = s.replace(
