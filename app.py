@@ -1023,7 +1023,6 @@ CALL_PROM_NAME_ALIASES = {
     "bybka_shop": "Bybka",
     "пiде": "ПІДЕ",
     "піде": "ПІДЕ",
-    "trendomaniа -дроп": "TrendoMania",
     "homstera": "Homstera",
     "easyshop": "Easyshop",
     "megashop": "MegaShop",
