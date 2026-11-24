@@ -204,7 +204,9 @@ def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
                                        "status_fields":status_fields})
             # Stop once each requested order has a matching review in both
             # categories scanned so far; do not traverse unrelated history.
-            if targets and targets.issubset(found.keys()):
+            if targets and all(any(m.get("opinion_status")=="відгук видалено" or
+                                   m.get("opinion_status")=="очікує публікації"
+                                   for m in found.get(oid,[])) for oid in targets):
                 return found
             pages=int(pagination.get("num_pages") or 1)
             if page>=pages or (ordered and dates and max(dates)<earliest):break
