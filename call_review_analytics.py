@@ -118,6 +118,7 @@ def _write_daily(start,end,orders,reviewed,run_id):
             except ValueError:pass
         if parsed:positions[parsed].append(number)
     daily=defaultdict(Counter)
+    missing_by_day=defaultdict(Counter)
     for (shop,_),entries in orders.items():
         for item in entries:
             c=daily[item["created"]]
@@ -130,6 +131,8 @@ def _write_daily(start,end,orders,reviewed,run_id):
             ids=[x for x in (item["order"],item["external_id"]) if x]
             if not ids or shop not in reviewed:
                 c["unverified"]+=1
+                reason="магазин не перевірено" if shop not in reviewed else "немає ID замовлення"
+                missing_by_day[item["created"]][(shop or "невідомий магазин")+" ("+reason+")"]+=1
             elif any(d>=item["created"] for x in ids for d in reviewed[shop].get(x,[])):
                 c["after"]+=1
     updates=[]
@@ -144,16 +147,15 @@ def _write_daily(start,end,orders,reviewed,run_id):
         def pct(v):return (str(round(100*v/n,2)).replace(".",",")+"%") if n else "0%"
         values=[n,c["before"],pct(c["before"]),c["success"],pct(c["success"]),
                 c["negative"],pct(c["negative"]),c["agreed"],pct(c["agreed"])]
-        # Preserve existing Prom figures if any order could not be verified.
         if c["unverified"]:
-            incomplete.append(day.isoformat())
-        else:
-            values.extend([c["after"],pct(c["after"])])
-        updates.append({"range":f"B{row}:{'L' if len(values)==11 else 'J'}{row}","values":[values]})
+            incomplete.append(day.isoformat()+": "+str(c["unverified"])+" неперевірених; "+
+                              ", ".join(k+" — "+str(v) for k,v in sorted(missing_by_day[day].items())))
+        values.extend([c["after"],pct(c["after"])])
+        updates.append({"range":f"B{row}:L{row}","values":[values]})
         day+=timedelta(days=1)
     sheet.batch_update(updates,value_input_option="USER_ENTERED")
     return {"status":"partial" if incomplete else "success","run_id":run_id,
-            "message":"Записано аналітику за "+str(len(updates))+" дн. "+("K–L не змінено для неповних дат: "+", ".join(incomplete) if incomplete else "Колонки B–L оновлено."),
+            "message":"Записано аналітику за "+str(len(updates))+" дн. "+("Колонки B–L оновлено. ⚠️ K–L містять часткові дані: "+"; ".join(incomplete) if incomplete else "Колонки B–L оновлено."),
             "written_days":len(updates),"incomplete_dates":incomplete}
 
 def _worker(start,end,login_map,run_id,write=False):
