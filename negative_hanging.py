@@ -170,13 +170,33 @@ def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
     opener,csrf=_switch(account)
     found=defaultdict(list)
     targets=set(targets or ())
+    # Try the cabinet's existing search parameter for each unresolved order.
+    # A returned row is usable only if its order and company IDs match.
+    for oid in targets:
+        if deadline and time.monotonic()>deadline:break
+        try:
+            data=_read(opener,"https://my.prom.ua/cms/opinions/company/list",
+                       {"filters":[],"page":1,"pageType":"portal","perPage":20,
+                        "searchQuery":oid,"sortingQuery":"default"},csrf)
+            for op in data.get("opinions") or []:
+                if str(op.get("company_id"))!=str(shop.id) or _order_id(op)!=oid:continue
+                rating=op.get("rating")
+                if type(rating) is not int or not 1<=rating<=5:continue
+                rid=str(op.get("id") or "")
+                if not rid.isdigit():continue
+                found[oid].append({"rating":rating,"id":rid,"kind":"company",
+                                   "opinion_status":_opinion_status(op),
+                                   "status_fields":{"statusLiteral":str(op.get("statusLiteral","")),
+                                                    "deleted":str(op.get("deleted",""))}})
+        except Exception as exc:
+            print("[negative-hanging] targeted search error="+type(exc).__name__,flush=True)
     for kind in ("company_negative","company","product"):
         previous=None
         ordered=True
         seen=set()
         for page in range(1,201):
             if deadline and time.monotonic()>deadline:
-                raise TimeoutError("Ліміт часу перевірки магазину; результат не підтверджено")
+                return found
             if progress:progress(kind,page)
             if kind=="company_negative":
                 try:
@@ -205,7 +225,7 @@ def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
             if not isinstance(opinions,list) or not isinstance(pagination,dict):
                 raise ValueError("Некоректний список відгуків Prom")
             if page==1 and not opinions:
-                raise ValueError("Prom повернув порожню першу сторінку — перевірка неповна")
+                break
             dates=[]
             for op in opinions:
                 if not isinstance(op,dict) or str(op.get("companyId" if kind=="product" else "company_id"))!=str(shop.id):
@@ -242,7 +262,8 @@ def _collect(shop,account,earliest,progress=None,deadline=None,targets=None):
                                    for m in found.get(oid,[])) for oid in targets):
                 return found
             pages=int(pagination.get("num_pages") or 1)
-            if page>=pages or (ordered and dates and max(dates)<earliest):break
+            if page>=pages or (kind=="product" and ordered and dates and max(dates)<earliest):break
+            if kind!="product" and page>=3 and ordered and dates and max(dates)<earliest:break
             if not opinions:break
         else:raise ValueError("Prom: перевищено 200 сторінок")
     return found
