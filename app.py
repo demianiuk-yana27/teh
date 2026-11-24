@@ -1021,6 +1021,15 @@ CALL_PROM_NAME_ALIASES = {
     "easyshop-дроп": "Easyshop",
     "сирник": "Сирник",
     "bybka_shop": "Bybka",
+    "пiде": "ПІДЕ",
+    "піде": "ПІДЕ",
+    "trendomaniа -дроп": "TrendoMania",
+    "homstera": "Homstera",
+    "easyshop": "Easyshop",
+    "megashop": "MegaShop",
+    "trendomania": "TrendoMania",
+    "toyvo": "ToyVo",
+    "botreba": "BoTreba",
 }
 # Subset of names is sufficient to classify the destination tab;
 # it is determined from the CRM name before canonicalization.
