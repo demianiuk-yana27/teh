@@ -58,6 +58,16 @@ def _direct_review(opener, order_id, known_link=''):
     link_match=re.search(r'https?://(?:www\.)?prom\.ua/(?:ua/)?opinions/view/\d+',known_link or "")
     link=link_match.group(0) if link_match else None
     if not link:
+        short=re.search(r'https://(?:www\.)?prom\.ua/s/[A-Za-z0-9_-]+',known_link or "")
+        if short:
+            try:
+                with urllib.request.urlopen(urllib.request.Request(short.group(0),headers=headers),timeout=8) as response:
+                    resolved=response.geturl()
+                if re.fullmatch(r'https://(?:www\.)?prom\.ua/(?:ua/)?opinions/view/\d+/?(?:\?[^#]*)?',resolved):
+                    link=resolved
+            except (urllib.error.URLError,TimeoutError,ValueError):
+                pass
+    if not link:
         url="https://my.prom.ua/cms/order/edit/"+str(order_id)+"/context_misc"
         with opener.open(urllib.request.Request(url,headers=headers),timeout=12) as response:
             if not response.geturl().startswith(url):
