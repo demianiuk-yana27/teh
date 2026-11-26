@@ -236,6 +236,16 @@ def _worker(start,end,login_map,run_id,write=False,mode=None):
                     prefix=f"{name} (ID {info.id}, акаунт {index}/{len(accounts)}, прив'язки: {', '.join(shared)})"
                     try:
                         opener,csrf=_switch(account,complete=True)
+                        for size in (50,100):
+                            try:
+                                probe=_read(opener,"https://my.prom.ua/cms/opinions/company/list",
+                                    {"filters":[],"page":1,"pageType":"portal","perPage":size,"searchQuery":"","sortingQuery":"default"},csrf)
+                                rows=probe.get("opinions")
+                                if not isinstance(rows,list):raise ValueError("invalid response")
+                                valid=bool(rows) and all(isinstance(o,dict) and str(o.get("company_id"))==str(info.id) for o in rows)
+                                lines.append(prefix+f": запит {size}, отримано {len(rows)}, ID "+("правильний" if valid else "не підтверджено")+", сторінок "+str((probe.get("pagination") or {}).get("num_pages","?")))
+                            except Exception as exc:
+                                lines.append(prefix+f": запит {size}, "+type(exc).__name__+(" HTTP "+str(exc.code) if isinstance(exc,HTTPError) else ""))
                         for page in range(1,11):
                             data=_read(opener,"https://my.prom.ua/cms/opinions/company/list",
                                 {"filters":[],"page":page,"pageType":"portal","perPage":20,"searchQuery":"","sortingQuery":"default"},csrf)
@@ -317,6 +327,25 @@ def _worker(start,end,login_map,run_id,write=False,mode=None):
                     "selected_order_ids":len(order_ids)}
             _state={"status":"running","run_id":run_id,
                     "message":f"Опрацьовано магазинів: {i}/{len(selected_shops)}; перевірено: {len(reviewed)}; помилки: {len(issues)}"}
+        retry_shops=list(failures)
+        for i,name in enumerate(retry_shops,1):
+            _state={"status":"running","run_id":run_id,
+                    "message":f"Повторна перевірка проблемних магазинів: {i}/{len(retry_shops)} — {name}"}
+            shop,result,reason,kind=check_shop(name)
+            if result is None:
+                issues[shop]=reason
+                if shop not in failures:failures.append(shop)
+            else:
+                issues.pop(shop,None)
+                failures.remove(shop)
+                found,inspected,missing_ids=result
+                reviewed[shop]=found
+                order_ids={identifier for (name,_),entries in orders.items() if name==shop for item in entries for identifier in (item["order"],item["external_id"]) if identifier}
+                diagnostics[shop]={"prom_reviews_in_period":inspected,
+                    "prom_reviews_with_order_id":sum(len(v) for v in found.values()),
+                    "prom_reviews_without_order_id":missing_ids,
+                    "unique_matching_order_ids":len(order_ids.intersection(found)),
+                    "selected_order_ids":len(order_ids)}
         if write:
             _state=_write_daily(start,end,orders,reviewed,run_id,"reviews",issues)
             return
