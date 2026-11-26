@@ -185,14 +185,14 @@ def _write_daily(start,end,orders,reviewed,run_id,mode):
             updates.append({"range":f"P{row}:W{row}","values":[values[1:]]})
             call_day=day_key(call_dates[row-1]) if row<=len(call_dates) else None
             if not call_day:raise ValueError("Немає дати продзвону в колонці A, рядок "+str(row))
-            updates.append({"range":f"AB{row}","values":[[call_counts[call_day]]]})
+            updates.append({"range":f"AB{row}:AC{row}","values":[[call_counts[call_day],pct(call_counts[call_day])]]})
         else:
             total=c["before"]+c["after"]
             updates.append({"range":f"X{row}:AA{row}","values":[[c["after"],pct(c["after"]),total,pct(total)]]})
         day+=timedelta(days=1)
     sheet.batch_update(updates,value_input_option="USER_ENTERED")
     return {"status":"partial" if incomplete else "success","run_id":run_id,
-            "message":"Записано аналітику за вибрані дати. "+("N, P–W, AB оновлено." if mode=="labels" else "X–AA оновлено.")+(" ⚠️ Часткові дані: "+"; ".join(incomplete) if incomplete else ""),
+            "message":"Записано аналітику за вибрані дати. "+("N, P–W, AB–AC оновлено." if mode=="labels" else "X–AA оновлено.")+(" ⚠️ Часткові дані: "+"; ".join(incomplete) if incomplete else ""),
             "written_days":(end-start).days+1,"incomplete_dates":incomplete}
 
 def _worker(start,end,login_map,run_id,write=False,mode=None):
