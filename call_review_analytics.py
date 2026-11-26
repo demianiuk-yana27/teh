@@ -1,5 +1,7 @@
 """Read-only 30-day company review analytics for the four call-center tabs."""
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.error import HTTPError, URLError
 import time
 import uuid
 from collections import Counter, defaultdict
@@ -115,7 +117,8 @@ def _reviews(shop,account,start,end,current=False):
             return found,inspected,missing_order_ids
     raise RuntimeError("Перевищено 200 сторінок Prom")
 
-def _write_daily(start,end,orders,reviewed,run_id,mode):
+def _write_daily(start,end,orders,reviewed,run_id,mode,issues=None):
+    issues=issues or {}
     sheet=get_client().open_by_key("1Ci_AoA6PBtlglbY_CY4d16tRX-7rxZ8_1YbEFft_hGs").worksheet("Аналітика 2.0")
     dates=sheet.col_values(15)
     call_dates=sheet.col_values(1) if mode=="labels" else []
@@ -161,7 +164,7 @@ def _write_daily(start,end,orders,reviewed,run_id,mode):
             if mode=="labels":continue
             if not ids or shop not in reviewed:
                 c["unverified"]+=1
-                reason="магазин не перевірено" if shop not in reviewed else "немає ID замовлення"
+                reason=issues.get(shop,"магазин не перевірено") if shop not in reviewed else "немає ID замовлення"
                 missing_by_day[item["created"]][(shop or "невідомий магазин")+" ("+reason+")"]+=1
             elif any(d>=item["created"] for x in ids for d in reviewed[shop].get(x,[])):
                 if label!="є відгук":c["after"]+=1
@@ -209,53 +212,65 @@ def _worker(start,end,login_map,run_id,write=False,mode=None):
         unknown=[]
         diagnostics={}
         cutoff=date.today() if write else min(date.today(),end+timedelta(days=30))
-        for i,shop in enumerate(sorted(selected_shops),1):
-            _state={"status":"running","run_id":run_id,
-                    "message":f"Перевіряємо магазини: {i}/{len(selected_shops)}"}
+        issues={}
+        def error_reason(exc):
+            if isinstance(exc,HTTPError):return "Prom HTTP "+str(exc.code)
+            if isinstance(exc,TimeoutError):return "перевищено час очікування Prom"
+            if isinstance(exc,URLError):return "помилка з'єднання з Prom"
+            msg=str(exc)
+            # Only expose known static validation messages, never URLs or credentials.
+            if msg.startswith(("Не підтверджено перемикання","Відсутній CSRF","Prom повернув","Некоректна","Повторний","Перевищено","Завелика")):
+                return msg[:180]
+            return type(exc).__name__
+        def check_shop(shop):
             directory_name=SHOP_ALIASES.get(shop,shop)
-            info=shops.get(directory_name)
-            if not info and shop=="свій":
-                info=Shop("Свій інтернет магазин",SVIY_COMPANY_ID)
-            if not info and shop=="borniatco":
-                info=Shop("Borniatco",BORNIATCO_COMPANY_ID)
-            if not info and shop=="toyvo - дроп":
-                info=Shop("ToyVo",TOYVO_COMPANY_ID)
-            if not info and shop=="botreba -дроп":
-                info=Shop("BoTreba",BOTREBA_COMPANY_ID)
-            if not info:
-                unknown.append(shop)
-                continue
+            info=shops.get(directory_name) or shops.get(shop)
+            fallback={"свій":("Свій інтернет магазин",SVIY_COMPANY_ID),
+                      "borniatco":("Borniatco",BORNIATCO_COMPANY_ID),
+                      "borniatco🥇":("Borniatco",BORNIATCO_COMPANY_ID),
+                      "toyvo - дроп":("ToyVo",TOYVO_COMPANY_ID),
+                      "botreba -дроп":("BoTreba",BOTREBA_COMPANY_ID),
+                      "botreba дроп":("BoTreba",BOTREBA_COMPANY_ID)}
+            if not info and shop in fallback:info=Shop(*fallback[shop])
+            if not info:return shop,None,"немає в довіднику","unknown"
             accounts=login_map.get(info.id) or []
-            if not accounts:
-                unknown.append(shop)
-                continue
+            if not accounts:return shop,None,"немає доступного акаунта Prom","unknown"
+            reasons=[]
             for account in accounts:
-                try:
-                    # Some Prom shops intermittently fail to load opinions on the first request.
-                    # Retry the whole read to avoid treating a partial page set as complete.
-                    for attempt in range(3):
-                        try:
-                            found,inspected,missing_ids=_reviews(info,account,start,cutoff,write)
-                            break
-                        except Exception as transient:
-                            print("[review-analytics] shop=%s attempt=%s/3 error=%s" %
-                                  (shop,attempt+1,type(transient).__name__),flush=True)
-                            if attempt==2:raise
-                            time.sleep(1.5*(attempt+1))
+                for attempt in range(2):
+                    try:
+                        found,inspected,missing_ids=_reviews(info,account,start,cutoff,write)
+                        return shop,(found,inspected,missing_ids),None,None
+                    except Exception as exc:
+                        reason=error_reason(exc)
+                        if reason not in reasons:reasons.append(reason)
+                        print("[review-analytics] shop=%s attempt=%s error=%s"%(shop,attempt+1,reason),flush=True)
+                        if isinstance(exc,HTTPError) and exc.code not in (429,500,502,503,504):break
+                        if isinstance(exc,ValueError):break
+                        if attempt==0:time.sleep(1.5)
+            return shop,None,"; ".join(reasons) or "невідома помилка Prom","failed"
+        # Each _reviews invocation creates its own cookie jar and opener.
+        # Keep concurrency bounded to avoid overloading Prom.
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures=[pool.submit(check_shop,shop) for shop in sorted(selected_shops)]
+            for i,future in enumerate(as_completed(futures),1):
+                shop,result,reason,kind=future.result()
+                if result is None:
+                    issues[shop]=reason
+                    (unknown if kind=="unknown" else failures).append(shop)
+                else:
+                    found,inspected,missing_ids=result
                     reviewed[shop]=found
                     order_ids={identifier for (name,_),entries in orders.items() if name==shop for item in entries for identifier in (item["order"],item["external_id"]) if identifier}
-                    matching_ids=order_ids.intersection(found)
                     diagnostics[shop]={"prom_reviews_in_period":inspected,
                         "prom_reviews_with_order_id":sum(len(v) for v in found.values()),
                         "prom_reviews_without_order_id":missing_ids,
-                        "unique_matching_order_ids":len(matching_ids),
+                        "unique_matching_order_ids":len(order_ids.intersection(found)),
                         "selected_order_ids":len(order_ids)}
-                    break
-                except Exception as exc:
-                    print("[review-analytics] failed shop=%s error=%s"%(shop,type(exc).__name__),flush=True)
-            if shop not in reviewed:failures.append(shop)
+                _state={"status":"running","run_id":run_id,
+                        "message":f"Опрацьовано магазинів: {i}/{len(selected_shops)}; перевірено: {len(reviewed)}; помилки: {len(issues)}"}
         if write:
-            _state=_write_daily(start,end,orders,reviewed,run_id,"reviews")
+            _state=_write_daily(start,end,orders,reviewed,run_id,"reviews",issues)
             return
         total_matches=sum(v["unique_matching_order_ids"] for v in diagnostics.values())
         suspicious_zero=bool(sum(v["prom_reviews_in_period"] for v in diagnostics.values()) and total_matches==0)
