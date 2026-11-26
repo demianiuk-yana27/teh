@@ -72,7 +72,7 @@ def _read(opener, url, data=None, csrf=None, max_attempts=4):
             time.sleep(min(2 ** attempt, 6) + random.uniform(0, .3))
 
 
-def _switch(account):
+def _switch(account, complete=False):
     jar = _cookies()
     opener = urllib.request.build_opener(
         urllib.request.HTTPCookieProcessor(jar), _NoRedirect())
@@ -87,6 +87,25 @@ def _switch(account):
         if response.status not in (301, 302, 303) or not (
                 location.startswith("/cms") or location.startswith("https://my.prom.ua/cms")):
             raise ValueError("Не підтверджено перемикання магазину")
+    if complete:
+        # Finish the CMS navigation before reading the active company's opinions.
+        target = urllib.parse.urljoin("https://my.prom.ua/", location)
+        for _ in range(5):
+            parsed = urllib.parse.urlsplit(target)
+            if parsed.scheme != "https" or parsed.netloc != "my.prom.ua" or not parsed.path.startswith("/cms"):
+                raise ValueError("Не підтверджено перемикання магазину: некоректний перехід CMS")
+            try:
+                response = opener.open(urllib.request.Request(target, headers={"User-Agent":"Mozilla/5.0"}), timeout=15)
+            except urllib.error.HTTPError as exc:
+                response = exc
+            with response:
+                if response.status == 200:
+                    break
+                if response.status not in (301,302,303,307,308):
+                    raise ValueError("Не підтверджено перемикання магазину: CMS HTTP "+str(response.status))
+                target = urllib.parse.urljoin(target,response.headers.get("Location",""))
+        else:
+            raise ValueError("Не підтверджено перемикання магазину: забагато переходів CMS")
     csrf = next((c.value for c in jar if c.name.lower() in (
         "csrftoken", "csrf_token")), None)
     if not csrf:
