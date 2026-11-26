@@ -87,7 +87,7 @@ def _reviews(shop,account,start,end,current=False):
         for retry in range(4):
             try:
                 data=_read(opener,"https://my.prom.ua/cms/opinions/company/list",
-                           {"filters":[],"page":page,"pageType":"portal","perPage":20,
+                           {"filters":[],"page":page,"pageType":"portal","perPage":100,
                             "searchQuery":"","sortingQuery":"default"},csrf)
                 opinions=data.get("opinions")
                 pagination=data.get("pagination")
