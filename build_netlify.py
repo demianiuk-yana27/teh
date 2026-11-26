@@ -1343,6 +1343,7 @@ review_analytics_html = '''<section class="view" id="call-review-analytics">
 <button class="run" id="callAnalyticsRun" onclick="runCallReviewAnalytics()">📊 Запустити аналітику</button>
 <button class="run" id="callAnalyticsWrite" onclick="runCallReviewAnalytics('labels')">📝 Записати статистику продзвону</button>
 <button class="run" id="callAnalyticsReviews" onclick="runCallReviewAnalytics('reviews')">🔎 Перевірити та записати відгуки після продзвону</button>
+<button class="run" id="callAnalyticsDiagnostic" onclick="runCallReviewAnalytics('diagnostic')">🛠 Діагностика Prom (3 магазини)</button>
 <div class="status" id="callAnalyticsStatus">Готово до запуску.</div>
 <div id="callAnalyticsResults" style="margin-top:16px"></div></div>
 <div class="card"><h3>Аналітика КТВ</h3><div class="control"><label>Дата від</label><input type="date" id="ktvSince" min="2026-11-01"></div>
@@ -1379,11 +1380,11 @@ review_analytics_js = r'''<script>
   '<p style="font-size:12px;color:#65758b">'+esc(data.note||'')+'</p>';
  }
  window.runCallReviewAnalytics=async function(mode=null){
-  const write=!!mode;
-  const since=$('callAnalyticsSince').value,until=$('callAnalyticsUntil').value,button=$('callAnalyticsRun'),status=$('callAnalyticsStatus');
+  const write=mode==='labels'||mode==='reviews';
+  const since=mode==='diagnostic'?'2026-10-24':$('callAnalyticsSince').value,until=mode==='diagnostic'?'2026-10-24':$('callAnalyticsUntil').value,button=$('callAnalyticsRun'),status=$('callAnalyticsStatus');
   if(!since||!until||since>until){status.textContent='Виберіть правильний період.';return;}
-  if(write&&!confirm(mode==='labels'?'Оновити N, P–W у вкладці Аналітика 2.0?':'Перевірити Prom та оновити X–Y у вкладці Аналітика 2.0?'))return;
-  const writeButton=$('callAnalyticsWrite'),reviewsButton=$('callAnalyticsReviews');writeButton.disabled=reviewsButton.disabled=true;
+  if(write&&!confirm(mode==='labels'?'Оновити N, P–W, AB–AC у вкладці Аналітика 2.0?':'Перевірити Prom та оновити X–AA у вкладці Аналітика 2.0?'))return;
+  const writeButton=$('callAnalyticsWrite'),reviewsButton=$('callAnalyticsReviews');$('callAnalyticsDiagnostic').disabled=writeButton.disabled=reviewsButton.disabled=true;
   button.disabled=true;$('callAnalyticsResults').innerHTML='';status.textContent='Запускаємо…';
   try{
    const response=await fetch('/api/call-reviews/analytics/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({since,until,write,mode})});
@@ -1397,13 +1398,13 @@ review_analytics_js = r'''<script>
      if(state.run_id!==data.run_id)throw Error('Стан іншого запуску');
      status.textContent=state.message||state.status;
      if(state.status==='running'&&attempts++<600){setTimeout(poll,3000);return;}
-     button.disabled=false;writeButton.disabled=reviewsButton.disabled=false;
+     button.disabled=false;$('callAnalyticsDiagnostic').disabled=writeButton.disabled=reviewsButton.disabled=false;
      if(state.summary)render(state);
      if(state.status==='error')status.textContent='❌ '+state.message;
      if(state.status==='partial'&&!write)status.textContent='⚠️ Частковий результат. Перевірте неповні магазини та розбіжності.';
-    }catch(e){button.disabled=false;writeButton.disabled=reviewsButton.disabled=false;status.textContent='⚠️ '+e.message+' — перевірте статус перед повторним запуском';}
+    }catch(e){button.disabled=false;$('callAnalyticsDiagnostic').disabled=writeButton.disabled=reviewsButton.disabled=false;status.textContent='⚠️ '+e.message+' — перевірте статус перед повторним запуском';}
    };poll();
-  }catch(e){button.disabled=false;writeButton.disabled=reviewsButton.disabled=false;status.textContent='❌ '+e.message;}
+  }catch(e){button.disabled=false;$('callAnalyticsDiagnostic').disabled=writeButton.disabled=reviewsButton.disabled=false;status.textContent='❌ '+e.message;}
  };
 })();
 </script>'''
