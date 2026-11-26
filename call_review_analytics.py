@@ -205,6 +205,33 @@ def _write_daily(start,end,orders,reviewed,run_id,mode,issues=None):
 def _worker(start,end,login_map,run_id,write=False,mode=None):
     global _state
     try:
+        if mode=="diagnostic":
+            shops=_shops()
+            lines=[]
+            for name in ("redmoon","onlinemarket","homstera","redmoon"):
+                info=shops.get(name)
+                if not info:
+                    lines.append(name+": немає в довіднику")
+                    continue
+                accounts=login_map.get(info.id) or []
+                _state={"status":"running","run_id":run_id,"message":"Діагностика: "+name}
+                if not accounts:lines.append(name+": немає акаунтів")
+                for index,account in enumerate(accounts,1):
+                    # Account identifiers are not exposed; compare mapping membership only.
+                    shared=sorted(str(cid) for cid,items in login_map.items() if account in (items or []))
+                    prefix=f"{name} (ID {info.id}, акаунт {index}/{len(accounts)}, прив'язки: {', '.join(shared)})"
+                    try:
+                        opener,csrf=_switch(account,complete=True)
+                        data=_read(opener,"https://my.prom.ua/cms/opinions/company/list",
+                            {"filters":[],"page":1,"pageType":"portal","perPage":20,"searchQuery":"","sortingQuery":"default"},csrf)
+                        opinions=data.get("opinions")
+                        if not isinstance(opinions,list):raise ValueError("invalid response")
+                        ids=sorted({str(o.get("company_id")) if str(o.get("company_id")).isdigit() else "невідомий" for o in opinions if isinstance(o,dict)})
+                        lines.append(prefix+": отримано "+(", ".join(ids) or "порожній список"))
+                    except Exception as exc:
+                        lines.append(prefix+": "+type(exc).__name__+(" HTTP "+str(exc.code) if isinstance(exc,HTTPError) else ""))
+            _state={"status":"success","run_id":run_id,"message":"Діагностика без запису. "+"; ".join(lines)}
+            return
         orders,stats,good_choice_audit=_orders(start,end,write)
         if mode=="labels":
             _state=_write_daily(start,end,orders,{},run_id,mode)
@@ -349,7 +376,7 @@ def register(app,login_map_fn):
         _state={"status":"running","run_id":run_id,"message":"Зчитуємо таблиці продзвону…"}
         try:
             mode=body.get("mode")
-            write=mode in ("labels","reviews") or body.get("write") is True
+            write=mode!="diagnostic" and (mode in ("labels","reviews") or body.get("write") is True)
             mapping={} if mode=="labels" else login_map_fn()
             threading.Thread(target=_worker,args=(start,end,mapping,run_id,write,mode),daemon=True).start()
         except Exception:
