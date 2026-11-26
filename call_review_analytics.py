@@ -94,8 +94,13 @@ def _reviews(shop,account,start,end,current=False):
         if not opinions: return found,inspected,missing_order_ids
         dates=[]
         for opinion in opinions:
-            if not isinstance(opinion,dict) or str(opinion.get("company_id"))!=shop.id:
-                raise RuntimeError("Prom повернув дані іншого магазину")
+            if not isinstance(opinion,dict):
+                raise RuntimeError("Некоректна структура відгуку Prom")
+            actual=str(opinion.get("company_id") or "").strip()
+            expected=str(shop.id).strip()
+            if actual!=expected:
+                safe_actual=actual if actual.isdigit() else "відсутній або некоректний"
+                raise RuntimeError("Prom повернув дані іншого магазину: очікували ID "+expected+", отримали ID "+safe_actual)
             rid=str(opinion.get("id") or "")
             if not rid.isdigit() or rid in seen:raise RuntimeError("Повторний або невідомий ID відгуку")
             seen.add(rid)
