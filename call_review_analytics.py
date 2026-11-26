@@ -222,12 +222,18 @@ def _worker(start,end,login_map,run_id,write=False,mode=None):
                     prefix=f"{name} (ID {info.id}, акаунт {index}/{len(accounts)}, прив'язки: {', '.join(shared)})"
                     try:
                         opener,csrf=_switch(account,complete=True)
-                        data=_read(opener,"https://my.prom.ua/cms/opinions/company/list",
-                            {"filters":[],"page":1,"pageType":"portal","perPage":20,"searchQuery":"","sortingQuery":"default"},csrf)
-                        opinions=data.get("opinions")
-                        if not isinstance(opinions,list):raise ValueError("invalid response")
-                        ids=sorted({str(o.get("company_id")) if str(o.get("company_id")).isdigit() else "невідомий" for o in opinions if isinstance(o,dict)})
-                        lines.append(prefix+": отримано "+(", ".join(ids) or "порожній список"))
+                        for page in range(1,11):
+                            data=_read(opener,"https://my.prom.ua/cms/opinions/company/list",
+                                {"filters":[],"page":page,"pageType":"portal","perPage":20,"searchQuery":"","sortingQuery":"default"},csrf)
+                            opinions=data.get("opinions")
+                            if not isinstance(opinions,list):raise ValueError("invalid response")
+                            ids=sorted({str(o.get("company_id")) if str(o.get("company_id")).isdigit() else "невідомий" for o in opinions if isinstance(o,dict)})
+                            if ids and ids!=[str(info.id)]:
+                                lines.append(prefix+f": сторінка {page}, отримано "+", ".join(ids))
+                                break
+                            if not opinions or page>=int((data.get("pagination") or {}).get("num_pages") or 1) or page==10:
+                                lines.append(prefix+f": перевірено сторінок {page}, ID "+(", ".join(ids) or "порожній список"))
+                                break
                     except Exception as exc:
                         lines.append(prefix+": "+type(exc).__name__+(" HTTP "+str(exc.code) if isinstance(exc,HTTPError) else ""))
             _state={"status":"success","run_id":run_id,"message":"Діагностика без запису. "+"; ".join(lines)}
