@@ -84,13 +84,27 @@ def _reviews(shop,account,start,end,current=False):
     previous=None
     ordered=True
     for page in range(1,201):
-        data=_read(opener,"https://my.prom.ua/cms/opinions/company/list",
-                   {"filters":[],"page":page,"pageType":"portal","perPage":20,
-                    "searchQuery":"","sortingQuery":"default"},csrf)
-        opinions=data.get("opinions")
-        pagination=data.get("pagination")
-        if not isinstance(opinions,list) or not isinstance(pagination,dict):
-            raise RuntimeError("Некоректна відповідь Prom")
+        for retry in range(4):
+            try:
+                data=_read(opener,"https://my.prom.ua/cms/opinions/company/list",
+                           {"filters":[],"page":page,"pageType":"portal","perPage":20,
+                            "searchQuery":"","sortingQuery":"default"},csrf)
+                opinions=data.get("opinions")
+                pagination=data.get("pagination")
+                if not isinstance(opinions,list) or not isinstance(pagination,dict):
+                    raise RuntimeError("Некоректна відповідь Prom")
+                wrong=next((o for o in opinions if isinstance(o,dict) and str(o.get("company_id") or "").strip()!=str(shop.id).strip()),None)
+                if wrong is not None:
+                    actual=str(wrong.get("company_id") or "").strip()
+                    raise RuntimeError("Prom повернув дані іншого магазину: очікували ID "+str(shop.id)+", отримали ID "+(actual if actual.isdigit() else "невідомий"))
+                if any(not isinstance(o,dict) for o in opinions):
+                    raise RuntimeError("Некоректна структура відгуку Prom")
+                break
+            except (HTTPError,RuntimeError) as exc:
+                recoverable=(isinstance(exc,HTTPError) and exc.code in (401,403)) or (isinstance(exc,RuntimeError) and str(exc).startswith("Prom повернув дані іншого магазину"))
+                if not recoverable or retry==3:raise
+                time.sleep(0.5*(retry+1))
+                opener,csrf=_switch(account,complete=True)
         if not opinions: return found,inspected,missing_order_ids
         dates=[]
         for opinion in opinions:
