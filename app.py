@@ -788,7 +788,7 @@ def process_one(export_mode="partial"):
         process_type=1,
     )
 
-    df = pd.read_excel(input_file)
+    df = pd.read_excel(input_file, converters={"Телефони": lambda value: str(value) if value is not None else ""})
 
     allowed_statuses = [
         "Перевірити перед відправкою58",
@@ -859,6 +859,59 @@ def process_one(export_mode="partial"):
         "Очікує 6 днів +",
     ]
 
+    phone_statuses = {
+        "Термінові (з 9 до 14)",
+        "Не переробляти ттн (термінові)",
+        "Укрпошта ВІП",
+        "А 1",
+        "ВІП УКР",
+        "А 0",
+        "А 2",
+        "А 3",
+        "А 4",
+        "А 5",
+        "А 6",
+        "А 7",
+        "А 8",
+        "А 9",
+        "А10",
+        "А11",
+        "А12",
+        "А13 (мінуса)",
+        "А14 (С.С перевірка)",
+        "А 15",
+        "А16",
+        "А17",
+        "А18",
+        "А19",
+        "А20",
+        "Одиночні",
+        "Двійні",
+        "Товар",
+        "Комп'ютер 9(РБ)",
+        "Комп'ютер 10 (Рокса)",
+        "Комп'ютер 1 (Ілля)",
+        "Комп'ютер 2 (Славік)",
+        "Комп'ютер 3 (Віталій М )",
+        "Комп'ютер 4 (Мар'ян)",
+        "Комп'ютер 5 (Богдан)",
+        "Комп'ютер 6 (Олександр Сільченко)",
+        "Комп'ютер 7 (Валя)",
+        "Комп'ютер 8 ( Валентин)",
+        "для тестування",
+        "Пакування перевірка",
+        "Сток",
+        "Богдан(л1)",
+        "Мар'ян",
+        "Віталій М (л4)",
+        "Ілля(л1)",
+        "Славік(л2)",
+        "Сашко Сільченко(л4)",
+        "Валентин(л3)",
+        "Рокса",
+        "Валя",
+    }
+
     stores_to_remove = [
         "Mona Liza",
         "One Bird",
@@ -889,7 +942,7 @@ def process_one(export_mode="partial"):
 
     df.columns = df.columns.str.strip()
 
-    for required_column in ["Статус", "Магазин", "№", "utm_medium"]:
+    for required_column in ["Статус", "Магазин", "№", "utm_medium", "Телефони"]:
         if required_column not in df.columns:
             raise ValueError(
                 f"У звіті Asteril немає необхідної колонки: "
@@ -958,6 +1011,15 @@ def process_one(export_mode="partial"):
         .tolist()
     )
 
+    phone_values = []
+    for status, phone in zip(filtered_df["Статус"], filtered_df["Телефони"]):
+        value = "" if pd.isna(phone) else str(phone).strip()
+        if value.lower() in ("nan", "none", "null"):
+            value = ""
+        if value.endswith(".0") and value[:-2].isdigit():
+            value = value[:-2]
+        phone_values.append([value if status in phone_statuses else ""])
+
     if not raw_values:
         print(
             f"=== Процес 1: режим={export_mode}, "
@@ -994,6 +1056,12 @@ def process_one(export_mode="partial"):
             f"F{first_free_row + len(raw_values)}"
         ),
         values=raw_values,
+    )
+
+    sheet.update(
+        range_name=f"H{first_free_row + 1}:H{first_free_row + len(raw_values)}",
+        values=phone_values,
+        value_input_option="RAW",
     )
 
     print(
