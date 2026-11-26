@@ -1,6 +1,5 @@
 """Read-only 30-day company review analytics for the four call-center tabs."""
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.error import HTTPError, URLError
 import time
 import uuid
@@ -249,26 +248,23 @@ def _worker(start,end,login_map,run_id,write=False,mode=None):
                         if isinstance(exc,ValueError):break
                         if attempt==0:time.sleep(1.5)
             return shop,None,"; ".join(reasons) or "невідома помилка Prom","failed"
-        # Each _reviews invocation creates its own cookie jar and opener.
-        # Keep concurrency bounded to avoid overloading Prom.
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            futures=[pool.submit(check_shop,shop) for shop in sorted(selected_shops)]
-            for i,future in enumerate(as_completed(futures),1):
-                shop,result,reason,kind=future.result()
-                if result is None:
-                    issues[shop]=reason
-                    (unknown if kind=="unknown" else failures).append(shop)
-                else:
-                    found,inspected,missing_ids=result
-                    reviewed[shop]=found
-                    order_ids={identifier for (name,_),entries in orders.items() if name==shop for item in entries for identifier in (item["order"],item["external_id"]) if identifier}
-                    diagnostics[shop]={"prom_reviews_in_period":inspected,
-                        "prom_reviews_with_order_id":sum(len(v) for v in found.values()),
-                        "prom_reviews_without_order_id":missing_ids,
-                        "unique_matching_order_ids":len(order_ids.intersection(found)),
-                        "selected_order_ids":len(order_ids)}
-                _state={"status":"running","run_id":run_id,
-                        "message":f"Опрацьовано магазинів: {i}/{len(selected_shops)}; перевірено: {len(reviewed)}; помилки: {len(issues)}"}
+        # Prom appears to share active shop state across cookie jars.
+        for i,name in enumerate(sorted(selected_shops),1):
+            shop,result,reason,kind=check_shop(name)
+            if result is None:
+                issues[shop]=reason
+                (unknown if kind=="unknown" else failures).append(shop)
+            else:
+                found,inspected,missing_ids=result
+                reviewed[shop]=found
+                order_ids={identifier for (name,_),entries in orders.items() if name==shop for item in entries for identifier in (item["order"],item["external_id"]) if identifier}
+                diagnostics[shop]={"prom_reviews_in_period":inspected,
+                    "prom_reviews_with_order_id":sum(len(v) for v in found.values()),
+                    "prom_reviews_without_order_id":missing_ids,
+                    "unique_matching_order_ids":len(order_ids.intersection(found)),
+                    "selected_order_ids":len(order_ids)}
+            _state={"status":"running","run_id":run_id,
+                    "message":f"Опрацьовано магазинів: {i}/{len(selected_shops)}; перевірено: {len(reviewed)}; помилки: {len(issues)}"}
         if write:
             _state=_write_daily(start,end,orders,reviewed,run_id,"reviews",issues)
             return
