@@ -76,7 +76,7 @@ def _orders(start,end,write=False):
     return result,stats,{tab:dict(counts) for tab,counts in good_choice_audit.items()}
 
 def _reviews(shop,account,start,end,current=False):
-    opener,csrf=_switch(account)
+    opener,csrf=_switch(account,complete=True)
     found=defaultdict(list)
     seen=set()
     inspected=0
