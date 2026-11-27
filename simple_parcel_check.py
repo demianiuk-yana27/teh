@@ -32,7 +32,7 @@ def order_id(value):
     s = str(value or "").strip()
     return s.split(".")[0] if re.fullmatch(r"\d+(?:\.0+)?", s) else ""
 
-def _worker(selected, run_id):
+def _worker(since, until, run_id):
     global _state
     stats = dict(unique_orders=0, matched=0, written=0, occupied=0,
                  unmatched=0, invalid_dates=0, skipped=0, errors=0)
@@ -48,7 +48,7 @@ def _worker(selected, run_id):
             parsed = request_date(d)
             if parsed is None:
                 stats["invalid_dates"] += 1
-            elif parsed == selected:
+            elif since <= parsed <= until:
                 ids.add(number)
         stats["unique_orders"] = len(ids)
         book = client.open_by_key(CALL_BOOK)
@@ -96,15 +96,19 @@ def register(app):
     def simple_parcels_start():
         global _state
         try:
-            selected = date.fromisoformat((request.get_json(silent=True) or {}).get("date", ""))
+            body = request.get_json(silent=True) or {}
+            since = date.fromisoformat(body.get("since") or body.get("date", ""))
+            until = date.fromisoformat(body.get("until") or body.get("date", ""))
+            if since > until:
+                raise ValueError("reversed range")
         except (ValueError, TypeError):
-            return jsonify(error="Оберіть коректну дату."), 400
+            return jsonify(error="Оберіть коректний діапазон дат."), 400
         if not _lock.acquire(False):
             return jsonify(error="Перевірка вже виконується."), 409
         run_id = uuid.uuid4().hex
         _state = dict(status="running", run_id=run_id, message="Зіставляємо замовлення…")
         try:
-            threading.Thread(target=_worker, args=(selected, run_id), daemon=True).start()
+            threading.Thread(target=_worker, args=(since, until, run_id), daemon=True).start()
         except Exception:
             _lock.release()
             raise

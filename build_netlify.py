@@ -1556,15 +1556,15 @@ s=s.replace('</body>',hanging_js+'</body>',1)
 _simple_anchor = '<pre id="callReviewResult" style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px"></pre></div></section>'
 if s.count(_simple_anchor) != 1:
     raise SystemExit('Simple parcel check: review view anchor missing')
-s = s.replace(_simple_anchor, _simple_anchor[:-10] + "<div class=\"card\"><h3>Перевірка простих посилок</h3><p>Зіставлення номерів замовлень. Запис лише в порожні клітинки I.</p><div class=\"control\"><label for=\"simpleParcelDate\">Дата запиту на просту</label><input type=\"date\" id=\"simpleParcelDate\"></div><button class=\"run\" id=\"simpleParcelRun\" onclick=\"runSimpleParcels()\">Перевірити прості посилки</button><div class=\"status\" id=\"simpleParcelStatus\">Готово до перевірки.</div><pre id=\"simpleParcelResult\" style=\"white-space:pre-wrap\"></pre></div>" + '</section>', 1)
+s = s.replace(_simple_anchor, _simple_anchor[:-10] + "<div class=\"card\"><h3>Перевірка простих посилок</h3><p>Зіставлення номерів замовлень. Запис лише в порожні клітинки I.</p><div class=\"control\"><label for=\"simpleParcelSince\">Дата від</label><input type=\"date\" id=\"simpleParcelSince\"></div><div class=\"control\"><label for=\"simpleParcelUntil\">Дата до</label><input type=\"date\" id=\"simpleParcelUntil\"></div><button class=\"run\" id=\"simpleParcelRun\" onclick=\"runSimpleParcels()\">Перевірити прості посилки</button><div class=\"status\" id=\"simpleParcelStatus\">Готово до перевірки.</div><pre id=\"simpleParcelResult\" style=\"white-space:pre-wrap\"></pre></div>" + '</section>', 1)
 s = s.replace('</body>', r'''<script>
 window.runSimpleParcels=async function(){
- const el=id=>document.getElementById(id), date=el('simpleParcelDate').value, btn=el('simpleParcelRun'), status=el('simpleParcelStatus'), result=el('simpleParcelResult');
- if(!date){status.textContent='Оберіть дату.';return}
+ const el=id=>document.getElementById(id), since=el('simpleParcelSince').value, until=el('simpleParcelUntil').value, btn=el('simpleParcelRun'), status=el('simpleParcelStatus'), result=el('simpleParcelResult');
+ if(!since||!until||since>until){status.textContent='Оберіть коректний діапазон дат.';return}
  if(!confirm('Проставити «проста посилка» лише в порожніх клітинках I?'))return;
  btn.disabled=true; result.textContent='';status.textContent='Перевіряємо…';
  try{
- const response=await fetch('/api/call-reviews/simple-parcels/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date})});
+ const response=await fetch('/api/call-reviews/simple-parcels/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({since,until})});
  const started=await response.json();
  if(!response.ok||started.status!=='started')throw Error(started.error||started.message||'Помилка запуску');
  const deadline=Date.now()+900000;

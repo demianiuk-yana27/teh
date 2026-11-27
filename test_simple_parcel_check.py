@@ -13,3 +13,9 @@ class SimpleParcelTests(unittest.TestCase):
         self.assertEqual(order_id(339924103.0), "339924103")
         self.assertEqual(order_id(" 339924103 "), "339924103")
         self.assertEqual(order_id("abc339924103"), "")
+
+    def test_inclusive_range(self):
+        since, until = date(2026,11,18), date(2026,11,27)
+        for value in ("18.11", "22.11.2026", "2026-11-26T23:16:57.321Z"):
+            self.assertTrue(since <= request_date(value) <= until)
+        self.assertFalse(since <= request_date("28.11") <= until)
