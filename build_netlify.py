@@ -1331,7 +1331,7 @@ s = s.replace('<div id="operationsTrainingApp"></div>', '<div id="operationsTrai
 # This keeps the training view functional even if Cloudflare serves stale/missing JS assets.
 operations_guide_js = Path('netlify/operations-training-guide.js').read_text(encoding='utf-8')
 operations_ui_js = Path('netlify/operations-training-ui.js').read_text(encoding='utf-8')
-operations_inline = ('<script>\\n' + operations_guide_js + '\\n' + operations_ui_js + '\\n</script>')
+operations_inline = ('<script>\n' + operations_guide_js + '\n' + operations_ui_js + '\n</script>')
 s = s.replace('</body>', operations_inline + '</body>', 1)
 
 
