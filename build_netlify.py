@@ -1408,7 +1408,38 @@ review_analytics_js = r'''<script>
  };
 })();
 </script>'''
-s = s.replace('</body>',review_analytics_js+"<script>\nwindow.runKtvAnalytics=async function(write){\n const $=id=>document.getElementById(id),status=$('ktvStatus'),since=$('ktvSince').value,until=$('ktvUntil').value;\n if(!since||!until||since>until){status.textContent='Виберіть правильний період.';return;}\n if(write&&!confirm('Записати КТВ за вибрані дати у Аналітика 2.0?'))return;\n $('ktvRun').disabled=$('ktvWrite').disabled=true;$('ktvResults').textContent='';status.textContent='Розраховуємо…';\n try{\n const response=await fetch('/api/ktv/analytics/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({since,until,write})});\n const data=await response.json();if(!response.ok)throw Error(data.error||'Помилка запуску');\n for(let i=0;i<600;i++){\n await new Promise(resolve=>setTimeout(resolve,3000));\n const r=await fetch('/api/ktv/analytics/status',{cache:'no-store'});if(!r.ok)throw Error('Помилка статусу');\n const state=await r.json();if(state.run_id!==data.run_id)throw Error('Стан іншого запуску');\n status.textContent=state.message||state.status;\n if(state.status==='running')continue;\n if(state.status==='error')throw Error(state.message);\n const cols=[['orders','КТВ'],['successful','Успішні'],['success_pct','% успішних'],['agreed','Погодились чекати'],['agreed_pct','% погодились'],['saved','Врятовані'],['saved_pct','% врятованих'],['refused','Неврятовані'],['refused_pct','% неврятованих']];\n const table=document.createElement('table');table.style.cssText='width:100%;border-collapse:collapse;font-size:13px';\n function row(values,head=false){const tr=table.insertRow();for(const v of values){const td=document.createElement(head?'th':'td');td.style.padding='8px';td.textContent=v??'—';tr.appendChild(td);}}\n row(['Дата',...cols.map(c=>c[1])],true);\n for(const day of [...state.days,{date:'Разом',...state.summary}])row([day.date,...cols.map(([k])=>day[k]==null?'—':day[k]+(k.endsWith('_pct')?'%':''))]);\n $('ktvResults').appendChild(table);return;\n }\n throw Error('Перевищено час очікування.');\n }catch(e){status.textContent='❌ '+e.message;}finally{$('ktvRun').disabled=$('ktvWrite').disabled=false;}\n};\n</script>"+'</body>',1)
+ktv_analytics_js = r'''<script>
+window.runKtvAnalytics=async function(write){
+ const $=id=>document.getElementById(id),status=$('ktvStatus'),since=$('ktvSince').value,until=$('ktvUntil').value;
+ if(!since||!until||since>until){status.textContent='Виберіть правильний період.';return;}
+ if(write&&!confirm('Записати КТВ за вибрані дати у Аналітика 2.0?')){status.textContent='Запис скасовано.';return;}
+ $('ktvRun').disabled=$('ktvWrite').disabled=true;$('ktvResults').textContent='';status.textContent='Розраховуємо…';
+ try{
+ const response=await fetch('/api/ktv/analytics/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({since,until,write})});
+ const data=await response.json();if(!response.ok)throw Error(data.error||'Помилка запуску');
+ for(let i=0;i<600;i++){
+ await new Promise(resolve=>setTimeout(resolve,3000));
+ const r=await fetch('/api/ktv/analytics/status',{cache:'no-store'});if(!r.ok)throw Error('Помилка статусу');
+ const state=await r.json();if(state.run_id!==data.run_id)throw Error('Стан іншого запуску');
+ status.textContent=state.message||state.status;
+ if(state.status==='running')continue;
+ if(state.status==='error')throw Error(state.message);
+ const cols=[['orders','КТВ'],['successful','Успішні'],['success_pct','% успішних'],['agreed','Погодились чекати'],['agreed_pct','% погодились'],['saved','Врятовані'],['saved_pct','% врятованих'],['refused','Неврятовані'],['refused_pct','% неврятованих']];
+ const table=document.createElement('table');table.style.cssText='width:100%;border-collapse:collapse;font-size:13px';
+ function row(values,head=false){const tr=table.insertRow();for(const v of values){const td=document.createElement(head?'th':'td');td.style.padding='8px';td.textContent=v??'—';tr.appendChild(td);}}
+ row(['Дата',...cols.map(c=>c[1])],true);
+ for(const day of [...state.days,{date:'Разом',...state.summary}])row([day.date,...cols.map(([k])=>day[k]==null?'—':day[k]+(k.endsWith('_pct')?'%':''))]);
+ $('ktvResults').appendChild(table);return;
+ }
+ throw Error('Перевищено час очікування.');
+ }catch(e){status.textContent='❌ '+e.message;}finally{$('ktvRun').disabled=$('ktvWrite').disabled=false;}
+};
+for(const [id,write] of [['ktvRun',false],['ktvWrite',true]]){
+ const btn=document.getElementById(id);
+ if(btn){btn.removeAttribute('onclick');btn.type='button';btn.addEventListener('click',()=>window.runKtvAnalytics(write));}
+}
+</script>'''
+s = s.replace('</body>',review_analytics_js+ktv_analytics_js+'</body>',1)
 
 # Replace the old read-only review preview with order-date verification and Sheets updates.
 s = s.replace(
