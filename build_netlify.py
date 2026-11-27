@@ -1408,11 +1408,12 @@ review_analytics_js = r'''<script>
  };
 })();
 </script>'''
-ktv_analytics_js = r'''<script>
+ktv_analytics_js = r'''
 window.runKtvAnalytics=async function(write){
  const $=id=>document.getElementById(id),status=$('ktvStatus'),since=$('ktvSince').value,until=$('ktvUntil').value;
  if(!since||!until||since>until){status.textContent='Виберіть правильний період.';return;}
- if(write&&!confirm('Записати КТВ за вибрані дати у Аналітика 2.0?')){status.textContent='Запис скасовано.';return;}
+ if(write){status.textContent='Підтвердіть запис КТВ за вибрані дати.';}
+ if(write&&!window.confirm('Записати КТВ за вибрані дати у Аналітика 2.0?')){status.textContent='Запис скасовано.';return;}
  $('ktvRun').disabled=$('ktvWrite').disabled=true;$('ktvResults').textContent='';status.textContent='Розраховуємо…';
  try{
  const response=await fetch('/api/ktv/analytics/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({since,until,write})});
@@ -1438,8 +1439,9 @@ for(const [id,write] of [['ktvRun',false],['ktvWrite',true]]){
  const btn=document.getElementById(id);
  if(btn){btn.removeAttribute('onclick');btn.type='button';btn.addEventListener('click',()=>window.runKtvAnalytics(write));}
 }
-</script>'''
-s = s.replace('</body>',review_analytics_js+ktv_analytics_js+'</body>',1)
+'''
+Path('netlify/ktv-analytics.js').write_text(ktv_analytics_js, encoding='utf-8')
+s = s.replace('</body>',review_analytics_js+'<script src="/ktv-analytics.js?v=20261127-2" defer></script></body>',1)
 
 # Replace the old read-only review preview with order-date verification and Sheets updates.
 s = s.replace(
