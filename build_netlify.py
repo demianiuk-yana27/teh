@@ -1552,5 +1552,37 @@ hanging_js=r'''<script>
 </script>'''
 s=s.replace('</body>',hanging_js+'</body>',1)
 
+# Independent simple parcel check in the existing review-check view.
+_simple_anchor = '<pre id="callReviewResult" style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px"></pre></div></section>'
+if s.count(_simple_anchor) != 1:
+    raise SystemExit('Simple parcel check: review view anchor missing')
+s = s.replace(_simple_anchor, _simple_anchor[:-10] + "<div class=\"card\"><h3>Перевірка простих посилок</h3><p>Зіставлення номерів замовлень. Запис лише в порожні клітинки I.</p><div class=\"control\"><label for=\"simpleParcelDate\">Дата запиту на просту</label><input type=\"date\" id=\"simpleParcelDate\"></div><button class=\"run\" id=\"simpleParcelRun\" onclick=\"runSimpleParcels()\">Перевірити прості посилки</button><div class=\"status\" id=\"simpleParcelStatus\">Готово до перевірки.</div><pre id=\"simpleParcelResult\" style=\"white-space:pre-wrap\"></pre></div>" + '</section>', 1)
+s = s.replace('</body>', r'''<script>
+window.runSimpleParcels=async function(){
+ const el=id=>document.getElementById(id), date=el('simpleParcelDate').value, btn=el('simpleParcelRun'), status=el('simpleParcelStatus'), result=el('simpleParcelResult');
+ if(!date){status.textContent='Оберіть дату.';return}
+ if(!confirm('Проставити «проста посилка» лише в порожніх клітинках I?'))return;
+ btn.disabled=true; result.textContent='';status.textContent='Перевіряємо…';
+ try{
+ const response=await fetch('/api/call-reviews/simple-parcels/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date})});
+ const started=await response.json();
+ if(!response.ok||started.status!=='started')throw Error(started.error||started.message||'Помилка запуску');
+ const deadline=Date.now()+900000;
+ while(Date.now()<deadline){
+ await new Promise(resolve=>setTimeout(resolve,2000));
+ const r=await fetch('/api/call-reviews/simple-parcels/status',{cache:'no-store'});
+ if(!r.ok)throw Error('Не вдалося отримати статус');
+ const d=await r.json();
+ if(d.run_id!==started.run_id)throw Error('Стан запуску змінився');
+ status.textContent=d.message||'Перевіряємо…';
+ if(d.status==='running')continue;
+ result.textContent=[['Унікальних номерів',d.unique_orders],['Збігів (рядків)',d.matched],['Проставлено міток',d.written],['Пропущено заповнених',d.occupied],['Номерів без збігів',d.unmatched],['Некоректних дат у джерелі',d.invalid_dates],['Рядків зі зміненим номером',d.skipped],['Помилок запису',d.errors]].map(([k,v])=>k+': '+(v??0)).join('\n');
+ return;
+ }
+ throw Error('Час очікування вичерпано; перевірка може ще тривати.');
+ }catch(e){status.textContent=e.message}finally{btn.disabled=false}
+};
+</script>''' + '</body>', 1)
+
 p.write_text(s, encoding='utf-8')
 print('Cloudflare frontend validated; training, database and role access views are ready.')

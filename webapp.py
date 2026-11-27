@@ -3545,6 +3545,8 @@ _register_call_review_analytics(app, _positive_login_map)
 # Date-scoped review verification with confirmed Sheets updates.
 from call_review_check import register as _register_call_review_check
 _register_call_review_check(app, _positive_login_map)
+from simple_parcel_check import register as _register_simple_parcels
+_register_simple_parcels(app)
 
 # Read-only follow-up on negative reviews awaiting customer edits.
 from negative_hanging import register as _register_negative_hanging
