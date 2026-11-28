@@ -90,6 +90,8 @@ def run(since,until,write):
     mismatches=[]
     for (r,c),v in expected.items():
         actual=norm(at(h[r],c)) if r<len(h) else ""
+        if (r,c)==(1,1) and not actual and h and norm(at(h[0],1))==v:
+            continue  # B1:B2 may be vertically merged.
         if actual!=v:
             mismatches.append(f"{chr(65+c)}{r+1}: очікується «{v}», отримано «{actual or 'порожньо'}»")
     if mismatches:
