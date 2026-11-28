@@ -138,7 +138,16 @@ def _reviews(shop,account,start,end,current=False):
 def _write_daily(start,end,orders,reviewed,run_id,mode,issues=None):
     issues=issues or {}
     sheet=get_client().open_by_key("1Ci_AoA6PBtlglbY_CY4d16tRX-7rxZ8_1YbEFft_hGs").worksheet("Аналітика 2.0")
-    dates=sheet.col_values(15)
+    if sheet.id!=1889689597:
+        raise ValueError("Невірна вкладка аналітики відгуків.")
+    headers=sheet.get("P1:AE2")
+    def header(r,c):
+        return " ".join(str(headers[r][c] if r<len(headers) and c<len(headers[r]) else "").casefold().split())
+    groups={0:"к-ть вигружено",1:"дата створення",2:"відгуків до продзвону",4:"успішні",6:"негативні",8:"погодились залишити відгук",10:"нових відгуків після продзвону",12:"всього відгуків"}
+    for c,expected in groups.items():
+        if not any(header(r,c)==expected for r in (0,1)):
+            raise ValueError(f"Змінився заголовок аналітики відгуків у колонці {chr(80+c) if c<11 else 'A'+chr(65+c-11)}: очікується «{expected}».")
+    dates=sheet.col_values(17)
     call_dates=sheet.col_values(1) if mode=="labels" else []
     def day_key(value):
         raw=str(value or "").strip()
@@ -191,7 +200,7 @@ def _write_daily(start,end,orders,reviewed,run_id,mode,issues=None):
     day=start
     while day<=end:
         if len(positions[day])!=1:
-            raise ValueError("У колонці O немає єдиного рядка для "+day.isoformat())
+            raise ValueError("У колонці Q немає єдиного рядка для "+day.isoformat())
         row=positions[day][0]
         c=daily[day]
         n=c["orders"]
@@ -202,18 +211,18 @@ def _write_daily(start,end,orders,reviewed,run_id,mode,issues=None):
             incomplete.append(day.isoformat()+": "+str(c["unverified"])+" неперевірених; "+
                               ", ".join(k+" — "+str(v) for k,v in sorted(missing_by_day[day].items())))
         if mode=="labels":
-            updates.append({"range":f"N{row}","values":[[n]]})
-            updates.append({"range":f"P{row}:W{row}","values":[values[1:]]})
+            updates.append({"range":f"P{row}","values":[[n]]})
+            updates.append({"range":f"R{row}:Y{row}","values":[values[1:]]})
             call_day=day_key(call_dates[row-1]) if row<=len(call_dates) else None
             if not call_day:raise ValueError("Немає дати продзвону в колонці A, рядок "+str(row))
-            updates.append({"range":f"AB{row}:AC{row}","values":[[call_counts[call_day],pct(call_counts[call_day])]]})
+            updates.append({"range":f"AD{row}:AE{row}","values":[[call_counts[call_day],pct(call_counts[call_day])]]})
         else:
             total=c["before"]+c["after"]
-            updates.append({"range":f"X{row}:AA{row}","values":[[c["after"],pct(c["after"]),total,pct(total)]]})
+            updates.append({"range":f"Z{row}:AC{row}","values":[[c["after"],pct(c["after"]),total,pct(total)]]})
         day+=timedelta(days=1)
     sheet.batch_update(updates,value_input_option="USER_ENTERED")
     return {"status":"partial" if incomplete else "success","run_id":run_id,
-            "message":"Записано аналітику за вибрані дати. "+("N, P–W, AB–AC оновлено." if mode=="labels" else "X–AA оновлено.")+(" ⚠️ Часткові дані: "+"; ".join(incomplete) if incomplete else ""),
+            "message":"Записано аналітику за вибрані дати. "+("P, R–Y, AD–AE оновлено." if mode=="labels" else "Z–AC оновлено.")+(" ⚠️ Часткові дані: "+"; ".join(incomplete) if incomplete else ""),
             "written_days":(end-start).days+1,"incomplete_dates":incomplete}
 
 def _worker(start,end,login_map,run_id,write=False,mode=None):
