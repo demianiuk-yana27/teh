@@ -84,10 +84,16 @@ def run(since,until,write):
     book=client.open_by_key(TARGET)
     sheet=book.worksheet("Аналітика 2.0")
     if sheet.id!=1889689597:raise ValueError("Невірна вкладка аналітики.")
-    h=sheet.get("A1:L2")
-    expected={(0,1):"к-ть ктв",(0,2):"успішні",(0,4):"погодилися чекати",(0,6):"забрані",(0,8):"відмови",(1,0):"дата",(1,8):"к-ть врятованих",(1,10):"к-ть не врятованих"}
-    if len(h)<2 or any(norm(at(h[r],c))!=v for (r,c),v in expected.items()):
-        raise ValueError("Змінилися заголовки Аналітика 2.0.")
+    h=sheet.get("A1:N2")
+    # Current layout: grouped headings in row 1, individual metrics in row 2.
+    expected={(1,0):"дата",(1,1):"к-ть ктв",(0,2):"успішні",(0,4):"погодилися чекати",(0,8):"відмови",(0,12):"забрані",(1,2):"к-ть",(1,3):"%",(1,4):"к-ть",(1,5):"%",(1,6):"к-ть забраних",(1,7):"%",(1,8):"к-ть врятованих",(1,9):"%",(1,10):"к-ть не врятованих",(1,11):"%",(1,12):"к-ть",(1,13):"%"}
+    mismatches=[]
+    for (r,c),v in expected.items():
+        actual=norm(at(h[r],c)) if r<len(h) else ""
+        if actual!=v:
+            mismatches.append(f"{chr(65+c)}{r+1}: очікується «{v}», отримано «{actual or 'порожньо'}»")
+    if mismatches:
+        raise ValueError("Змінилися заголовки Аналітика 2.0: "+"; ".join(mismatches))
     rows=sheet.get("A3:L",value_render_option="UNFORMATTED_VALUE")
     positions={}
     blocks={}
