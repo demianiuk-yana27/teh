@@ -1348,9 +1348,9 @@ review_analytics_html = '''<section class="view" id="call-review-analytics">
 <div id="callAnalyticsResults" style="margin-top:16px"></div></div>
 <div class="card"><h3>Аналітика КТВ</h3><div class="control"><label>Дата від</label><input type="date" id="ktvSince" min="2026-11-01"></div>
 <div class="control"><label>До</label><input type="date" id="ktvUntil"></div>
-<button class="run" id="ktvRun" onclick="runKtvAnalytics(false)">📊 Розрахувати КТВ</button>
-<button class="run" id="ktvWrite" onclick="runKtvAnalytics(true)">📝 Записати КТВ в Аналітика 2.0</button>
-<div class="status" id="ktvStatus">Готово до запуску.</div><div id="ktvResults" style="margin-top:16px;overflow:auto"></div></div></section>'''
+<button class="run" id="ktvRun" type="button">📊 Розрахувати КТВ</button>
+<button class="run" id="ktvWrite" type="button">📝 Записати КТВ в Аналітика 2.0</button>
+<div id="ktvConfirm" hidden style="margin:12px 0"><p>Підтвердити запис КТВ за вибрані дати?</p><button type="button" class="run" id="ktvConfirmYes">Підтвердити запис</button><button type="button" id="ktvConfirmNo">Скасувати</button></div><div class="status" id="ktvStatus" role="status" aria-live="polite">Готово до запуску.</div><div id="ktvResults" style="margin-top:16px;overflow:auto"></div></div></section>'''
 s = s.replace('<div class="sub" data-view="call-review-check">• Перевірка відгуків</div>',
               '<div class="sub" data-view="call-review-check">• Перевірка відгуків</div><div class="sub" data-view="call-review-analytics">• Аналітика</div>',1)
 s = s.replace('<section class="view" id="negative-reviews">',review_analytics_html+'<section class="view" id="negative-reviews">',1)
@@ -1409,20 +1409,24 @@ review_analytics_js = r'''<script>
 })();
 </script>'''
 ktv_analytics_js = r'''
-window.runKtvAnalytics=async function(write){
- const $=id=>document.getElementById(id),status=$('ktvStatus'),since=$('ktvSince').value,until=$('ktvUntil').value;
+(function(){
+let busy=false, pending=null;
+const $=id=>document.getElementById(id);
+async function runKtvAnalytics(write,period){
+ const status=$('ktvStatus'),since=period.since,until=period.until;
+ if(busy)return;
  if(!since||!until||since>until){status.textContent='Виберіть правильний період.';return;}
- if(write){status.textContent='Підтвердіть запис КТВ за вибрані дати.';}
- if(write&&!window.confirm('Записати КТВ за вибрані дати у Аналітика 2.0?')){status.textContent='Запис скасовано.';return;}
- $('ktvRun').disabled=$('ktvWrite').disabled=true;$('ktvResults').textContent='';status.textContent='Розраховуємо…';
+ busy=true;
  try{
+ $('ktvRun').disabled=$('ktvWrite').disabled=true;$('ktvResults').textContent='';status.textContent=write?'Запускаємо запис КТВ…':'Розраховуємо…';
  const response=await fetch('/api/ktv/analytics/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({since,until,write})});
- const data=await response.json();if(!response.ok)throw Error(data.error||'Помилка запуску');
+ const data=await response.json().catch(()=>({}));if(!response.ok||!data.run_id)throw Error(data.error||data.message||('Помилка запуску (HTTP '+response.status+')'));
+ status.textContent=write?'Запис запущено, очікуємо результат…':'Розрахунок запущено…';
  for(let i=0;i<600;i++){
  await new Promise(resolve=>setTimeout(resolve,3000));
  const r=await fetch('/api/ktv/analytics/status',{cache:'no-store'});if(!r.ok)throw Error('Помилка статусу');
  const state=await r.json();if(state.run_id!==data.run_id)throw Error('Стан іншого запуску');
- status.textContent=state.message||state.status;
+ status.textContent=state.status==='running'&&write?'Запис КТВ: розрахунок та перевірка таблиці…':(state.message||state.status);
  if(state.status==='running')continue;
  if(state.status==='error')throw Error(state.message);
  const cols=[['orders','КТВ'],['successful','Успішні'],['success_pct','% успішних'],['agreed','Погодились чекати'],['agreed_pct','% погодились'],['saved','Врятовані'],['saved_pct','% врятованих'],['refused','Неврятовані'],['refused_pct','% неврятованих']];
@@ -1433,15 +1437,23 @@ window.runKtvAnalytics=async function(write){
  $('ktvResults').appendChild(table);return;
  }
  throw Error('Перевищено час очікування.');
- }catch(e){status.textContent='❌ '+e.message;}finally{$('ktvRun').disabled=$('ktvWrite').disabled=false;}
-};
-for(const [id,write] of [['ktvRun',false],['ktvWrite',true]]){
- const btn=document.getElementById(id);
- if(btn){btn.removeAttribute('onclick');btn.type='button';btn.addEventListener('click',()=>window.runKtvAnalytics(write));}
+ }catch(e){status.textContent='❌ '+e.message;}finally{busy=false;$('ktvRun').disabled=$('ktvWrite').disabled=false;}
 }
+function choose(write){
+ if(busy||pending)return;
+ const period={since:$('ktvSince').value,until:$('ktvUntil').value};
+ if(!period.since||!period.until||period.since>period.until){$('ktvStatus').textContent='Виберіть правильний період.';return;}
+ if(!write){runKtvAnalytics(false,period);return;}
+ pending=period;$('ktvConfirm').hidden=false;$('ktvRun').disabled=$('ktvWrite').disabled=true;
+ $('ktvStatus').textContent='Підтвердіть запис за '+period.since+' — '+period.until+'.';
+}
+$('ktvRun').addEventListener('click',()=>choose(false));
+$('ktvWrite').addEventListener('click',()=>choose(true));
+$('ktvConfirmYes').addEventListener('click',()=>{if(!pending)return;const period=pending;pending=null;$('ktvConfirm').hidden=true;runKtvAnalytics(true,period);});
+$('ktvConfirmNo').addEventListener('click',()=>{pending=null;$('ktvConfirm').hidden=true;$('ktvRun').disabled=$('ktvWrite').disabled=false;$('ktvStatus').textContent='Запис скасовано.';});
+})();
 '''
-Path('netlify/ktv-analytics.js').write_text(ktv_analytics_js, encoding='utf-8')
-s = s.replace('</body>',review_analytics_js+'<script src="/ktv-analytics.js?v=20261127-2" defer></script></body>',1)
+s = s.replace('</body>',review_analytics_js+'<script>'+ktv_analytics_js+'</script></body>',1)
 
 # Replace the old read-only review preview with order-date verification and Sheets updates.
 s = s.replace(
